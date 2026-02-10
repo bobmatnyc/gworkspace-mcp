@@ -249,70 +249,31 @@ workspace --version
 workspace --help
 ```
 
+## Documentation
+
+For detailed documentation, see the [docs/](docs/) directory:
+
+- **[Getting Started](docs/getting-started/)** - Installation, authentication, quickstart
+- **[User Guides](docs/guides/)** - Claude Desktop integration, CLI reference
+- **[API Reference](docs/api/)** - Complete tool documentation for all 66 tools
+- **[Development](docs/development/)** - Contributing, testing, releasing
+
 ## Development
 
-### Setup
-
 ```bash
-# Clone repository
+# Clone and install
 git clone https://github.com/masapasa/google-workspace-mcp.git
 cd google-workspace-mcp
-
-# Install with dev dependencies
 pip install -e ".[dev]"
-```
 
-### Running Tests
-
-```bash
-# Run all tests
+# Run tests
 pytest
 
-# Run with coverage
-pytest --cov=src/google_workspace_mcp
-
-# Run only unit tests
-pytest -m unit
-
-# Run only integration tests
-pytest -m integration
+# Code quality
+ruff format src tests && ruff check src tests && mypy src
 ```
 
-### Code Quality
-
-```bash
-# Format code
-ruff format src tests
-
-# Lint code
-ruff check src tests
-
-# Type checking
-mypy src
-```
-
-### Project Structure
-
-```
-google-workspace-mcp/
-├── src/google_workspace_mcp/
-│   ├── __init__.py
-│   ├── __version__.py
-│   ├── cli/
-│   │   └── main.py              # CLI commands (setup, doctor, mcp)
-│   ├── auth/
-│   │   ├── models.py            # Pydantic models for tokens
-│   │   ├── token_storage.py     # Token persistence
-│   │   └── oauth_manager.py     # OAuth 2.0 flow
-│   └── server/
-│       ├── __init__.py
-│       └── google_workspace_server.py  # MCP server (66 tools)
-├── tests/
-│   ├── unit/
-│   └── integration/
-├── pyproject.toml
-└── README.md
-```
+See [Contributing Guide](docs/development/contributing.md) for full development setup.
 
 ## Requirements
 

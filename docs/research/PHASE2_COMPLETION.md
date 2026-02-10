@@ -38,7 +38,7 @@ Successfully extracted and simplified OAuth infrastructure from claude-mpm to go
 workspace setup --client-id=... --client-secret=...
 # Or use environment variables:
 export GOOGLE_OAUTH_CLIENT_ID='your-client-id'
-export GOOGLE_OAUTH_CLIENT_SECRET='your-client-secret'
+export GOOGLE_OAUTH_CLIENT_SECRET='your-client-secret'  # pragma: allowlist secret
 workspace setup
 ```
 
@@ -170,7 +170,7 @@ All required dependencies already in `pyproject.toml`:
 1. Set up OAuth credentials:
    ```bash
    export GOOGLE_OAUTH_CLIENT_ID='your-client-id'
-   export GOOGLE_OAUTH_CLIENT_SECRET='your-client-secret'
+   export GOOGLE_OAUTH_CLIENT_SECRET='your-client-secret'  # pragma: allowlist secret
    ```
 
 2. Run setup:

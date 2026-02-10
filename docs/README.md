@@ -1,48 +1,61 @@
-# Documentation
+# Google Workspace MCP Documentation
 
-This directory will contain comprehensive documentation for google-workspace-mcp.
+Welcome to the documentation for google-workspace-mcp, a Model Context Protocol server for Google Workspace APIs.
 
-## Planned Documentation
+## Documentation Structure
 
-### User Guides
-- **Installation Guide**: Step-by-step setup instructions
-- **OAuth Setup Guide**: Configuring Google Cloud credentials
-- **Tool Reference**: Complete list of 66 tools with examples
-- **Claude Integration**: Using with Claude Desktop
+```
+docs/
+├── index.md                  # Documentation home
+├── getting-started/          # New user guides
+│   ├── installation.md       # Installation guide
+│   ├── authentication.md     # OAuth setup
+│   └── quickstart.md         # Quick start tutorial
+├── guides/                   # User guides
+│   ├── claude-desktop.md     # Claude Desktop integration
+│   └── cli-usage.md          # CLI reference
+├── api/                      # API reference
+│   ├── gmail.md              # Gmail tools (18)
+│   ├── calendar.md           # Calendar tools (10)
+│   ├── drive.md              # Drive tools (17)
+│   ├── docs.md               # Docs tools (11)
+│   └── tasks.md              # Tasks tools (10)
+├── development/              # Developer guides
+│   ├── contributing.md       # Contribution guidelines
+│   ├── testing.md            # Testing guide
+│   └── releasing.md          # Release process
+└── research/                 # Research notes
+    └── pypi-publishing-setup-2026-02-10.md
+```
 
-### Developer Guides
-- **Architecture Overview**: System design and components
-- **Contributing Guide**: How to contribute
-- **API Reference**: Python API documentation
-- **Testing Guide**: Running and writing tests
+## Quick Links
 
-### Tool Categories
+### For Users
 
-**Gmail Tools** (17):
-- Message operations (search, read, send, reply)
-- Draft management
-- Label operations
-- Batch operations
-- Message state (archive, trash, star, read/unread)
+- [Installation](getting-started/installation.md)
+- [Authentication Setup](getting-started/authentication.md)
+- [Quick Start](getting-started/quickstart.md)
+- [Claude Desktop Guide](guides/claude-desktop.md)
 
-**Calendar Tools** (6):
-- Calendar management (list, create, update, delete)
-- Event operations (get, create, update, delete)
+### For Developers
 
-**Drive Tools** (9):
-- File operations (search, upload, download, delete)
-- Folder management
-- Batch operations (sync, bulk upload/download)
+- [Contributing](development/contributing.md)
+- [Testing](development/testing.md)
+- [Releasing](development/releasing.md)
 
-**Docs Tools** (4):
-- Document operations (create, read, append)
-- Markdown conversion
-- Comment management
+### API Reference
 
-**Tasks Tools** (10):
-- Task list management
-- Task operations (CRUD, search, move, complete)
+| Service | Tools | Reference |
+|---------|-------|-----------|
+| Gmail | 18 | [api/gmail.md](api/gmail.md) |
+| Calendar | 10 | [api/calendar.md](api/calendar.md) |
+| Drive | 17 | [api/drive.md](api/drive.md) |
+| Docs | 11 | [api/docs.md](api/docs.md) |
+| Tasks | 10 | [api/tasks.md](api/tasks.md) |
 
-## Status
+## Start Here
 
-Documentation will be added in Phase 5 after core functionality is complete.
+1. **New users**: Begin with [Getting Started](getting-started/README.md)
+2. **Integration**: See [Claude Desktop Guide](guides/claude-desktop.md)
+3. **API details**: Browse [API Reference](api/README.md)
+4. **Contributing**: Read [Contributing Guide](development/contributing.md)

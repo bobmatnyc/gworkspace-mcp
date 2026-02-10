@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Comprehensive documentation structure (22 files, ~5,700 lines)
+- API reference for all 66 tools (Gmail, Calendar, Drive, Docs, Tasks)
+- Getting started guides (installation, authentication, quickstart)
+- Claude Desktop integration guide
+- CLI usage reference
+- Development guides (contributing, testing, releasing)
+- 93 tests (75 unit + 18 integration)
+- GitHub Actions CI/CD pipeline
+- PyPI publishing infrastructure with semantic versioning
+
 ## [0.1.0] - 2026-02-10
 
 ### Added
