@@ -1,6 +1,6 @@
 # Calendar API Reference
 
-Complete reference for the 10 Calendar tools provided by google-workspace-mcp.
+Complete reference for the 10 Calendar tools provided by gworkspace-mcp.
 
 ## Overview
 

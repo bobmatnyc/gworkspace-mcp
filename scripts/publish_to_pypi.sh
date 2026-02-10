@@ -2,7 +2,7 @@
 set -e  # Exit on error
 
 # Script: Automated PyPI Publishing
-# Description: Publishes google-workspace-mcp to PyPI using credentials from ~/.pypirc
+# Description: Publishes gworkspace-mcp to PyPI using credentials from ~/.pypirc
 
 # Colors for output
 RED='\033[0;31m'
@@ -19,7 +19,7 @@ print_message() {
 }
 
 print_message "$BLUE" "========================================"
-print_message "$BLUE" "  Google Workspace MCP - PyPI Publish"
+print_message "$BLUE" "  Google Workspace MCP (gworkspace-mcp) - PyPI Publish"
 print_message "$BLUE" "========================================"
 echo ""
 
@@ -99,7 +99,7 @@ fi
 # 6. Confirmation prompt
 echo ""
 print_message "$YELLOW" "Ready to upload to PyPI:"
-print_message "$BLUE" "  Package: google-workspace-mcp"
+print_message "$BLUE" "  Package: gworkspace-mcp"
 print_message "$BLUE" "  Version: $VERSION"
 print_message "$BLUE" "  Files: 2 (wheel + tarball)"
 echo ""
@@ -124,11 +124,11 @@ if $PUBLISH_CMD "$WHEEL_FILE" "$TAR_FILE"; then
     print_message "$GREEN" "========================================"
     echo ""
     print_message "$GREEN" "Package available at:"
-    print_message "$BLUE" "  https://pypi.org/project/google-workspace-mcp/$VERSION/"
+    print_message "$BLUE" "  https://pypi.org/project/gworkspace-mcp/$VERSION/"
     echo ""
     print_message "$YELLOW" "Test installation with:"
-    print_message "$BLUE" "  pip install google-workspace-mcp"
-    print_message "$BLUE" "  pip install google-workspace-mcp==$VERSION"
+    print_message "$BLUE" "  pip install gworkspace-mcp"
+    print_message "$BLUE" "  pip install gworkspace-mcp==$VERSION"
     echo ""
 else
     echo ""

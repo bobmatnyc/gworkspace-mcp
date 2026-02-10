@@ -1,7 +1,7 @@
 # PyPI Publishing Setup Research
 
 **Source Project**: `/Users/masa/Projects/claude-mpm`
-**Target Project**: `/Users/masa/Projects/google-workspace-mcp`
+**Target Project**: `/Users/masa/Projects/gworkspace-mcp`
 **Research Date**: 2026-02-10
 
 ---
@@ -387,7 +387,7 @@ Checks performed:
 
 ---
 
-## 8. Replication Recommendations for google-workspace-mcp
+## 8. Replication Recommendations for gworkspace-mcp
 
 ### Minimum Required Files
 
@@ -436,11 +436,11 @@ changelog_incremental = true
 
 ---
 
-## 9. Key Differences for google-workspace-mcp
+## 9. Key Differences for gworkspace-mcp
 
-| Aspect | claude-mpm | google-workspace-mcp |
+| Aspect | claude-mpm | gworkspace-mcp |
 |--------|------------|---------------------|
-| Package name | claude-mpm | google-workspace-mcp |
+| Package name | claude-mpm | gworkspace-mcp |
 | Entry point | claude_mpm.cli:main | workspace_mcp.cli:main |
 | Version path | src/claude_mpm/VERSION | src/google_workspace_mcp/VERSION |
 | Homebrew tap | Yes (complex) | No (simpler) |
@@ -473,10 +473,10 @@ changelog_incremental = true
 
 ## Research Complete
 
-This document provides all necessary information to replicate the PyPI publishing setup from claude-mpm to google-workspace-mcp. The key insight is that claude-mpm uses a multi-layered approach:
+This document provides all necessary information to replicate the PyPI publishing setup from claude-mpm to gworkspace-mcp. The key insight is that claude-mpm uses a multi-layered approach:
 
 1. **Simple case**: `~/.pypirc` + `uv publish`
 2. **Automated case**: `tools/dev/automated_release.py`
 3. **Quality gates**: `make pre-publish` before any release
 
-For google-workspace-mcp, start with the simple case and add automation as needed.
+For gworkspace-mcp, start with the simple case and add automation as needed.

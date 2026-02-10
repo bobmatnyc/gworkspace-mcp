@@ -1,6 +1,6 @@
 # Testing Guide
 
-This guide covers running and writing tests for google-workspace-mcp.
+This guide covers running and writing tests for gworkspace-mcp.
 
 ## Test Structure
 

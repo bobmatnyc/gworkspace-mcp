@@ -2,7 +2,7 @@
 
 Connect Claude to Google Workspace APIs through the Model Context Protocol (MCP).
 
-[![PyPI version](https://badge.fury.io/py/google-workspace-mcp.svg)](https://badge.fury.io/py/google-workspace-mcp)
+[![PyPI version](https://badge.fury.io/py/gworkspace-mcp.svg)](https://badge.fury.io/py/gworkspace-mcp)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Tests](https://github.com/masapasa/google-workspace-mcp/actions/workflows/test.yml/badge.svg)](https://github.com/masapasa/google-workspace-mcp/actions/workflows/test.yml)
@@ -30,13 +30,13 @@ Connect Claude to Google Workspace APIs through the Model Context Protocol (MCP)
 ## Installation
 
 ```bash
-pip install google-workspace-mcp
+pip install gworkspace-mcp
 ```
 
 Or with [uv](https://github.com/astral-sh/uv):
 
 ```bash
-uv pip install google-workspace-mcp
+uv pip install gworkspace-mcp
 ```
 
 For development:
@@ -322,7 +322,7 @@ Contributions are welcome! Please:
 
 - **Repository**: https://github.com/masapasa/google-workspace-mcp
 - **Issues**: https://github.com/masapasa/google-workspace-mcp/issues
-- **PyPI**: https://pypi.org/project/google-workspace-mcp/
+- **PyPI**: https://pypi.org/project/gworkspace-mcp/
 
 ## Acknowledgments
 

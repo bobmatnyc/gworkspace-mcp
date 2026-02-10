@@ -25,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial release of Google Workspace MCP Server
 - OAuth 2.0 authentication infrastructure with token persistence
 - CLI commands: `workspace setup`, `workspace doctor`, `workspace mcp`
-- Token storage at `~/.google-workspace-mcp/tokens.json`
+- Token storage at `~/.gworkspace-mcp/tokens.json`
 
 ### Gmail Tools (18)
 - `search_gmail_messages` - Search emails with Gmail query syntax
@@ -75,5 +75,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - No external dependencies on claude-mpm
 - RcloneManager optional (4 tools degrade gracefully if rclone not installed)
 
-[Unreleased]: https://github.com/masapasa/google-workspace-mcp/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/masapasa/google-workspace-mcp/releases/tag/v0.1.0
+[Unreleased]: https://github.com/masapasa/gworkspace-mcp/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/masapasa/gworkspace-mcp/releases/tag/v0.1.0

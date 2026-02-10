@@ -1,10 +1,10 @@
 # Claude Desktop Integration
 
-This guide covers connecting google-workspace-mcp to Claude Desktop for seamless Google Workspace access.
+This guide covers connecting gworkspace-mcp to Claude Desktop for seamless Google Workspace access.
 
 ## Overview
 
-Claude Desktop supports the Model Context Protocol (MCP), which allows Claude to use external tools. google-workspace-mcp provides 66 tools for interacting with Google Workspace APIs.
+Claude Desktop supports the Model Context Protocol (MCP), which allows Claude to use external tools. gworkspace-mcp provides 66 tools for interacting with Google Workspace APIs.
 
 ## Configuration
 
@@ -18,7 +18,7 @@ Claude Desktop supports the Model Context Protocol (MCP), which allows Claude to
 
 ### Basic Configuration
 
-Add google-workspace-mcp to your config:
+Add gworkspace-mcp to your config:
 
 ```json
 {
@@ -88,7 +88,7 @@ Using [uv](https://github.com/astral-sh/uv) for isolation:
   "mcpServers": {
     "google-workspace": {
       "command": "uvx",
-      "args": ["google-workspace-mcp", "mcp"],
+      "args": ["gworkspace-mcp", "mcp"],
       "env": {
         "GOOGLE_OAUTH_CLIENT_ID": "your-client-id.apps.googleusercontent.com",
         "GOOGLE_OAUTH_CLIENT_SECRET": "your-client-secret"  // pragma: allowlist secret
@@ -197,7 +197,7 @@ If you see "Not authenticated":
 
 2. Verify tokens exist:
    ```bash
-   ls -la ~/.google-workspace-mcp/tokens.json
+   ls -la ~/.gworkspace-mcp/tokens.json
    ```
 
 3. Restart Claude Desktop
@@ -239,7 +239,7 @@ Consider:
 
 ### Token Security
 
-OAuth tokens in `~/.google-workspace-mcp/tokens.json`:
+OAuth tokens in `~/.gworkspace-mcp/tokens.json`:
 - Allow access to your Google Workspace
 - Should be kept secure
 - Can be revoked by deleting the file
@@ -270,7 +270,7 @@ Run multiple instances with different token directories:
       "env": {
         "GOOGLE_OAUTH_CLIENT_ID": "personal-client-id",
         "GOOGLE_OAUTH_CLIENT_SECRET": "personal-secret",  // pragma: allowlist secret
-        "GOOGLE_WORKSPACE_MCP_TOKEN_DIR": "~/.google-workspace-mcp/personal"
+        "GOOGLE_WORKSPACE_MCP_TOKEN_DIR": "~/.gworkspace-mcp/personal"
       }
     },
     "google-workspace-work": {
@@ -279,7 +279,7 @@ Run multiple instances with different token directories:
       "env": {
         "GOOGLE_OAUTH_CLIENT_ID": "work-client-id",
         "GOOGLE_OAUTH_CLIENT_SECRET": "work-secret",  // pragma: allowlist secret
-        "GOOGLE_WORKSPACE_MCP_TOKEN_DIR": "~/.google-workspace-mcp/work"
+        "GOOGLE_WORKSPACE_MCP_TOKEN_DIR": "~/.gworkspace-mcp/work"
       }
     }
   }

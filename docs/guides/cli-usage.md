@@ -58,7 +58,7 @@ workspace setup --force
 **What happens**:
 1. Opens your default browser to Google's consent screen
 2. You sign in and authorize the application
-3. Tokens are stored at `~/.google-workspace-mcp/tokens.json`
+3. Tokens are stored at `~/.gworkspace-mcp/tokens.json`
 4. Confirmation message is displayed
 
 ### workspace doctor
@@ -156,7 +156,7 @@ workspace --version
 **Example output**:
 
 ```
-google-workspace-mcp version 0.1.0
+gworkspace-mcp version 0.1.0
 ```
 
 ### workspace --help
@@ -233,7 +233,7 @@ workspace mcp --verbose
 Tokens are stored at:
 
 ```
-~/.google-workspace-mcp/tokens.json
+~/.gworkspace-mcp/tokens.json
 ```
 
 ### Viewing Token Status
@@ -252,7 +252,7 @@ Shows:
 To revoke access or start fresh:
 
 ```bash
-rm ~/.google-workspace-mcp/tokens.json
+rm ~/.gworkspace-mcp/tokens.json
 ```
 
 Then re-authenticate:
@@ -270,7 +270,7 @@ The token file has restricted permissions:
 Verify with:
 
 ```bash
-ls -la ~/.google-workspace-mcp/
+ls -la ~/.gworkspace-mcp/
 ```
 
 ## Shell Integration
@@ -317,7 +317,7 @@ If `workspace` isn't recognized:
 
 1. Check installation:
    ```bash
-   pip show google-workspace-mcp
+   pip show gworkspace-mcp
    ```
 
 2. Find the executable:
@@ -336,8 +336,8 @@ If you get permission errors:
 
 ```bash
 # Fix token directory permissions
-chmod 700 ~/.google-workspace-mcp
-chmod 600 ~/.google-workspace-mcp/tokens.json
+chmod 700 ~/.gworkspace-mcp
+chmod 600 ~/.gworkspace-mcp/tokens.json
 ```
 
 ### Authentication Loops
@@ -346,7 +346,7 @@ If `workspace setup` keeps asking for auth:
 
 1. Delete existing tokens:
    ```bash
-   rm -rf ~/.google-workspace-mcp/
+   rm -rf ~/.gworkspace-mcp/
    ```
 
 2. Re-run setup:
@@ -363,7 +363,7 @@ If you have multiple Python versions:
 python3.10 -m google_workspace_mcp.cli.main doctor
 
 # Or use pipx
-pipx run google-workspace-mcp doctor
+pipx run gworkspace-mcp doctor
 ```
 
 ## Related Documentation

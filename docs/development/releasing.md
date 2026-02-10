@@ -1,6 +1,6 @@
 # Release Process
 
-This guide documents how releases are created for google-workspace-mcp.
+This guide documents how releases are created for gworkspace-mcp.
 
 ## Version Numbering
 
@@ -180,7 +180,7 @@ twine check dist/*
 twine upload --repository testpypi dist/*
 
 # Test installation from TestPyPI
-pip install --index-url https://test.pypi.org/simple/ google-workspace-mcp
+pip install --index-url https://test.pypi.org/simple/ gworkspace-mcp
 
 # Upload to PyPI
 twine upload dist/*
@@ -274,7 +274,7 @@ PyPI doesn't allow overwriting existing versions. Increment the version number.
 PyPI index updates may take a few minutes. Wait and retry:
 
 ```bash
-pip install --no-cache-dir google-workspace-mcp
+pip install --no-cache-dir gworkspace-mcp
 ```
 
 ### Wrong files in distribution

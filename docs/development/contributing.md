@@ -1,6 +1,6 @@
 # Contributing Guide
 
-Thank you for your interest in contributing to google-workspace-mcp! This guide will help you get started.
+Thank you for your interest in contributing to gworkspace-mcp! This guide will help you get started.
 
 ## Getting Started
 
@@ -14,8 +14,8 @@ Thank you for your interest in contributing to google-workspace-mcp! This guide 
 
 1. **Fork and clone the repository**:
    ```bash
-   git clone https://github.com/YOUR-USERNAME/google-workspace-mcp.git
-   cd google-workspace-mcp
+   git clone https://github.com/YOUR-USERNAME/gworkspace-mcp.git
+   cd gworkspace-mcp
    ```
 
 2. **Create a virtual environment**:
@@ -185,7 +185,7 @@ from google_workspace_mcp.auth import OAuthManager
 ## Project Structure
 
 ```
-google-workspace-mcp/
+gworkspace-mcp/
 ├── src/google_workspace_mcp/
 │   ├── __init__.py
 │   ├── __version__.py
@@ -350,8 +350,8 @@ Describe how you tested these changes.
 
 ## Getting Help
 
-- **Questions**: Open a [Discussion](https://github.com/masapasa/google-workspace-mcp/discussions)
-- **Bugs**: Open an [Issue](https://github.com/masapasa/google-workspace-mcp/issues)
+- **Questions**: Open a [Discussion](https://github.com/masapasa/gworkspace-mcp/discussions)
+- **Bugs**: Open an [Issue](https://github.com/masapasa/gworkspace-mcp/issues)
 - **Security**: Email security concerns privately
 
 ## License

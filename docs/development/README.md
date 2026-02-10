@@ -20,8 +20,8 @@ This directory contains guides for contributors and developers.
 
 ```bash
 # Clone and setup
-git clone https://github.com/masapasa/google-workspace-mcp.git
-cd google-workspace-mcp
+git clone https://github.com/masapasa/gworkspace-mcp.git
+cd gworkspace-mcp
 pip install -e ".[dev]"
 
 # Run tests

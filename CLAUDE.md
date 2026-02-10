@@ -1,7 +1,7 @@
 # Google Workspace MCP Server
 
 ## Project Information
-- **Path**: /Users/masa/Projects/google-workspace-mcp
+- **Path**: /Users/masa/Projects/gworkspace-mcp
 - **Language**: Python
 - **Framework**: MCP (Model Context Protocol)
 - **Purpose**: Standalone Google Workspace MCP server with OAuth authentication
@@ -11,7 +11,7 @@
 ### Completed Phases ✅
 - **Phase 1**: Project scaffolding (pyproject.toml, CLI structure)
 - **Phase 2**: OAuth infrastructure (~400 lines, simplified from claude-mpm)
-  - Token storage at `~/.google-workspace-mcp/tokens.json`
+  - Token storage at `~/.gworkspace-mcp/tokens.json`
   - CLI commands: `workspace setup`, `workspace doctor`
 - **Phase 3**: MCP server extraction (4,595 lines, 65 tools)
   - Extracted from claude-mpm monorepo
@@ -49,7 +49,7 @@
 
 ### Installation
 ```bash
-cd /Users/masa/Projects/google-workspace-mcp
+cd /Users/masa/Projects/gworkspace-mcp
 pip install -e .
 ```
 
@@ -120,7 +120,7 @@ src/google_workspace_mcp/
 
 **Previous Session**: claude-mpm project (session-20260210-194921)
 **Work Completed**:
-- Extracted google-workspace-mcp from claude-mpm monorepo
+- Extracted gworkspace-mcp from claude-mpm monorepo
 - Phases 1-3 complete (scaffolding, OAuth, MCP server)
 - 65 tools functional, ready for testing
 
@@ -141,9 +141,9 @@ src/google_workspace_mcp/
 - Simplified OAuth from 850 → 400 lines
 - No claude-mpm dependencies remaining
 - RcloneManager optional (4 tools degrade gracefully if missing)
-- Token storage: `~/.google-workspace-mcp/tokens.json`
+- Token storage: `~/.gworkspace-mcp/tokens.json`
 
 ---
 
-*Generated during google-workspace-mcp extraction project*
+*Generated during gworkspace-mcp extraction project*
 *Session paused: 2026-02-10 19:49:21*

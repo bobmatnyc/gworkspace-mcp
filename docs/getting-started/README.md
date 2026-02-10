@@ -1,6 +1,6 @@
 # Getting Started
 
-This directory contains guides for new users of google-workspace-mcp.
+This directory contains guides for new users of gworkspace-mcp.
 
 ## Contents
 

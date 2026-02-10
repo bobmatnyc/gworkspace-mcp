@@ -1,5 +1,5 @@
 [project]
-name = "google-workspace-mcp"
+name = "gworkspace-mcp"
 version = "0.1.0"
 description = "Google Workspace MCP Server - Connect Claude to Google Workspace APIs"
 authors = [

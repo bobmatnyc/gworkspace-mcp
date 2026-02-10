@@ -1,13 +1,13 @@
 # Installation
 
-This guide covers installing google-workspace-mcp on your system.
+This guide covers installing gworkspace-mcp on your system.
 
 ## Quick Install
 
 ### Using pip
 
 ```bash
-pip install google-workspace-mcp
+pip install gworkspace-mcp
 ```
 
 ### Using uv (recommended)
@@ -15,7 +15,7 @@ pip install google-workspace-mcp
 [uv](https://github.com/astral-sh/uv) is a fast Python package manager:
 
 ```bash
-uv pip install google-workspace-mcp
+uv pip install gworkspace-mcp
 ```
 
 ### Using pipx (isolated environment)
@@ -23,7 +23,7 @@ uv pip install google-workspace-mcp
 For CLI tools, [pipx](https://pipx.pypa.io/) provides isolated installs:
 
 ```bash
-pipx install google-workspace-mcp
+pipx install gworkspace-mcp
 ```
 
 ## Verify Installation
@@ -36,7 +36,7 @@ workspace --version
 
 Expected output:
 ```
-google-workspace-mcp version 0.1.0
+gworkspace-mcp version 0.1.0
 ```
 
 ## Development Installation
@@ -45,8 +45,8 @@ For contributing or modifying the code:
 
 ```bash
 # Clone the repository
-git clone https://github.com/masapasa/google-workspace-mcp.git
-cd google-workspace-mcp
+git clone https://github.com/masapasa/gworkspace-mcp.git
+cd gworkspace-mcp
 
 # Install with development dependencies
 pip install -e ".[dev]"
@@ -147,7 +147,7 @@ The CLI is not in your PATH. Solutions:
 
 1. **Check installation location**:
    ```bash
-   pip show google-workspace-mcp
+   pip show gworkspace-mcp
    ```
 
 2. **Add to PATH** (if using pipx):
@@ -157,8 +157,8 @@ The CLI is not in your PATH. Solutions:
 
 3. **Reinstall with pip**:
    ```bash
-   pip uninstall google-workspace-mcp
-   pip install google-workspace-mcp
+   pip uninstall gworkspace-mcp
+   pip install gworkspace-mcp
    ```
 
 ### Python version errors
@@ -172,7 +172,7 @@ python --version
 If you have multiple Python versions, use:
 
 ```bash
-python3.10 -m pip install google-workspace-mcp
+python3.10 -m pip install gworkspace-mcp
 ```
 
 ### Permission errors on Linux/macOS
@@ -180,7 +180,7 @@ python3.10 -m pip install google-workspace-mcp
 Use `--user` flag or a virtual environment:
 
 ```bash
-pip install --user google-workspace-mcp
+pip install --user gworkspace-mcp
 ```
 
 Or with a virtual environment:
@@ -188,7 +188,7 @@ Or with a virtual environment:
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install google-workspace-mcp
+pip install gworkspace-mcp
 ```
 
 ## Next Steps

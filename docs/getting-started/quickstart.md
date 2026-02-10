@@ -1,6 +1,6 @@
 # Quickstart
 
-Get started with google-workspace-mcp in 5 minutes.
+Get started with gworkspace-mcp in 5 minutes.
 
 ## Prerequisites
 
@@ -41,7 +41,7 @@ Locate your Claude Desktop config file:
 
 ### 2. Add the Server Configuration
 
-Add google-workspace-mcp to the config file:
+Add gworkspace-mcp to the config file:
 
 ```json
 {

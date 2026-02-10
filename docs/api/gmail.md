@@ -1,6 +1,6 @@
 # Gmail API Reference
 
-Complete reference for the 18 Gmail tools provided by google-workspace-mcp.
+Complete reference for the 18 Gmail tools provided by gworkspace-mcp.
 
 ## Overview
 

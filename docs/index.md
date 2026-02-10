@@ -1,6 +1,6 @@
 # Google Workspace MCP Server Documentation
 
-Welcome to the documentation for **google-workspace-mcp**, a Model Context Protocol (MCP) server that connects Claude to Google Workspace APIs.
+Welcome to the documentation for **gworkspace-mcp**, a Model Context Protocol (MCP) server that connects Claude to Google Workspace APIs.
 
 ## What is this?
 
@@ -16,7 +16,7 @@ This MCP server provides **66 tools** that enable Claude to interact with your G
 
 ### Getting Started
 
-New to google-workspace-mcp? Start here:
+New to gworkspace-mcp? Start here:
 
 - [Installation](getting-started/installation.md) - Install the package
 - [Authentication](getting-started/authentication.md) - Set up Google OAuth credentials
@@ -70,8 +70,8 @@ For contributors and developers:
 
 ## Getting Help
 
-- **Issues**: [GitHub Issues](https://github.com/masapasa/google-workspace-mcp/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/masapasa/google-workspace-mcp/discussions)
+- **Issues**: [GitHub Issues](https://github.com/masapasa/gworkspace-mcp/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/masapasa/gworkspace-mcp/discussions)
 
 ## License
 

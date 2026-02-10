@@ -1,6 +1,6 @@
 # Drive API Reference
 
-Complete reference for the 17 Drive tools provided by google-workspace-mcp.
+Complete reference for the 17 Drive tools provided by gworkspace-mcp.
 
 ## Overview
 

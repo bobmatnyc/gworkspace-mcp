@@ -1,6 +1,6 @@
 # Tasks API Reference
 
-Complete reference for the 10 Tasks tools provided by google-workspace-mcp.
+Complete reference for the 10 Tasks tools provided by gworkspace-mcp.
 
 ## Overview
 

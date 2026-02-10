@@ -1,6 +1,6 @@
 # Docs API Reference
 
-Complete reference for the 11 Docs tools provided by google-workspace-mcp.
+Complete reference for the 11 Docs tools provided by gworkspace-mcp.
 
 ## Overview
 

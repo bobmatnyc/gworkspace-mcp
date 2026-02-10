@@ -1,6 +1,6 @@
 # User Guides
 
-This directory contains detailed guides for using google-workspace-mcp.
+This directory contains detailed guides for using gworkspace-mcp.
 
 ## Contents
 

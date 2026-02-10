@@ -72,12 +72,12 @@ help: ## Show this help message
 # ============================================================================
 
 install: ## Install package in development mode
-	@echo "$(YELLOW)Installing google-workspace-mcp in dev mode...$(NC)"
+	@echo "$(YELLOW)Installing gworkspace-mcp in dev mode...$(NC)"
 	@pip install -e .
 	@echo "$(GREEN)Done. Run 'workspace --help' to verify.$(NC)"
 
 install-dev: ## Install package with dev dependencies
-	@echo "$(YELLOW)Installing google-workspace-mcp with dev dependencies...$(NC)"
+	@echo "$(YELLOW)Installing gworkspace-mcp with dev dependencies...$(NC)"
 	@pip install -e ".[dev]"
 	@echo "$(GREEN)Done.$(NC)"
 

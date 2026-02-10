@@ -1,6 +1,6 @@
 # Google Workspace MCP Documentation
 
-Welcome to the documentation for google-workspace-mcp, a Model Context Protocol server for Google Workspace APIs.
+Welcome to the documentation for gworkspace-mcp, a Model Context Protocol server for Google Workspace APIs.
 
 ## Documentation Structure
 
