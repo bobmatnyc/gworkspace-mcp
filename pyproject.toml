@@ -40,6 +40,7 @@ dev = [
 
 [project.scripts]
 google-workspace-mcp = "google_workspace_mcp.cli.main:main"
+workspace = "google_workspace_mcp.cli.main:main"
 
 [project.urls]
 Homepage = "https://github.com/masapasa/google-workspace-mcp"
@@ -79,8 +80,17 @@ disallow_untyped_defs = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+    "unit: Unit tests (fast, no external dependencies)",
+    "integration: Integration tests (may require mocked services)",
+    "slow: Slow tests that should be run sparingly",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning:google.*:",
+]
 
 [tool.coverage.run]
 source = ["src"]
