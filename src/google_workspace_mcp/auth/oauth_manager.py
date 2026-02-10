@@ -5,11 +5,8 @@ specifically for Google Workspace services using google-auth-oauthlib.
 """
 
 import asyncio
-import json
-import webbrowser
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Optional
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -51,7 +48,7 @@ class OAuthManager:
         ```
     """
 
-    def __init__(self, storage: Optional[TokenStorage] = None) -> None:
+    def __init__(self, storage: TokenStorage | None = None) -> None:
         """Initialize OAuth manager.
 
         Args:
@@ -80,9 +77,7 @@ class OAuthManager:
         """
         return self.storage.token_path
 
-    def _credentials_to_token(
-        self, credentials: Credentials, scopes: list[str]
-    ) -> OAuthToken:
+    def _credentials_to_token(self, credentials: Credentials, scopes: list[str]) -> OAuthToken:
         """Convert google-auth Credentials to OAuthToken.
 
         Args:
@@ -102,7 +97,7 @@ class OAuthManager:
             # Default to 1 hour expiration
             expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
 
-        return OAuthToken(
+        return OAuthToken(  # nosec B106 - "Bearer" is OAuth token type, not a password
             access_token=credentials.token,
             refresh_token=credentials.refresh_token,
             expires_at=expires_at,
@@ -119,7 +114,7 @@ class OAuthManager:
         Returns:
             Google OAuth2 credentials.
         """
-        return Credentials(
+        return Credentials(  # nosec B106 - token_uri is public Google OAuth endpoint
             token=token.access_token,
             refresh_token=token.refresh_token,
             token_uri="https://oauth2.googleapis.com/token",
@@ -128,9 +123,9 @@ class OAuthManager:
 
     async def authenticate(
         self,
-        scopes: Optional[list[str]] = None,
-        client_id: Optional[str] = None,
-        client_secret: Optional[str] = None,
+        scopes: list[str] | None = None,
+        client_id: str | None = None,
+        client_secret: str | None = None,
     ) -> OAuthToken:
         """Perform complete OAuth2 authentication flow.
 
@@ -173,9 +168,7 @@ class OAuthManager:
 
         # Run OAuth flow in executor (it's blocking)
         loop = asyncio.get_event_loop()
-        credentials = await loop.run_in_executor(
-            None, self._run_oauth_flow, client_config, scopes
-        )
+        credentials = await loop.run_in_executor(None, self._run_oauth_flow, client_config, scopes)
 
         # Convert to our token model
         token = self._credentials_to_token(credentials, scopes)
@@ -189,9 +182,7 @@ class OAuthManager:
 
         return token
 
-    def _run_oauth_flow(
-        self, client_config: dict, scopes: list[str]
-    ) -> Credentials:
+    def _run_oauth_flow(self, client_config: dict, scopes: list[str]) -> Credentials:
         """Run the OAuth flow (blocking operation).
 
         Args:
@@ -210,7 +201,7 @@ class OAuthManager:
 
         return credentials
 
-    async def refresh_if_needed(self) -> Optional[OAuthToken]:
+    async def refresh_if_needed(self) -> OAuthToken | None:
         """Refresh token if expired or about to expire.
 
         Returns:
@@ -245,7 +236,7 @@ class OAuthManager:
 
         return new_token
 
-    def get_status(self) -> tuple[str, Optional[StoredToken]]:
+    def get_status(self) -> tuple[str, StoredToken | None]:
         """Get the status of stored tokens.
 
         Returns:
@@ -255,13 +246,11 @@ class OAuthManager:
 
         status = self.storage.get_status(self._service_name)
         stored = (
-            self.storage.retrieve(self._service_name)
-            if status != TokenStatus.MISSING
-            else None
+            self.storage.retrieve(self._service_name) if status != TokenStatus.MISSING else None
         )
         return (status, stored)
 
-    def get_credentials(self) -> Optional[Credentials]:
+    def get_credentials(self) -> Credentials | None:
         """Get Google credentials for API use.
 
         Returns:

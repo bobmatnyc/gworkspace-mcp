@@ -6,7 +6,6 @@ providing type-safe token handling with automatic validation.
 
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -35,9 +34,7 @@ class OAuthToken(BaseModel):
     """
 
     access_token: str = Field(..., description="OAuth access token")
-    refresh_token: Optional[str] = Field(
-        default=None, description="OAuth refresh token for renewal"
-    )
+    refresh_token: str | None = Field(default=None, description="OAuth refresh token for renewal")
     expires_at: datetime = Field(..., description="Token expiration timestamp (UTC)")
     scopes: list[str] = Field(default_factory=list, description="Granted OAuth scopes")
     token_type: str = Field(default="Bearer", description="Token type")
@@ -80,7 +77,7 @@ class TokenMetadata(BaseModel):
         default_factory=lambda: datetime.now(timezone.utc),
         description="Token creation timestamp",
     )
-    last_refreshed: Optional[datetime] = Field(
+    last_refreshed: datetime | None = Field(
         default=None, description="Last token refresh timestamp"
     )
 

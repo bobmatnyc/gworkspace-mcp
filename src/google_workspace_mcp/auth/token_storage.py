@@ -8,7 +8,6 @@ Storage Location: ~/.google-workspace-mcp/tokens.json
 
 import json
 from pathlib import Path
-from typing import Optional
 
 from google_workspace_mcp.auth.models import (
     OAuthToken,
@@ -51,7 +50,7 @@ class TokenStorage:
         ```
     """
 
-    def __init__(self, token_path: Optional[Path] = None) -> None:
+    def __init__(self, token_path: Path | None = None) -> None:
         """Initialize token storage.
 
         Args:
@@ -80,9 +79,9 @@ class TokenStorage:
             return {}
 
         try:
-            with open(self.token_path, "r") as f:
+            with open(self.token_path) as f:
                 return json.load(f)
-        except (json.JSONDecodeError, IOError):
+        except (OSError, json.JSONDecodeError):
             return {}
 
     def _save_tokens(self, tokens: dict[str, dict]) -> None:
@@ -129,7 +128,7 @@ class TokenStorage:
         # Save back to file
         self._save_tokens(tokens)
 
-    def retrieve(self, service_name: str) -> Optional[StoredToken]:
+    def retrieve(self, service_name: str) -> StoredToken | None:
         """Retrieve a stored OAuth token.
 
         Args:

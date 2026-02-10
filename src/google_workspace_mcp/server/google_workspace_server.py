@@ -71,7 +71,28 @@ class GoogleWorkspaceServer:
         self.server = Server("google-workspace-mcp")
         self.storage = TokenStorage()
         self.manager = OAuthManager(storage=self.storage)
+        self._http_client: httpx.AsyncClient | None = None
         self._setup_handlers()
+
+    async def _get_http_client(self) -> httpx.AsyncClient:
+        """Get or create shared HTTP client with connection pooling.
+
+        Returns:
+            Shared httpx.AsyncClient instance.
+        """
+        if self._http_client is None:
+            self._http_client = httpx.AsyncClient(
+                http2=True,
+                limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
+                timeout=httpx.Timeout(30.0, connect=10.0),
+            )
+        return self._http_client
+
+    async def close(self) -> None:
+        """Close the shared HTTP client and release resources."""
+        if self._http_client:
+            await self._http_client.aclose()
+            self._http_client = None
 
     def _setup_handlers(self) -> None:
         """Register MCP tool handlers."""
@@ -354,6 +375,11 @@ class GoogleWorkspaceServer:
                                 "type": "string",
                                 "description": "Timezone for the event (e.g., 'America/New_York')",
                             },
+                            "recurrence": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "RRULE strings for recurring events (e.g., ['RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR'])",
+                            },
                         },
                         "required": ["summary", "start_time", "end_time"],
                     },
@@ -398,6 +424,11 @@ class GoogleWorkspaceServer:
                                 "type": "string",
                                 "description": "New event location",
                             },
+                            "recurrence": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "RRULE strings for recurring events (e.g., ['RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR'])",
+                            },
                         },
                         "required": ["event_id"],
                     },
@@ -419,6 +450,33 @@ class GoogleWorkspaceServer:
                             },
                         },
                         "required": ["event_id"],
+                    },
+                ),
+                Tool(
+                    name="query_free_busy",
+                    description="Query free/busy information for calendars",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "time_min": {
+                                "type": "string",
+                                "description": "Start of the interval in RFC3339 format (e.g., '2024-01-15T00:00:00Z')",
+                            },
+                            "time_max": {
+                                "type": "string",
+                                "description": "End of the interval in RFC3339 format (e.g., '2024-01-16T00:00:00Z')",
+                            },
+                            "calendar_ids": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Calendar IDs to query (default: ['primary'])",
+                            },
+                            "timezone": {
+                                "type": "string",
+                                "description": "Timezone for the query (default: 'UTC')",
+                            },
+                        },
+                        "required": ["time_min", "time_max"],
                     },
                 ),
                 # Gmail Write Operations
@@ -546,6 +604,82 @@ class GoogleWorkspaceServer:
                             },
                         },
                         "required": ["label_id"],
+                    },
+                ),
+                # Gmail Filter Management
+                Tool(
+                    name="list_gmail_filters",
+                    description="List all Gmail filters (auto-filtering rules)",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {},
+                        "required": [],
+                    },
+                ),
+                Tool(
+                    name="create_gmail_filter",
+                    description="Create a Gmail filter to automatically process incoming messages",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "from_address": {
+                                "type": "string",
+                                "description": "Filter by sender email address",
+                            },
+                            "to_address": {
+                                "type": "string",
+                                "description": "Filter by recipient email address",
+                            },
+                            "subject": {
+                                "type": "string",
+                                "description": "Filter by subject contains text",
+                            },
+                            "query": {
+                                "type": "string",
+                                "description": "Gmail search query for advanced filtering (e.g., 'has:attachment larger:5M')",
+                            },
+                            "has_attachment": {
+                                "type": "boolean",
+                                "description": "Filter messages with attachments",
+                            },
+                            "add_label_ids": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Label IDs to add to matching messages",
+                            },
+                            "remove_label_ids": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Label IDs to remove (use 'INBOX' to archive)",
+                            },
+                            "mark_as_read": {
+                                "type": "boolean",
+                                "description": "Mark matching messages as read",
+                            },
+                            "star": {
+                                "type": "boolean",
+                                "description": "Star matching messages",
+                            },
+                            "forward_to": {
+                                "type": "string",
+                                "description": "Forward matching messages to this email address",
+                            },
+                        },
+                        "required": [],
+                    },
+                ),
+                Tool(
+                    name="delete_gmail_filter",
+                    description="Delete a Gmail filter by ID",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "filter_id": {
+                                "type": "string",
+                                "description": "Filter ID to delete",
+                            },
+                        },
+                        "required": ["filter_id"],
                     },
                 ),
                 # Gmail Message Management
@@ -757,6 +891,58 @@ class GoogleWorkspaceServer:
                         "required": ["message_ids"],
                     },
                 ),
+                # Gmail Vacation Settings
+                Tool(
+                    name="get_vacation_settings",
+                    description="Get the current vacation auto-reply settings for Gmail",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {},
+                        "required": [],
+                    },
+                ),
+                Tool(
+                    name="set_vacation_settings",
+                    description="Set vacation auto-reply settings for Gmail",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "enable_auto_reply": {
+                                "type": "boolean",
+                                "description": "Whether to enable vacation auto-reply",
+                            },
+                            "response_subject": {
+                                "type": "string",
+                                "description": "Subject for auto-reply messages (optional)",
+                            },
+                            "response_body_plain_text": {
+                                "type": "string",
+                                "description": "Plain text body for auto-reply messages",
+                            },
+                            "response_body_html": {
+                                "type": "string",
+                                "description": "HTML body for auto-reply messages (optional)",
+                            },
+                            "restrict_to_contacts": {
+                                "type": "boolean",
+                                "description": "Only send reply to contacts (default: false)",
+                            },
+                            "restrict_to_domain": {
+                                "type": "boolean",
+                                "description": "Only send reply to same domain (default: false)",
+                            },
+                            "start_time": {
+                                "type": "string",
+                                "description": "Start time in RFC3339 format (optional)",
+                            },
+                            "end_time": {
+                                "type": "string",
+                                "description": "End time in RFC3339 format (optional)",
+                            },
+                        },
+                        "required": ["enable_auto_reply"],
+                    },
+                ),
                 # Drive Write Operations
                 Tool(
                     name="create_drive_folder",
@@ -833,6 +1019,157 @@ class GoogleWorkspaceServer:
                             },
                         },
                         "required": ["file_id", "new_parent_id"],
+                    },
+                ),
+                Tool(
+                    name="copy_drive_file",
+                    description="Create a copy of a file in Google Drive",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "file_id": {
+                                "type": "string",
+                                "description": "File ID to copy",
+                            },
+                            "name": {
+                                "type": "string",
+                                "description": "Name for the copy (optional, defaults to 'Copy of [original]')",
+                            },
+                            "parent_id": {
+                                "type": "string",
+                                "description": "Destination folder ID (optional, defaults to same folder)",
+                            },
+                        },
+                        "required": ["file_id"],
+                    },
+                ),
+                Tool(
+                    name="rename_drive_file",
+                    description="Rename a file or folder in Google Drive",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "file_id": {
+                                "type": "string",
+                                "description": "File or folder ID to rename",
+                            },
+                            "new_name": {
+                                "type": "string",
+                                "description": "New name for the file or folder",
+                            },
+                        },
+                        "required": ["file_id", "new_name"],
+                    },
+                ),
+                # Drive Permissions Management
+                Tool(
+                    name="list_file_permissions",
+                    description="List all permissions (who has access) for a Google Drive file or folder",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "file_id": {
+                                "type": "string",
+                                "description": "ID of the file or folder",
+                            },
+                        },
+                        "required": ["file_id"],
+                    },
+                ),
+                Tool(
+                    name="share_file",
+                    description="Share a Drive file or folder with a user, group, domain, or make it public (anyone with link)",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "file_id": {
+                                "type": "string",
+                                "description": "ID of the file or folder to share",
+                            },
+                            "type": {
+                                "type": "string",
+                                "enum": ["user", "group", "domain", "anyone"],
+                                "description": "Type of grantee: user (individual), group (Google Group), domain (all users in domain), anyone (public link)",
+                            },
+                            "role": {
+                                "type": "string",
+                                "enum": ["reader", "writer", "commenter"],
+                                "description": "Permission level: reader (view only), writer (can edit), commenter (can comment)",
+                            },
+                            "email_address": {
+                                "type": "string",
+                                "description": "Email address (required for user/group type)",
+                            },
+                            "domain": {
+                                "type": "string",
+                                "description": "Domain name (required for domain type, e.g., 'company.com')",
+                            },
+                            "send_notification": {
+                                "type": "boolean",
+                                "description": "Send email notification to the user (default: true, only for user/group type)",
+                                "default": True,
+                            },
+                        },
+                        "required": ["file_id", "type", "role"],
+                    },
+                ),
+                Tool(
+                    name="update_file_permission",
+                    description="Update an existing permission's role on a Drive file or folder",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "file_id": {
+                                "type": "string",
+                                "description": "ID of the file or folder",
+                            },
+                            "permission_id": {
+                                "type": "string",
+                                "description": "Permission ID to update (from list_file_permissions)",
+                            },
+                            "role": {
+                                "type": "string",
+                                "enum": ["reader", "writer", "commenter"],
+                                "description": "New permission level",
+                            },
+                        },
+                        "required": ["file_id", "permission_id", "role"],
+                    },
+                ),
+                Tool(
+                    name="remove_file_permission",
+                    description="Remove a permission (revoke access) from a Drive file or folder",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "file_id": {
+                                "type": "string",
+                                "description": "ID of the file or folder",
+                            },
+                            "permission_id": {
+                                "type": "string",
+                                "description": "Permission ID to remove (from list_file_permissions)",
+                            },
+                        },
+                        "required": ["file_id", "permission_id"],
+                    },
+                ),
+                Tool(
+                    name="transfer_file_ownership",
+                    description="Transfer ownership of a Drive file to another user. The current owner becomes a writer. Only works for files you own.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "file_id": {
+                                "type": "string",
+                                "description": "ID of the file to transfer ownership",
+                            },
+                            "new_owner_email": {
+                                "type": "string",
+                                "description": "Email address of the new owner",
+                            },
+                        },
+                        "required": ["file_id", "new_owner_email"],
                     },
                 ),
                 # Google Docs Write Operations
@@ -1531,23 +1868,22 @@ class GoogleWorkspaceServer:
         if status == TokenStatus.MISSING:
             raise RuntimeError(
                 f"No OAuth token found for service '{SERVICE_NAME}'. "
-                "Please authenticate first using: claude-mpm auth login google"
+                "Please authenticate first using: workspace setup"
             )
 
         if status == TokenStatus.INVALID:
             raise RuntimeError(
                 f"OAuth token for service '{SERVICE_NAME}' is invalid or corrupted. "
-                "Please re-authenticate using: claude-mpm auth login google"
+                "Please re-authenticate using: workspace setup"
             )
 
         # Try to refresh if expired
         if status == TokenStatus.EXPIRED:
             logger.info("Token expired, attempting refresh...")
-            token = await self.manager.refresh_if_needed(SERVICE_NAME)
+            token = await self.manager.refresh_if_needed()
             if token is None:
                 raise RuntimeError(
-                    "Token refresh failed. Please re-authenticate using: "
-                    "claude-mpm auth login google"
+                    "Token refresh failed. Please re-authenticate using: " "workspace setup"
                 )
             return token.access_token
 
@@ -1580,22 +1916,82 @@ class GoogleWorkspaceServer:
             httpx.HTTPStatusError: If the request fails.
         """
         access_token = await self._get_access_token()
+        client = await self._get_http_client()
 
-        async with httpx.AsyncClient() as client:
-            response = await client.request(
-                method=method,
-                url=url,
-                params=params,
-                json=json_data,
-                headers={
-                    "Authorization": f"Bearer {access_token}",
-                    "Accept": "application/json",
-                },
-                timeout=30.0,
-            )
-            response.raise_for_status()
-            result: dict[str, Any] = response.json()
-            return result
+        response = await client.request(
+            method=method,
+            url=url,
+            params=params,
+            json=json_data,
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/json",
+            },
+        )
+        response.raise_for_status()
+        result: dict[str, Any] = response.json()
+        return result
+
+    async def _make_delete_request(self, url: str) -> None:
+        """Make an authenticated DELETE request to Google APIs.
+
+        Args:
+            url: Full URL to request.
+
+        Raises:
+            httpx.HTTPStatusError: If the request fails.
+        """
+        access_token = await self._get_access_token()
+        client = await self._get_http_client()
+
+        response = await client.delete(
+            url,
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        response.raise_for_status()
+
+    async def _make_raw_request(
+        self,
+        method: str,
+        url: str,
+        params: dict[str, Any] | None = None,
+        content: bytes | str | None = None,
+        headers: dict[str, str] | None = None,
+        timeout: float = 30.0,
+    ) -> httpx.Response:
+        """Make an authenticated HTTP request returning raw response.
+
+        Args:
+            method: HTTP method (GET, POST, etc.).
+            url: Full URL to request.
+            params: Optional query parameters.
+            content: Optional raw body content.
+            headers: Optional additional headers.
+            timeout: Request timeout in seconds.
+
+        Returns:
+            Raw httpx.Response object.
+
+        Raises:
+            httpx.HTTPStatusError: If the request fails.
+        """
+        access_token = await self._get_access_token()
+        client = await self._get_http_client()
+
+        request_headers = {"Authorization": f"Bearer {access_token}"}
+        if headers:
+            request_headers.update(headers)
+
+        response = await client.request(
+            method=method,
+            url=url,
+            params=params,
+            content=content,
+            headers=request_headers,
+            timeout=timeout,
+        )
+        response.raise_for_status()
+        return response
 
     async def _dispatch_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         """Dispatch tool call to appropriate handler.
@@ -1628,6 +2024,7 @@ class GoogleWorkspaceServer:
             "create_event": self._create_event,
             "update_event": self._update_event,
             "delete_event": self._delete_event,
+            "query_free_busy": self._query_free_busy,
             # Gmail write operations
             "send_email": self._send_email,
             "create_draft": self._create_draft,
@@ -1636,6 +2033,10 @@ class GoogleWorkspaceServer:
             "list_gmail_labels": self._list_gmail_labels,
             "create_gmail_label": self._create_gmail_label,
             "delete_gmail_label": self._delete_gmail_label,
+            # Gmail filter management
+            "list_gmail_filters": self._list_gmail_filters,
+            "create_gmail_filter": self._create_gmail_filter,
+            "delete_gmail_filter": self._delete_gmail_filter,
             # Gmail message management
             "modify_gmail_message": self._modify_gmail_message,
             "archive_gmail_message": self._archive_gmail_message,
@@ -1651,11 +2052,22 @@ class GoogleWorkspaceServer:
             "batch_trash_gmail_messages": self._batch_trash_gmail_messages,
             "batch_mark_gmail_as_read": self._batch_mark_gmail_as_read,
             "batch_delete_gmail_messages": self._batch_delete_gmail_messages,
+            # Gmail vacation settings
+            "get_vacation_settings": self._get_vacation_settings,
+            "set_vacation_settings": self._set_vacation_settings,
             # Drive write operations
             "create_drive_folder": self._create_drive_folder,
             "upload_drive_file": self._upload_drive_file,
             "delete_drive_file": self._delete_drive_file,
             "move_drive_file": self._move_drive_file,
+            "copy_drive_file": self._copy_drive_file,
+            "rename_drive_file": self._rename_drive_file,
+            # Drive permissions operations
+            "list_file_permissions": self._list_file_permissions,
+            "share_file": self._share_file,
+            "update_file_permission": self._update_file_permission,
+            "remove_file_permission": self._remove_file_permission,
+            "transfer_file_ownership": self._transfer_file_ownership,
             # Docs write operations
             "create_document": self._create_document,
             "append_to_document": self._append_to_document,
@@ -1869,6 +2281,8 @@ class GoogleWorkspaceServer:
     async def _search_gmail_messages(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Search Gmail messages.
 
+        Uses parallel fetching with asyncio.gather for improved performance.
+
         Args:
             arguments: Tool arguments with query and max_results.
 
@@ -1883,15 +2297,31 @@ class GoogleWorkspaceServer:
 
         response = await self._make_request("GET", url, params=params)
 
-        messages = []
-        for msg in response.get("messages", []):
-            # Get message metadata
-            msg_url = f"{GMAIL_API_BASE}/users/me/messages/{msg['id']}"
-            msg_detail = await self._make_request("GET", msg_url, params={"format": "metadata"})
+        message_list = response.get("messages", [])
+        if not message_list:
+            return {"messages": [], "count": 0}
 
-            headers = {
-                h["name"]: h["value"] for h in msg_detail.get("payload", {}).get("headers", [])
-            }
+        # Fetch all message details in parallel
+        async def fetch_message_detail(msg_id: str) -> dict[str, Any]:
+            msg_url = f"{GMAIL_API_BASE}/users/me/messages/{msg_id}"
+            return await self._make_request("GET", msg_url, params={"format": "metadata"})
+
+        # Gather all message details concurrently
+        details = await asyncio.gather(
+            *[fetch_message_detail(msg["id"]) for msg in message_list],
+            return_exceptions=True,
+        )
+
+        messages = []
+        for msg, msg_detail in zip(message_list, details, strict=False):
+            # Skip messages that failed to fetch
+            if isinstance(msg_detail, BaseException):
+                logger.warning("Failed to fetch message %s: %s", msg["id"], msg_detail)
+                continue
+
+            # At this point, msg_detail is guaranteed to be dict[str, Any]
+            detail: dict[str, Any] = msg_detail
+            headers = {h["name"]: h["value"] for h in detail.get("payload", {}).get("headers", [])}
 
             messages.append(
                 {
@@ -1901,7 +2331,7 @@ class GoogleWorkspaceServer:
                     "from": headers.get("From"),
                     "to": headers.get("To"),
                     "date": headers.get("Date"),
-                    "snippet": msg_detail.get("snippet"),
+                    "snippet": detail.get("snippet"),
                 }
             )
 
@@ -2069,37 +2499,28 @@ class GoogleWorkspaceServer:
             "application/vnd.google-apps.presentation": "text/plain",
         }
 
-        access_token = await self._get_access_token()
-
         if mime_type in export_map:
             # Export Google Workspace files
             export_url = f"{DRIVE_API_BASE}/files/{file_id}/export"
-            async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    export_url,
-                    params={"mimeType": export_map[mime_type]},
-                    headers={"Authorization": f"Bearer {access_token}"},
-                    timeout=30.0,
-                )
-                response.raise_for_status()
-                content = response.text
+            response = await self._make_raw_request(
+                "GET",
+                export_url,
+                params={"mimeType": export_map[mime_type]},
+            )
+            content = response.text
         else:
             # Download regular files
             download_url = f"{DRIVE_API_BASE}/files/{file_id}"
-            async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    download_url,
-                    params={"alt": "media"},
-                    headers={"Authorization": f"Bearer {access_token}"},
-                    timeout=30.0,
-                )
-                response.raise_for_status()
-
-                # Try to decode as text, otherwise indicate binary
-                try:
-                    content = response.text
-                except UnicodeDecodeError:
-                    content = f"[Binary file: {metadata.get('size', 'unknown')} bytes]"
+            response = await self._make_raw_request(
+                "GET",
+                download_url,
+                params={"alt": "media"},
+            )
+            # Try to decode as text, otherwise indicate binary
+            try:
+                content = response.text
+            except UnicodeDecodeError:
+                content = f"[Binary file: {metadata.get('size', 'unknown')} bytes]"
 
         return {
             "id": metadata.get("id"),
@@ -2312,6 +2733,10 @@ class GoogleWorkspaceServer:
         if location:
             event_body["location"] = location
 
+        recurrence = arguments.get("recurrence")
+        if recurrence:
+            event_body["recurrence"] = recurrence
+
         response = await self._make_request("POST", url, json_data=event_body)
 
         return {
@@ -2321,6 +2746,7 @@ class GoogleWorkspaceServer:
             "start": response.get("start", {}).get("dateTime"),
             "end": response.get("end", {}).get("dateTime"),
             "html_link": response.get("htmlLink"),
+            "recurrence": response.get("recurrence"),
         }
 
     async def _update_event(self, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -2358,6 +2784,8 @@ class GoogleWorkspaceServer:
             update_body["attendees"] = [{"email": email} for email in arguments["attendees"]]
         if "location" in arguments:
             update_body["location"] = arguments["location"]
+        if "recurrence" in arguments:
+            update_body["recurrence"] = arguments["recurrence"]
 
         response = await self._make_request("PATCH", get_url, json_data=update_body)
 
@@ -2368,6 +2796,7 @@ class GoogleWorkspaceServer:
             "start": response.get("start", {}).get("dateTime"),
             "end": response.get("end", {}).get("dateTime"),
             "html_link": response.get("htmlLink"),
+            "recurrence": response.get("recurrence"),
         }
 
     async def _delete_event(self, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -2383,17 +2812,51 @@ class GoogleWorkspaceServer:
         event_id = arguments["event_id"]
 
         url = f"{CALENDAR_API_BASE}/calendars/{calendar_id}/events/{event_id}"
-
-        access_token = await self._get_access_token()
-        async with httpx.AsyncClient() as client:
-            response = await client.delete(
-                url,
-                headers={"Authorization": f"Bearer {access_token}"},
-                timeout=30.0,
-            )
-            response.raise_for_status()
+        await self._make_delete_request(url)
 
         return {"status": "deleted", "event_id": event_id}
+
+    async def _query_free_busy(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Query free/busy information for calendars.
+
+        Args:
+            arguments: Tool arguments with time_min, time_max, calendar_ids, timezone.
+
+        Returns:
+            Free/busy information for requested calendars.
+        """
+        time_min = arguments["time_min"]
+        time_max = arguments["time_max"]
+        calendar_ids = arguments.get("calendar_ids", ["primary"])
+        timezone = arguments.get("timezone", "UTC")
+
+        url = f"{CALENDAR_API_BASE}/freeBusy"
+
+        request_body = {
+            "timeMin": time_min,
+            "timeMax": time_max,
+            "timeZone": timezone,
+            "items": [{"id": cal_id} for cal_id in calendar_ids],
+        }
+
+        response = await self._make_request("POST", url, json_data=request_body)
+
+        # Format the response
+        calendars_info = {}
+        for cal_id, cal_data in response.get("calendars", {}).items():
+            busy_periods = cal_data.get("busy", [])
+            errors = cal_data.get("errors", [])
+            calendars_info[cal_id] = {
+                "busy": busy_periods,
+                "errors": errors,
+            }
+
+        return {
+            "time_min": time_min,
+            "time_max": time_max,
+            "timezone": timezone,
+            "calendars": calendars_info,
+        }
 
     # =========================================================================
     # Gmail Write Operations
@@ -2634,19 +3097,139 @@ class GoogleWorkspaceServer:
         label_id = arguments["label_id"]
 
         url = f"{GMAIL_API_BASE}/users/me/labels/{label_id}"
-        access_token = await self._get_access_token()
-
-        async with httpx.AsyncClient() as client:
-            response = await client.delete(
-                url,
-                headers={"Authorization": f"Bearer {access_token}"},
-                timeout=30.0,
-            )
-            response.raise_for_status()
+        await self._make_delete_request(url)
 
         return {
             "status": "label_deleted",
             "label_id": label_id,
+        }
+
+    # =========================================================================
+    # Gmail Filter Management
+    # =========================================================================
+
+    async def _list_gmail_filters(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """List all Gmail filters (auto-filtering rules).
+
+        Args:
+            arguments: Tool arguments (none required).
+
+        Returns:
+            List of all filters with their criteria and actions.
+        """
+        url = f"{GMAIL_API_BASE}/users/me/settings/filters"
+        response = await self._make_request("GET", url)
+
+        filters = []
+        for f in response.get("filter", []):
+            criteria = f.get("criteria", {})
+            action = f.get("action", {})
+
+            filters.append(
+                {
+                    "id": f.get("id"),
+                    "criteria": {
+                        "from": criteria.get("from"),
+                        "to": criteria.get("to"),
+                        "subject": criteria.get("subject"),
+                        "query": criteria.get("query"),
+                        "has_attachment": criteria.get("hasAttachment"),
+                        "negated_query": criteria.get("negatedQuery"),
+                        "size": criteria.get("size"),
+                        "size_comparison": criteria.get("sizeComparison"),
+                    },
+                    "action": {
+                        "add_label_ids": action.get("addLabelIds", []),
+                        "remove_label_ids": action.get("removeLabelIds", []),
+                        "forward": action.get("forward"),
+                    },
+                }
+            )
+
+        return {
+            "total": len(filters),
+            "filters": filters,
+        }
+
+    async def _create_gmail_filter(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Create a Gmail filter to automatically process incoming messages.
+
+        Args:
+            arguments: Tool arguments with filter criteria and actions.
+
+        Returns:
+            Created filter details.
+        """
+        # Build criteria
+        criteria: dict[str, Any] = {}
+        if from_addr := arguments.get("from_address"):
+            criteria["from"] = from_addr
+        if to_addr := arguments.get("to_address"):
+            criteria["to"] = to_addr
+        if subject := arguments.get("subject"):
+            criteria["subject"] = subject
+        if query := arguments.get("query"):
+            criteria["query"] = query
+        if arguments.get("has_attachment"):
+            criteria["hasAttachment"] = True
+
+        # Build action
+        action: dict[str, Any] = {}
+        if add_labels := arguments.get("add_label_ids"):
+            action["addLabelIds"] = add_labels
+        if remove_labels := arguments.get("remove_label_ids"):
+            action["removeLabelIds"] = remove_labels
+        if arguments.get("mark_as_read"):
+            # Mark as read = remove UNREAD label
+            action.setdefault("removeLabelIds", []).append("UNREAD")
+        if arguments.get("star"):
+            # Star = add STARRED label
+            action.setdefault("addLabelIds", []).append("STARRED")
+        if forward_to := arguments.get("forward_to"):
+            action["forward"] = forward_to
+
+        filter_body = {
+            "criteria": criteria,
+            "action": action,
+        }
+
+        url = f"{GMAIL_API_BASE}/users/me/settings/filters"
+        response = await self._make_request("POST", url, json_data=filter_body)
+
+        return {
+            "status": "filter_created",
+            "id": response.get("id"),
+            "criteria": {
+                "from": response.get("criteria", {}).get("from"),
+                "to": response.get("criteria", {}).get("to"),
+                "subject": response.get("criteria", {}).get("subject"),
+                "query": response.get("criteria", {}).get("query"),
+                "has_attachment": response.get("criteria", {}).get("hasAttachment"),
+            },
+            "action": {
+                "add_label_ids": response.get("action", {}).get("addLabelIds", []),
+                "remove_label_ids": response.get("action", {}).get("removeLabelIds", []),
+                "forward": response.get("action", {}).get("forward"),
+            },
+        }
+
+    async def _delete_gmail_filter(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Delete a Gmail filter by ID.
+
+        Args:
+            arguments: Tool arguments with filter_id.
+
+        Returns:
+            Deletion confirmation.
+        """
+        filter_id = arguments["filter_id"]
+
+        url = f"{GMAIL_API_BASE}/users/me/settings/filters/{filter_id}"
+        await self._make_delete_request(url)
+
+        return {
+            "status": "filter_deleted",
+            "filter_id": filter_id,
         }
 
     # =========================================================================
@@ -3032,6 +3615,84 @@ class GoogleWorkspaceServer:
         }
 
     # =========================================================================
+    # Gmail Vacation Settings
+    # =========================================================================
+
+    async def _get_vacation_settings(
+        self,
+        arguments: dict[str, Any],  # noqa: ARG002
+    ) -> dict[str, Any]:
+        """Get the current vacation auto-reply settings for Gmail.
+
+        Args:
+            arguments: Tool arguments (unused).
+
+        Returns:
+            Current vacation settings.
+        """
+        url = f"{GMAIL_API_BASE}/users/me/settings/vacation"
+        response = await self._make_request("GET", url)
+
+        return {
+            "enable_auto_reply": response.get("enableAutoReply", False),
+            "response_subject": response.get("responseSubject"),
+            "response_body_plain_text": response.get("responseBodyPlainText"),
+            "response_body_html": response.get("responseBodyHtml"),
+            "restrict_to_contacts": response.get("restrictToContacts", False),
+            "restrict_to_domain": response.get("restrictToDomain", False),
+            "start_time": response.get("startTime"),
+            "end_time": response.get("endTime"),
+        }
+
+    async def _set_vacation_settings(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Set vacation auto-reply settings for Gmail.
+
+        Args:
+            arguments: Tool arguments with vacation settings.
+
+        Returns:
+            Updated vacation settings.
+        """
+        url = f"{GMAIL_API_BASE}/users/me/settings/vacation"
+
+        settings_body: dict[str, Any] = {
+            "enableAutoReply": arguments["enable_auto_reply"],
+        }
+
+        if "response_subject" in arguments:
+            settings_body["responseSubject"] = arguments["response_subject"]
+        if "response_body_plain_text" in arguments:
+            settings_body["responseBodyPlainText"] = arguments["response_body_plain_text"]
+        if "response_body_html" in arguments:
+            settings_body["responseBodyHtml"] = arguments["response_body_html"]
+        if "restrict_to_contacts" in arguments:
+            settings_body["restrictToContacts"] = arguments["restrict_to_contacts"]
+        if "restrict_to_domain" in arguments:
+            settings_body["restrictToDomain"] = arguments["restrict_to_domain"]
+        if "start_time" in arguments:
+            # Convert RFC3339 to milliseconds since epoch
+            from datetime import datetime
+
+            dt = datetime.fromisoformat(arguments["start_time"].replace("Z", "+00:00"))
+            settings_body["startTime"] = str(int(dt.timestamp() * 1000))
+        if "end_time" in arguments:
+            from datetime import datetime
+
+            dt = datetime.fromisoformat(arguments["end_time"].replace("Z", "+00:00"))
+            settings_body["endTime"] = str(int(dt.timestamp() * 1000))
+
+        response = await self._make_request("PUT", url, json_data=settings_body)
+
+        return {
+            "status": "updated",
+            "enable_auto_reply": response.get("enableAutoReply", False),
+            "response_subject": response.get("responseSubject"),
+            "response_body_plain_text": response.get("responseBodyPlainText"),
+            "restrict_to_contacts": response.get("restrictToContacts", False),
+            "restrict_to_domain": response.get("restrictToDomain", False),
+        }
+
+    # =========================================================================
     # Drive Write Operations
     # =========================================================================
 
@@ -3080,8 +3741,6 @@ class GoogleWorkspaceServer:
         mime_type = arguments.get("mime_type", "text/plain")
         parent_id = arguments.get("parent_id")
 
-        access_token = await self._get_access_token()
-
         # Build metadata
         metadata: dict[str, Any] = {"name": name, "mimeType": mime_type}
         if parent_id:
@@ -3105,18 +3764,14 @@ class GoogleWorkspaceServer:
         ]
         body = "\r\n".join(body_parts)
 
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                upload_url,
-                content=body.encode("utf-8"),
-                headers={
-                    "Authorization": f"Bearer {access_token}",
-                    "Content-Type": f"multipart/related; boundary={boundary}",
-                },
-                timeout=60.0,
-            )
-            response.raise_for_status()
-            result = response.json()
+        response = await self._make_raw_request(
+            "POST",
+            upload_url,
+            content=body.encode("utf-8"),
+            headers={"Content-Type": f"multipart/related; boundary={boundary}"},
+            timeout=60.0,
+        )
+        result = response.json()
 
         return {
             "status": "uploaded",
@@ -3137,15 +3792,7 @@ class GoogleWorkspaceServer:
         file_id = arguments["file_id"]
 
         url = f"{DRIVE_API_BASE}/files/{file_id}"
-
-        access_token = await self._get_access_token()
-        async with httpx.AsyncClient() as client:
-            response = await client.delete(
-                url,
-                headers={"Authorization": f"Bearer {access_token}"},
-                timeout=30.0,
-            )
-            response.raise_for_status()
+        await self._make_delete_request(url)
 
         return {"status": "deleted", "file_id": file_id}
 
@@ -3174,22 +3821,250 @@ class GoogleWorkspaceServer:
             "fields": "id,name,parents",
         }
 
-        access_token = await self._get_access_token()
-        async with httpx.AsyncClient() as client:
-            response = await client.patch(
-                update_url,
-                params=params,
-                headers={"Authorization": f"Bearer {access_token}"},
-                timeout=30.0,
-            )
-            response.raise_for_status()
-            result = response.json()
+        response = await self._make_raw_request("PATCH", update_url, params=params)
+        result = response.json()
 
         return {
             "status": "moved",
             "id": result.get("id"),
             "name": result.get("name"),
             "new_parents": result.get("parents", []),
+        }
+
+    async def _copy_drive_file(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Create a copy of a file in Google Drive.
+
+        Args:
+            arguments: Tool arguments with file_id, name, parent_id.
+
+        Returns:
+            Copied file details.
+        """
+        file_id = arguments["file_id"]
+        name = arguments.get("name")
+        parent_id = arguments.get("parent_id")
+
+        url = f"{DRIVE_API_BASE}/files/{file_id}/copy"
+
+        copy_body: dict[str, Any] = {}
+        if name:
+            copy_body["name"] = name
+        if parent_id:
+            copy_body["parents"] = [parent_id]
+
+        params = {"fields": "id,name,mimeType,parents"}
+        response = await self._make_request(
+            "POST", url, params=params, json_data=copy_body if copy_body else None
+        )
+
+        return {
+            "status": "copied",
+            "id": response.get("id"),
+            "name": response.get("name"),
+            "mimeType": response.get("mimeType"),
+            "parents": response.get("parents", []),
+        }
+
+    async def _rename_drive_file(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Rename a file or folder in Google Drive.
+
+        Args:
+            arguments: Tool arguments with file_id and new_name.
+
+        Returns:
+            Renamed file details.
+        """
+        file_id = arguments["file_id"]
+        new_name = arguments["new_name"]
+
+        url = f"{DRIVE_API_BASE}/files/{file_id}"
+        params = {"fields": "id,name,mimeType"}
+
+        response = await self._make_request(
+            "PATCH", url, params=params, json_data={"name": new_name}
+        )
+
+        return {
+            "status": "renamed",
+            "id": response.get("id"),
+            "name": response.get("name"),
+            "mimeType": response.get("mimeType"),
+        }
+
+    # =========================================================================
+    # Drive Permissions Operations
+    # =========================================================================
+
+    async def _list_file_permissions(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """List all permissions for a Drive file or folder.
+
+        Args:
+            arguments: Tool arguments with file_id.
+
+        Returns:
+            List of permissions with details.
+        """
+        file_id = arguments["file_id"]
+
+        url = f"{DRIVE_API_BASE}/files/{file_id}/permissions"
+        params = {"fields": "*"}
+
+        response = await self._make_request("GET", url, params=params)
+
+        permissions = []
+        for perm in response.get("permissions", []):
+            perm_info = {
+                "permission_id": perm.get("id"),
+                "type": perm.get("type"),
+                "role": perm.get("role"),
+            }
+            # Add type-specific info
+            if perm.get("emailAddress"):
+                perm_info["email_address"] = perm.get("emailAddress")
+            if perm.get("displayName"):
+                perm_info["display_name"] = perm.get("displayName")
+            if perm.get("domain"):
+                perm_info["domain"] = perm.get("domain")
+            permissions.append(perm_info)
+
+        return {
+            "status": "success",
+            "file_id": file_id,
+            "permissions": permissions,
+            "count": len(permissions),
+        }
+
+    async def _share_file(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Share a Drive file or folder with a user, group, domain, or anyone.
+
+        Args:
+            arguments: Tool arguments with file_id, type, role, and type-specific fields.
+
+        Returns:
+            Created permission details.
+        """
+        file_id = arguments["file_id"]
+        perm_type = arguments["type"]
+        role = arguments["role"]
+        email_address = arguments.get("email_address")
+        domain = arguments.get("domain")
+        send_notification = arguments.get("send_notification", True)
+
+        # Validate type-specific requirements
+        if perm_type in ("user", "group") and not email_address:
+            return {
+                "status": "error",
+                "error": f"email_address is required for type '{perm_type}'",
+            }
+        if perm_type == "domain" and not domain:
+            return {
+                "status": "error",
+                "error": "domain is required for type 'domain'",
+            }
+
+        # Build permission body
+        permission: dict[str, Any] = {
+            "type": perm_type,
+            "role": role,
+        }
+        if email_address:
+            permission["emailAddress"] = email_address
+        if domain:
+            permission["domain"] = domain
+
+        url = f"{DRIVE_API_BASE}/files/{file_id}/permissions"
+        params = {"sendNotificationEmail": str(send_notification).lower()}
+
+        response = await self._make_request("POST", url, params=params, json_data=permission)
+
+        result = {
+            "status": "shared",
+            "file_id": file_id,
+            "permission_id": response.get("id"),
+            "type": response.get("type"),
+            "role": response.get("role"),
+        }
+        if response.get("emailAddress"):
+            result["email_address"] = response.get("emailAddress")
+        if response.get("domain"):
+            result["domain"] = response.get("domain")
+
+        return result
+
+    async def _update_file_permission(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Update an existing permission's role on a Drive file.
+
+        Args:
+            arguments: Tool arguments with file_id, permission_id, and role.
+
+        Returns:
+            Updated permission details.
+        """
+        file_id = arguments["file_id"]
+        permission_id = arguments["permission_id"]
+        role = arguments["role"]
+
+        url = f"{DRIVE_API_BASE}/files/{file_id}/permissions/{permission_id}"
+
+        response = await self._make_request("PATCH", url, json_data={"role": role})
+
+        return {
+            "status": "updated",
+            "file_id": file_id,
+            "permission_id": response.get("id"),
+            "role": response.get("role"),
+            "type": response.get("type"),
+        }
+
+    async def _remove_file_permission(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Remove a permission from a Drive file or folder.
+
+        Args:
+            arguments: Tool arguments with file_id and permission_id.
+
+        Returns:
+            Deletion confirmation.
+        """
+        file_id = arguments["file_id"]
+        permission_id = arguments["permission_id"]
+
+        url = f"{DRIVE_API_BASE}/files/{file_id}/permissions/{permission_id}"
+        await self._make_delete_request(url)
+
+        return {
+            "status": "removed",
+            "file_id": file_id,
+            "permission_id": permission_id,
+        }
+
+    async def _transfer_file_ownership(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Transfer ownership of a Drive file to another user.
+
+        Args:
+            arguments: Tool arguments with file_id and new_owner_email.
+
+        Returns:
+            Transfer confirmation with new permission details.
+        """
+        file_id = arguments["file_id"]
+        new_owner_email = arguments["new_owner_email"]
+
+        permission = {
+            "type": "user",
+            "role": "owner",
+            "emailAddress": new_owner_email,
+        }
+
+        url = f"{DRIVE_API_BASE}/files/{file_id}/permissions"
+        params = {"transferOwnership": "true"}
+
+        response = await self._make_request("POST", url, params=params, json_data=permission)
+
+        return {
+            "status": "ownership_transferred",
+            "file_id": file_id,
+            "new_owner": new_owner_email,
+            "permission_id": response.get("id"),
         }
 
     # =========================================================================
@@ -3700,8 +4575,6 @@ class GoogleWorkspaceServer:
             # Read the converted docx
             docx_content = output_path.read_bytes()
 
-        access_token = await self._get_access_token()
-
         if output_format == "gdoc":
             # Upload and convert to Google Docs
             metadata: dict[str, Any] = {
@@ -3733,18 +4606,14 @@ class GoogleWorkspaceServer:
                 f"--{boundary}--"
             )
 
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    upload_url,
-                    content=body.encode("utf-8"),
-                    headers={
-                        "Authorization": f"Bearer {access_token}",
-                        "Content-Type": f"multipart/related; boundary={boundary}",
-                    },
-                    timeout=120.0,
-                )
-                response.raise_for_status()
-                result = response.json()
+            response = await self._make_raw_request(
+                "POST",
+                upload_url,
+                content=body.encode("utf-8"),
+                headers={"Content-Type": f"multipart/related; boundary={boundary}"},
+                timeout=120.0,
+            )
+            result = response.json()
 
             return {
                 "status": "created",
@@ -3775,18 +4644,14 @@ class GoogleWorkspaceServer:
 
         full_body = body_start + docx_content + body_end
 
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                upload_url,
-                content=full_body,
-                headers={
-                    "Authorization": f"Bearer {access_token}",
-                    "Content-Type": f"multipart/related; boundary={boundary}",
-                },
-                timeout=120.0,
-            )
-            response.raise_for_status()
-            result = response.json()
+        response = await self._make_raw_request(
+            "POST",
+            upload_url,
+            content=full_body,
+            headers={"Content-Type": f"multipart/related; boundary={boundary}"},
+            timeout=120.0,
+        )
+        result = response.json()
 
         return {
             "status": "uploaded",
@@ -3881,8 +4746,6 @@ class GoogleWorkspaceServer:
             )
 
         # Upload image to Google Drive
-        access_token = await self._get_access_token()
-
         # Create a temp folder in Drive for Mermaid diagrams
         metadata: dict[str, Any] = {
             "name": f"mermaid-diagram-{document_id[:8]}.{image_format}",
@@ -3908,18 +4771,14 @@ class GoogleWorkspaceServer:
 
         full_body = body_start + image_content + body_end
 
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                upload_url,
-                content=full_body,
-                headers={
-                    "Authorization": f"Bearer {access_token}",
-                    "Content-Type": f"multipart/related; boundary={boundary}",
-                },
-                timeout=60.0,
-            )
-            response.raise_for_status()
-            upload_result = response.json()
+        response = await self._make_raw_request(
+            "POST",
+            upload_url,
+            content=full_body,
+            headers={"Content-Type": f"multipart/related; boundary={boundary}"},
+            timeout=60.0,
+        )
+        upload_result = response.json()
 
         file_id = upload_result.get("id")
         logger.info("Uploaded Mermaid image to Drive: %s", file_id)
@@ -3927,15 +4786,7 @@ class GoogleWorkspaceServer:
         # Make the file publicly accessible
         permission_url = f"{DRIVE_API_BASE}/files/{file_id}/permissions"
         permission_body = {"role": "reader", "type": "anyone"}
-
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                permission_url,
-                json=permission_body,
-                headers={"Authorization": f"Bearer {access_token}"},
-                timeout=30.0,
-            )
-            response.raise_for_status()
+        await self._make_request("POST", permission_url, json_data=permission_body)
 
         # Get public URL for the image
         public_url = f"https://drive.google.com/uc?export=view&id={file_id}"
@@ -4095,15 +4946,7 @@ class GoogleWorkspaceServer:
         tasklist_id = arguments["tasklist_id"]
 
         url = f"{TASKS_API_BASE}/users/@me/lists/{tasklist_id}"
-
-        access_token = await self._get_access_token()
-        async with httpx.AsyncClient() as client:
-            response = await client.delete(
-                url,
-                headers={"Authorization": f"Bearer {access_token}"},
-                timeout=30.0,
-            )
-            response.raise_for_status()
+        await self._make_delete_request(url)
 
         return {"status": "deleted", "tasklist_id": tasklist_id}
 
@@ -4335,15 +5178,7 @@ class GoogleWorkspaceServer:
         task_id = arguments["task_id"]
 
         url = f"{TASKS_API_BASE}/lists/{tasklist_id}/tasks/{task_id}"
-
-        access_token = await self._get_access_token()
-        async with httpx.AsyncClient() as client:
-            response = await client.delete(
-                url,
-                headers={"Authorization": f"Bearer {access_token}"},
-                timeout=30.0,
-            )
-            response.raise_for_status()
+        await self._make_delete_request(url)
 
         return {"status": "deleted", "task_id": task_id, "tasklist_id": tasklist_id}
 
@@ -4534,12 +5369,15 @@ class GoogleWorkspaceServer:
 
     async def run(self) -> None:
         """Run the MCP server using stdio transport."""
-        async with stdio_server() as (read_stream, write_stream):
-            await self.server.run(
-                read_stream,
-                write_stream,
-                self.server.create_initialization_options(),
-            )
+        try:
+            async with stdio_server() as (read_stream, write_stream):
+                await self.server.run(
+                    read_stream,
+                    write_stream,
+                    self.server.create_initialization_options(),
+                )
+        finally:
+            await self.close()
 
 
 def main() -> None:

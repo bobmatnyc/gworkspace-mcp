@@ -82,13 +82,14 @@ src/google_workspace_mcp/
 
 ## MCP Tools (65 Total)
 
-### Gmail (18 tools)
+### Gmail (20 tools)
 - search_gmail_messages, get_gmail_message_content
 - send_email, reply_to_email, create_draft
 - list_gmail_labels, create_gmail_label, delete_gmail_label
 - modify_gmail_message, archive/trash/untrash
 - mark_gmail_as_read/unread, star/unstar
 - Batch operations (modify, archive, trash, mark read, delete)
+- **Vacation Responder**: get_vacation_settings, set_vacation_settings
 
 ### Calendar (10 tools)
 - list_calendars, create/update/delete_calendar

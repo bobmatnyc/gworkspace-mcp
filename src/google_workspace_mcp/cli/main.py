@@ -1,7 +1,6 @@
 """Command-line interface for google-workspace-mcp."""
 
 import asyncio
-import os
 import sys
 
 import click
@@ -72,9 +71,7 @@ def setup(client_id: str | None, client_secret: str | None) -> None:
     click.echo("")
 
     try:
-        asyncio.run(
-            manager.authenticate(client_id=client_id, client_secret=client_secret)
-        )
+        asyncio.run(manager.authenticate(client_id=client_id, client_secret=client_secret))
         click.echo("✓ Authentication successful!")
         click.echo(f"Token stored at: {manager.token_path}")
         click.echo("")
@@ -180,7 +177,9 @@ def doctor() -> None:
     elif status == TokenStatus.VALID:
         click.echo("  ✓ Authenticated")
         if stored:
-            click.echo(f"  Token expires: {stored.token.expires_at.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+            click.echo(
+                f"  Token expires: {stored.token.expires_at.strftime('%Y-%m-%d %H:%M:%S UTC')}"
+            )
             click.echo(f"  Scopes: {len(stored.token.scopes)} configured")
 
     click.echo("")
