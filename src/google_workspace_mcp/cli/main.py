@@ -86,13 +86,46 @@ def setup(client_id: str | None, client_secret: str | None) -> None:
 
 @main.command()
 def mcp() -> None:
-    """Start the MCP server.
+    """Start the MCP server for Claude Desktop integration.
 
-    This command will be implemented in Phase 3.
-    It will start the stdio MCP server that Claude can connect to.
+    Starts the stdio MCP server that provides 66 tools across:
+    - Gmail (18 tools): Search, send, organize, labels
+    - Calendar (10 tools): Events, calendars, availability
+    - Drive (17 tools): Files, folders, sharing, search
+    - Docs (11 tools): Create, edit, comment management
+    - Tasks (10 tools): Task lists and task management
+
+    Authentication is required before starting the server.
+    Run 'workspace setup' if not already authenticated.
+
+    This command is typically invoked by Claude Desktop via the MCP protocol.
     """
-    click.echo("MCP server will be implemented in Phase 3")
-    click.echo("Server will provide 66 tools across Gmail, Calendar, Drive, Docs, and Tasks")
+    from google_workspace_mcp.auth import OAuthManager, TokenStatus
+    from google_workspace_mcp.server import main as server_main
+
+    # Check authentication status
+    manager = OAuthManager()
+    status, _ = manager.get_status()
+
+    if status == TokenStatus.MISSING:
+        click.echo("❌ Not authenticated. Run 'workspace setup' first.")
+        sys.exit(1)
+
+    if status == TokenStatus.INVALID:
+        click.echo("❌ Token file corrupted. Run 'workspace setup' to re-authenticate.")
+        sys.exit(1)
+
+    # Start the MCP server (runs indefinitely)
+    try:
+        click.echo("Starting Google Workspace MCP server...", err=True)
+        click.echo("Server provides 66 tools for Claude Desktop", err=True)
+        click.echo("", err=True)
+        server_main()
+    except KeyboardInterrupt:
+        click.echo("\nServer stopped.", err=True)
+    except Exception as e:
+        click.echo(f"❌ Server error: {e}", err=True)
+        sys.exit(1)
 
 
 @main.command()
