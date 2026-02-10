@@ -105,3 +105,25 @@ exclude_lines = [
     "if __name__ == .__main__.:",
     "if TYPE_CHECKING:",
 ]
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+version = "0.1.0"
+version_files = [
+    "VERSION",
+    "src/google_workspace_mcp/VERSION",
+    "src/google_workspace_mcp/__version__.py:__version__"
+]
+tag_format = "v$version"
+update_changelog_on_bump = true
+changelog_incremental = true
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/VERSION",
+    "/BUILD_NUMBER",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/google_workspace_mcp"]

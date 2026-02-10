@@ -1,0 +1,146 @@
+#!/bin/bash
+set -e  # Exit on error
+
+# Script: Automated PyPI Publishing
+# Description: Publishes google-workspace-mcp to PyPI using credentials from ~/.pypirc
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Function: Print colored message
+print_message() {
+    local color=$1
+    local message=$2
+    echo -e "${color}${message}${NC}"
+}
+
+print_message "$BLUE" "========================================"
+print_message "$BLUE" "  Google Workspace MCP - PyPI Publish"
+print_message "$BLUE" "========================================"
+echo ""
+
+# 1. Check we're in the right directory
+if [ ! -f "pyproject.toml" ]; then
+    print_message "$RED" "Error: Must run from project root directory"
+    print_message "$YELLOW" "Current directory: $(pwd)"
+    exit 1
+fi
+print_message "$GREEN" "Running from project root"
+
+# 2. Get PyPI token from environment or ~/.pypirc
+if [ -n "$UV_PUBLISH_TOKEN" ]; then
+    print_message "$GREEN" "Using UV_PUBLISH_TOKEN from environment"
+elif [ -f "$HOME/.pypirc" ]; then
+    PYPI_TOKEN=$(grep '^password' ~/.pypirc | head -1 | cut -d'=' -f2 | tr -d ' ')
+    if [ -z "$PYPI_TOKEN" ]; then
+        print_message "$RED" "Error: Could not extract token from ~/.pypirc"
+        exit 1
+    fi
+    export UV_PUBLISH_TOKEN="$PYPI_TOKEN"
+    print_message "$GREEN" "PyPI credentials loaded from ~/.pypirc"
+else
+    print_message "$RED" "Error: No PyPI credentials found"
+    print_message "$YELLOW" "Set UV_PUBLISH_TOKEN environment variable or create ~/.pypirc"
+    exit 1
+fi
+
+# 3. Get version from VERSION file
+if [ ! -f "VERSION" ]; then
+    print_message "$RED" "Error: VERSION file not found"
+    exit 1
+fi
+
+VERSION=$(cat VERSION | tr -d '[:space:]')
+print_message "$YELLOW" "Publishing version: $VERSION"
+
+# 4. Verify distribution files exist
+WHEEL_FILE="dist/google_workspace_mcp-${VERSION}-py3-none-any.whl"
+TAR_FILE="dist/google_workspace_mcp-${VERSION}.tar.gz"
+
+if [ ! -f "$WHEEL_FILE" ]; then
+    print_message "$RED" "Error: Wheel file not found: $WHEEL_FILE"
+    print_message "$YELLOW" "Please run 'make build' first"
+    exit 1
+fi
+
+if [ ! -f "$TAR_FILE" ]; then
+    print_message "$RED" "Error: Tar file not found: $TAR_FILE"
+    print_message "$YELLOW" "Please run 'make build' first"
+    exit 1
+fi
+
+print_message "$GREEN" "Found wheel: $WHEEL_FILE"
+print_message "$GREEN" "Found tarball: $TAR_FILE"
+
+# Show file sizes
+WHEEL_SIZE=$(ls -lh "$WHEEL_FILE" | awk '{print $5}')
+TAR_SIZE=$(ls -lh "$TAR_FILE" | awk '{print $5}')
+print_message "$BLUE" "  Wheel size: $WHEEL_SIZE"
+print_message "$BLUE" "  Tarball size: $TAR_SIZE"
+
+# 5. Check for uv or twine
+if command -v uv &> /dev/null; then
+    PUBLISH_CMD="uv publish"
+    print_message "$GREEN" "Using uv for publishing"
+elif command -v twine &> /dev/null; then
+    PUBLISH_CMD="twine upload"
+    print_message "$GREEN" "Using twine for publishing"
+else
+    print_message "$RED" "Error: Neither uv nor twine found"
+    print_message "$YELLOW" "Install with: pip install twine"
+    print_message "$YELLOW" "Or: curl -LsSf https://astral.sh/uv/install.sh | sh"
+    exit 1
+fi
+
+# 6. Confirmation prompt
+echo ""
+print_message "$YELLOW" "Ready to upload to PyPI:"
+print_message "$BLUE" "  Package: google-workspace-mcp"
+print_message "$BLUE" "  Version: $VERSION"
+print_message "$BLUE" "  Files: 2 (wheel + tarball)"
+echo ""
+read -p "Continue with upload? [y/N]: " -n 1 -r
+echo ""
+
+if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    print_message "$YELLOW" "Upload cancelled by user"
+    exit 0
+fi
+
+# 7. Upload to PyPI
+echo ""
+print_message "$YELLOW" "Uploading to PyPI..."
+print_message "$BLUE" "This may take a moment..."
+echo ""
+
+if $PUBLISH_CMD "$WHEEL_FILE" "$TAR_FILE"; then
+    echo ""
+    print_message "$GREEN" "========================================"
+    print_message "$GREEN" "  Successfully published to PyPI!"
+    print_message "$GREEN" "========================================"
+    echo ""
+    print_message "$GREEN" "Package available at:"
+    print_message "$BLUE" "  https://pypi.org/project/google-workspace-mcp/$VERSION/"
+    echo ""
+    print_message "$YELLOW" "Test installation with:"
+    print_message "$BLUE" "  pip install google-workspace-mcp"
+    print_message "$BLUE" "  pip install google-workspace-mcp==$VERSION"
+    echo ""
+else
+    echo ""
+    print_message "$RED" "========================================"
+    print_message "$RED" "  Upload failed"
+    print_message "$RED" "========================================"
+    echo ""
+    print_message "$YELLOW" "Common issues:"
+    print_message "$YELLOW" "  - Invalid API token"
+    print_message "$YELLOW" "  - Version already exists on PyPI"
+    print_message "$YELLOW" "  - Network connectivity issues"
+    print_message "$YELLOW" "  - Package name conflicts"
+    echo ""
+    exit 1
+fi
