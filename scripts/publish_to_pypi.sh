@@ -58,8 +58,8 @@ VERSION=$(cat VERSION | tr -d '[:space:]')
 print_message "$YELLOW" "Publishing version: $VERSION"
 
 # 4. Verify distribution files exist
-WHEEL_FILE="dist/google_workspace_mcp-${VERSION}-py3-none-any.whl"
-TAR_FILE="dist/google_workspace_mcp-${VERSION}.tar.gz"
+WHEEL_FILE="dist/gworkspace_mcp-${VERSION}-py3-none-any.whl"
+TAR_FILE="dist/gworkspace_mcp-${VERSION}.tar.gz"
 
 if [ ! -f "$WHEEL_FILE" ]; then
     print_message "$RED" "Error: Wheel file not found: $WHEEL_FILE"
