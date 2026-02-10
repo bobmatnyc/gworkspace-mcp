@@ -14,7 +14,7 @@ import logging
 import subprocess  # nosec B404
 import tempfile
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
@@ -1562,8 +1562,8 @@ class GoogleWorkspaceServer:
         self,
         method: str,
         url: str,
-        params: Optional[dict[str, Any]] = None,
-        json_data: Optional[dict[str, Any]] = None,
+        params: dict[str, Any] | None = None,
+        json_data: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Make an authenticated HTTP request to Google APIs.
 
@@ -1597,9 +1597,7 @@ class GoogleWorkspaceServer:
             result: dict[str, Any] = response.json()
             return result
 
-    async def _dispatch_tool(
-        self, name: str, arguments: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def _dispatch_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         """Dispatch tool call to appropriate handler.
 
         Args:
@@ -1889,13 +1887,10 @@ class GoogleWorkspaceServer:
         for msg in response.get("messages", []):
             # Get message metadata
             msg_url = f"{GMAIL_API_BASE}/users/me/messages/{msg['id']}"
-            msg_detail = await self._make_request(
-                "GET", msg_url, params={"format": "metadata"}
-            )
+            msg_detail = await self._make_request("GET", msg_url, params={"format": "metadata"})
 
             headers = {
-                h["name"]: h["value"]
-                for h in msg_detail.get("payload", {}).get("headers", [])
+                h["name"]: h["value"] for h in msg_detail.get("payload", {}).get("headers", [])
             }
 
             messages.append(
@@ -1912,9 +1907,7 @@ class GoogleWorkspaceServer:
 
         return {"messages": messages, "count": len(messages)}
 
-    async def _get_gmail_message_content(
-        self, arguments: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def _get_gmail_message_content(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Get full content of a Gmail message.
 
         Args:
@@ -1928,10 +1921,7 @@ class GoogleWorkspaceServer:
         url = f"{GMAIL_API_BASE}/users/me/messages/{message_id}"
         response = await self._make_request("GET", url, params={"format": "full"})
 
-        headers = {
-            h["name"]: h["value"]
-            for h in response.get("payload", {}).get("headers", [])
-        }
+        headers = {h["name"]: h["value"] for h in response.get("payload", {}).get("headers", [])}
 
         # Extract body content
         body = self._extract_message_body(response.get("payload", {}))
@@ -1973,9 +1963,7 @@ class GoogleWorkspaceServer:
             if mime_type == "text/plain":
                 data = part.get("body", {}).get("data", "")
                 if data:
-                    return base64.urlsafe_b64decode(data).decode(
-                        "utf-8", errors="replace"
-                    )
+                    return base64.urlsafe_b64decode(data).decode("utf-8", errors="replace")
             elif mime_type.startswith("multipart/"):
                 # Recursively extract from nested parts
                 result = self._extract_message_body(part)
@@ -1987,9 +1975,7 @@ class GoogleWorkspaceServer:
             if part.get("mimeType") == "text/html":
                 data = part.get("body", {}).get("data", "")
                 if data:
-                    return base64.urlsafe_b64decode(data).decode(
-                        "utf-8", errors="replace"
-                    )
+                    return base64.urlsafe_b64decode(data).decode("utf-8", errors="replace")
 
         return ""
 
@@ -2057,9 +2043,7 @@ class GoogleWorkspaceServer:
 
         return {"files": files, "count": len(files)}
 
-    async def _get_drive_file_content(
-        self, arguments: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def _get_drive_file_content(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Get content of a Google Drive file.
 
         Args:
@@ -2124,9 +2108,7 @@ class GoogleWorkspaceServer:
             "content": content,
         }
 
-    async def _list_document_comments(
-        self, arguments: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def _list_document_comments(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """List comments on a Google Drive file (Docs, Sheets, Slides).
 
         Args:
@@ -2230,9 +2212,7 @@ class GoogleWorkspaceServer:
         if anchor:
             # Parse anchor if provided as JSON string
             try:
-                body["anchor"] = (
-                    json.loads(anchor) if isinstance(anchor, str) else anchor
-                )
+                body["anchor"] = json.loads(anchor) if isinstance(anchor, str) else anchor
             except json.JSONDecodeError:
                 # If not valid JSON, treat as raw anchor string
                 body["anchor"] = anchor
@@ -2375,9 +2355,7 @@ class GoogleWorkspaceServer:
             if existing.get("end", {}).get("timeZone"):
                 update_body["end"]["timeZone"] = existing["end"]["timeZone"]
         if "attendees" in arguments:
-            update_body["attendees"] = [
-                {"email": email} for email in arguments["attendees"]
-            ]
+            update_body["attendees"] = [{"email": email} for email in arguments["attendees"]]
         if "location" in arguments:
             update_body["location"] = arguments["location"]
 
@@ -2426,11 +2404,11 @@ class GoogleWorkspaceServer:
         to: str,
         subject: str,
         body: str,
-        cc: Optional[str] = None,
-        bcc: Optional[str] = None,
-        thread_id: Optional[str] = None,
-        in_reply_to: Optional[str] = None,
-        references: Optional[str] = None,
+        cc: str | None = None,
+        bcc: str | None = None,
+        thread_id: str | None = None,
+        in_reply_to: str | None = None,
+        references: str | None = None,
     ) -> str:
         """Build RFC 2822 email message and return base64url encoded.
 
@@ -2535,15 +2513,10 @@ class GoogleWorkspaceServer:
 
         # Get original message to extract thread info and headers
         orig_url = f"{GMAIL_API_BASE}/users/me/messages/{message_id}"
-        original = await self._make_request(
-            "GET", orig_url, params={"format": "metadata"}
-        )
+        original = await self._make_request("GET", orig_url, params={"format": "metadata"})
 
         thread_id = original.get("threadId")
-        headers = {
-            h["name"]: h["value"]
-            for h in original.get("payload", {}).get("headers", [])
-        }
+        headers = {h["name"]: h["value"] for h in original.get("payload", {}).get("headers", [])}
 
         # Get reply-to address or sender
         reply_to = headers.get("Reply-To") or headers.get("From", "")
@@ -2606,10 +2579,10 @@ class GoogleWorkspaceServer:
 
         # Sort labels: system labels first, then user labels alphabetically
         system_labels = sorted(
-            [l for l in labels if l["type"] == "system"], key=lambda x: x["name"]
+            [lbl for lbl in labels if lbl["type"] == "system"], key=lambda x: x["name"]
         )
         user_labels = sorted(
-            [l for l in labels if l["type"] == "user"], key=lambda x: x["name"]
+            [lbl for lbl in labels if lbl["type"] == "user"], key=lambda x: x["name"]
         )
 
         return {
@@ -2884,9 +2857,7 @@ class GoogleWorkspaceServer:
     # Gmail Batch Operations
     # =========================================================================
 
-    async def _batch_modify_gmail_messages(
-        self, arguments: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def _batch_modify_gmail_messages(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Add or remove labels from multiple Gmail messages using batch API.
 
         Args:
@@ -2925,9 +2896,7 @@ class GoogleWorkspaceServer:
             "remove_label_ids": remove_label_ids,
         }
 
-    async def _batch_archive_gmail_messages(
-        self, arguments: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def _batch_archive_gmail_messages(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Archive multiple Gmail messages at once.
 
         Args:
@@ -2957,9 +2926,7 @@ class GoogleWorkspaceServer:
             "archived_count": result.get("modified_count", 0),
         }
 
-    async def _batch_trash_gmail_messages(
-        self, arguments: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def _batch_trash_gmail_messages(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Move multiple Gmail messages to trash at once.
 
         Note: Gmail doesn't have a batch trash endpoint, so we process
@@ -3003,9 +2970,7 @@ class GoogleWorkspaceServer:
             "failed_count": failed_count,
         }
 
-    async def _batch_mark_gmail_as_read(
-        self, arguments: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def _batch_mark_gmail_as_read(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Mark multiple Gmail messages as read at once.
 
         Args:
@@ -3035,9 +3000,7 @@ class GoogleWorkspaceServer:
             "marked_count": result.get("modified_count", 0),
         }
 
-    async def _batch_delete_gmail_messages(
-        self, arguments: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def _batch_delete_gmail_messages(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Permanently delete multiple Gmail messages at once.
 
         WARNING: This action cannot be undone. Messages are permanently deleted,
@@ -3125,9 +3088,7 @@ class GoogleWorkspaceServer:
             metadata["parents"] = [parent_id]
 
         # Use multipart upload
-        upload_url = (
-            "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart"
-        )
+        upload_url = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart"
 
         # Build multipart body
         boundary = "foo_bar_baz"
@@ -3463,9 +3424,7 @@ class GoogleWorkspaceServer:
                 "error": f"Tab '{tab_id}' not found in document",
                 "document_id": document_id,
                 "available_tabs": [
-                    t.get("tabProperties", {}).get("tabId")
-                    for t in tabs
-                    if "tabProperties" in t
+                    t.get("tabProperties", {}).get("tabId") for t in tabs if "tabProperties" in t
                 ],
             }
 
@@ -3521,9 +3480,7 @@ class GoogleWorkspaceServer:
         if icon_emoji:
             create_tab_request["createTab"]["tabProperties"]["iconEmoji"] = icon_emoji
         if parent_tab_id:
-            create_tab_request["createTab"]["tabProperties"]["parentTabId"] = (
-                parent_tab_id
-            )
+            create_tab_request["createTab"]["tabProperties"]["parentTabId"] = parent_tab_id
         if index is not None:
             create_tab_request["createTab"]["tabProperties"]["index"] = index
 
@@ -3586,9 +3543,7 @@ class GoogleWorkspaceServer:
             update_request["updateTabProperties"]["fields"].append("title")
 
         if icon_emoji:
-            update_request["updateTabProperties"]["tabProperties"]["iconEmoji"] = (
-                icon_emoji
-            )
+            update_request["updateTabProperties"]["tabProperties"]["iconEmoji"] = icon_emoji
             update_request["updateTabProperties"]["fields"].append("iconEmoji")
 
         # Convert fields list to comma-separated string
@@ -3606,9 +3561,7 @@ class GoogleWorkspaceServer:
             "status": "updated",
             "document_id": document_id,
             "tab_id": tab_id,
-            "updated_fields": update_request["updateTabProperties"]["fields"].split(
-                ","
-            ),
+            "updated_fields": update_request["updateTabProperties"]["fields"].split(","),
         }
 
     async def _move_tab(self, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -3647,13 +3600,11 @@ class GoogleWorkspaceServer:
             if new_parent_tab_id == "":
                 # To move to root, we need to remove the parentTabId
                 # This requires a different approach - we'll set it to null
-                update_request["updateTabProperties"]["tabProperties"][
-                    "parentTabId"
-                ] = None
+                update_request["updateTabProperties"]["tabProperties"]["parentTabId"] = None
             else:
-                update_request["updateTabProperties"]["tabProperties"][
-                    "parentTabId"
-                ] = new_parent_tab_id
+                update_request["updateTabProperties"]["tabProperties"]["parentTabId"] = (
+                    new_parent_tab_id
+                )
             update_request["updateTabProperties"]["fields"].append("parentTabId")
 
         if new_index is not None:
@@ -3675,17 +3626,13 @@ class GoogleWorkspaceServer:
             "status": "moved",
             "document_id": document_id,
             "tab_id": tab_id,
-            "updated_fields": update_request["updateTabProperties"]["fields"].split(
-                ","
-            ),
+            "updated_fields": update_request["updateTabProperties"]["fields"].split(","),
         }
 
     # Markdown Conversion Operations
     # =========================================================================
 
-    async def _upload_markdown_as_doc(
-        self, arguments: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def _upload_markdown_as_doc(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Convert Markdown to Google Docs or DOCX and upload to Drive.
 
         Uses pandoc for conversion. Supports two output formats:
@@ -3766,8 +3713,7 @@ class GoogleWorkspaceServer:
 
             # Use multipart upload with conversion
             upload_url = (
-                "https://www.googleapis.com/upload/drive/v3/files"
-                "?uploadType=multipart&convert=true"
+                "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&convert=true"
             )
 
             boundary = "foo_bar_baz_docx"
@@ -3813,9 +3759,7 @@ class GoogleWorkspaceServer:
         if parent_id:
             metadata["parents"] = [parent_id]
 
-        upload_url = (
-            "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart"
-        )
+        upload_url = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart"
 
         boundary = "foo_bar_baz_docx"
 
@@ -3886,8 +3830,7 @@ class GoogleWorkspaceServer:
             )
         except FileNotFoundError as err:
             raise RuntimeError(
-                "npx is not installed. Install Node.js and npm from:\n"
-                "  https://nodejs.org/"
+                "npx is not installed. Install Node.js and npm from:\n  https://nodejs.org/"
             ) from err
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -3922,15 +3865,12 @@ class GoogleWorkspaceServer:
                 ) from e
             except subprocess.TimeoutExpired as e:
                 raise RuntimeError(
-                    "Mermaid rendering timed out (>30s). "
-                    "Simplify the diagram or try again."
+                    "Mermaid rendering timed out (>30s). Simplify the diagram or try again."
                 ) from e
 
             # Verify output file was created
             if not output_path.exists():
-                raise RuntimeError(
-                    f"Mermaid-cli failed to create output file: {output_path}"
-                )
+                raise RuntimeError(f"Mermaid-cli failed to create output file: {output_path}")
 
             # Read the rendered image
             image_content = output_path.read_bytes()
@@ -3952,9 +3892,7 @@ class GoogleWorkspaceServer:
         }
 
         # Use multipart upload for the image
-        upload_url = (
-            "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart"
-        )
+        upload_url = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart"
 
         boundary = "mermaid_diagram_boundary"
 
@@ -4378,9 +4316,7 @@ class GoogleWorkspaceServer:
 
         url = f"{TASKS_API_BASE}/lists/{tasklist_id}/tasks/{task_id}"
 
-        response = await self._make_request(
-            "PATCH", url, json_data={"status": "completed"}
-        )
+        response = await self._make_request("PATCH", url, json_data={"status": "completed"})
 
         result = self._format_task(response)
         result["update_status"] = "completed"
@@ -4433,9 +4369,7 @@ class GoogleWorkspaceServer:
         if previous:
             params["previous"] = previous
 
-        response = await self._make_request(
-            "POST", url, params=params if params else None
-        )
+        response = await self._make_request("POST", url, params=params if params else None)
 
         result = self._format_task(response)
         result["move_status"] = "moved"
