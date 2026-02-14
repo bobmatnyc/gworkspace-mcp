@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-02-14
+
+### Changed
+- **BREAKING**: Renamed internal module from `google_workspace_mcp` to `gworkspace_mcp`
+  - Import paths changed from `from google_workspace_mcp import ...` to `from gworkspace_mcp import ...`
+
+### Added
+- Support for `.env.local` file for OAuth credentials configuration
+
 ## [0.1.3] - 2026-02-13
 
 ### Added
@@ -90,7 +99,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - No external dependencies on claude-mpm
 - RcloneManager optional (4 tools degrade gracefully if rclone not installed)
 
-[Unreleased]: https://github.com/masapasa/gworkspace-mcp/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/masapasa/gworkspace-mcp/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/masapasa/gworkspace-mcp/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/masapasa/gworkspace-mcp/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/masapasa/gworkspace-mcp/compare/v0.1.0...v0.1.2
 [0.1.0]: https://github.com/masapasa/gworkspace-mcp/releases/tag/v0.1.0
