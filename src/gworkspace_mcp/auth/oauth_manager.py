@@ -162,7 +162,7 @@ class OAuthManager:
                 "client_secret": client_secret,
                 "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                 "token_uri": "https://oauth2.googleapis.com/token",
-                "redirect_uris": ["http://localhost:8080/"],
+                "redirect_uris": ["http://localhost/"],
             }
         }
 
@@ -192,12 +192,10 @@ class OAuthManager:
         Returns:
             Google OAuth2 credentials.
         """
-        flow = InstalledAppFlow.from_client_config(
-            client_config, scopes=scopes, redirect_uri="http://localhost:8080/"
-        )
+        flow = InstalledAppFlow.from_client_config(client_config, scopes=scopes)
 
-        # Run local server
-        credentials = flow.run_local_server(port=8080, open_browser=True)
+        # Run local server (port=0 picks random available port)
+        credentials = flow.run_local_server(port=0, open_browser=True)
 
         return credentials
 
