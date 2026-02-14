@@ -10,8 +10,8 @@ from unittest.mock import patch
 
 import pytest
 
-from google_workspace_mcp.auth.models import OAuthToken, TokenMetadata, TokenStatus
-from google_workspace_mcp.auth.token_storage import TokenStorage
+from gworkspace_mcp.auth.models import OAuthToken, TokenMetadata, TokenStatus
+from gworkspace_mcp.auth.token_storage import TokenStorage
 
 
 @pytest.mark.unit

@@ -14,7 +14,7 @@ from typing import Any
 
 import yaml
 
-from google_workspace_mcp.migrations.models import MigrationOperation, OperationType
+from gworkspace_mcp.migrations.models import MigrationOperation, OperationType
 
 logger = logging.getLogger(__name__)
 

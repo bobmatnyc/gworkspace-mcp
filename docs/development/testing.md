@@ -30,10 +30,10 @@ pytest
 pytest -v
 
 # Run with coverage report
-pytest --cov=src/google_workspace_mcp
+pytest --cov=src/gworkspace_mcp
 
 # Run with coverage and HTML report
-pytest --cov=src/google_workspace_mcp --cov-report=html
+pytest --cov=src/gworkspace_mcp --cov-report=html
 ```
 
 ### Running Specific Tests
@@ -79,7 +79,7 @@ pytest -m "not slow"
 
 ```python
 import pytest
-from google_workspace_mcp.auth import TokenStorage
+from gworkspace_mcp.auth import TokenStorage
 
 
 class TestTokenStorage:
@@ -131,7 +131,7 @@ def sample_token():
 @pytest.fixture
 def mock_storage(tmp_path):
     """Provide a TokenStorage instance with temp directory."""
-    from google_workspace_mcp.auth import TokenStorage
+    from gworkspace_mcp.auth import TokenStorage
     return TokenStorage(storage_dir=tmp_path)
 ```
 
@@ -156,7 +156,7 @@ import pytest
 @pytest.mark.asyncio
 async def test_async_operation():
     """Test an async function."""
-    from google_workspace_mcp.server import GoogleWorkspaceServer
+    from gworkspace_mcp.server import GoogleWorkspaceServer
 
     server = GoogleWorkspaceServer()
     # Test async methods
@@ -187,7 +187,7 @@ def test_api_call_with_mock():
 @pytest.fixture
 def mock_google_api():
     """Mock Google API responses."""
-    with patch("google_workspace_mcp.server.httpx.AsyncClient") as mock:
+    with patch("gworkspace_mcp.server.httpx.AsyncClient") as mock:
         yield mock
 ```
 
@@ -197,7 +197,7 @@ def mock_google_api():
 @pytest.fixture
 def mock_oauth_manager():
     """Provide a mocked OAuthManager."""
-    with patch("google_workspace_mcp.auth.OAuthManager") as mock:
+    with patch("gworkspace_mcp.auth.OAuthManager") as mock:
         mock_instance = MagicMock()
         mock_instance.get_credentials.return_value = MagicMock(
             token="fake_token",
@@ -261,7 +261,7 @@ Unit tests verify individual components in isolation:
 ```python
 # tests/unit/test_token_models.py
 
-from google_workspace_mcp.auth.models import OAuthToken, TokenStatus
+from gworkspace_mcp.auth.models import OAuthToken, TokenStatus
 
 
 class TestOAuthToken:
@@ -299,7 +299,7 @@ import pytest
 @pytest.mark.asyncio
 async def test_server_lists_tools():
     """Test that server returns expected tools."""
-    from google_workspace_mcp.server import GoogleWorkspaceServer
+    from gworkspace_mcp.server import GoogleWorkspaceServer
 
     server = GoogleWorkspaceServer()
     tools = await server.server.list_tools()
@@ -316,10 +316,10 @@ async def test_server_lists_tools():
 
 ```bash
 # Terminal coverage report
-pytest --cov=src/google_workspace_mcp --cov-report=term-missing
+pytest --cov=src/gworkspace_mcp --cov-report=term-missing
 
 # HTML coverage report
-pytest --cov=src/google_workspace_mcp --cov-report=html
+pytest --cov=src/gworkspace_mcp --cov-report=html
 open htmlcov/index.html
 ```
 
@@ -359,7 +359,7 @@ pip install pytest-asyncio
 **Coverage not detecting files**:
 ```bash
 # Use source path explicitly
-pytest --cov=src/google_workspace_mcp --cov-report=term-missing
+pytest --cov=src/gworkspace_mcp --cov-report=term-missing
 ```
 
 ### Debugging Tests

@@ -69,7 +69,7 @@ Alternative using Python module:
   "mcpServers": {
     "google-workspace": {
       "command": "python",
-      "args": ["-m", "google_workspace_mcp.cli.main", "mcp"],
+      "args": ["-m", "gworkspace_mcp.cli.main", "mcp"],
       "env": {
         "GOOGLE_OAUTH_CLIENT_ID": "your-client-id.apps.googleusercontent.com",
         "GOOGLE_OAUTH_CLIENT_SECRET": "your-client-secret"  // pragma: allowlist secret

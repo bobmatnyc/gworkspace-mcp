@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 
-from google_workspace_mcp.migrations.models import (
+from gworkspace_mcp.migrations.models import (
     AppliedMigration,
     Migration,
     MigrationOperation,

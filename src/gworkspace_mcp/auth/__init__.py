@@ -5,14 +5,14 @@ Google Workspace services (Gmail, Calendar, Drive, Docs, Tasks).
 
 Quick Start:
     ```python
-    from google_workspace_mcp.auth import OAuthManager
+    from gworkspace_mcp.auth import OAuthManager
 
     manager = OAuthManager()
 
     # Authenticate
     token = await manager.authenticate(
         client_id="your-client-id",
-        client_secret="your-client-secret"
+        client_secret="your-client-secret"  # pragma: allowlist secret
     )
 
     # Get credentials for API use
@@ -20,14 +20,14 @@ Quick Start:
     ```
 """
 
-from google_workspace_mcp.auth.models import (
+from gworkspace_mcp.auth.models import (
     OAuthToken,
     StoredToken,
     TokenMetadata,
     TokenStatus,
 )
-from google_workspace_mcp.auth.oauth_manager import GOOGLE_WORKSPACE_SCOPES, OAuthManager
-from google_workspace_mcp.auth.token_storage import TokenStorage
+from gworkspace_mcp.auth.oauth_manager import GOOGLE_WORKSPACE_SCOPES, OAuthManager
+from gworkspace_mcp.auth.token_storage import TokenStorage
 
 __all__ = [
     "OAuthManager",

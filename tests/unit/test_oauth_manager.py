@@ -9,12 +9,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from google_workspace_mcp.auth.models import OAuthToken, TokenMetadata, TokenStatus
-from google_workspace_mcp.auth.oauth_manager import (
+from gworkspace_mcp.auth.models import OAuthToken, TokenMetadata, TokenStatus
+from gworkspace_mcp.auth.oauth_manager import (
     GOOGLE_WORKSPACE_SCOPES,
     OAuthManager,
 )
-from google_workspace_mcp.auth.token_storage import TokenStorage
+from gworkspace_mcp.auth.token_storage import TokenStorage
 
 
 @pytest.mark.unit
@@ -414,7 +414,7 @@ class TestOAuthManagerRunOAuthFlow:
         mock_flow.run_local_server.return_value = MagicMock()
 
         with patch(
-            "google_workspace_mcp.auth.oauth_manager.InstalledAppFlow.from_client_config",
+            "gworkspace_mcp.auth.oauth_manager.InstalledAppFlow.from_client_config",
             return_value=mock_flow,
         ) as mock_from_config:
             oauth_manager._run_oauth_flow(client_config, scopes)
@@ -440,7 +440,7 @@ class TestOAuthManagerRunOAuthFlow:
         mock_flow.run_local_server.return_value = mock_credentials
 
         with patch(
-            "google_workspace_mcp.auth.oauth_manager.InstalledAppFlow.from_client_config",
+            "gworkspace_mcp.auth.oauth_manager.InstalledAppFlow.from_client_config",
             return_value=mock_flow,
         ):
             result = oauth_manager._run_oauth_flow(client_config, [])

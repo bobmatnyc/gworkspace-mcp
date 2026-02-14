@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from google_workspace_mcp.auth.models import OAuthToken, StoredToken, TokenMetadata, TokenStatus
+from gworkspace_mcp.auth.models import OAuthToken, StoredToken, TokenMetadata, TokenStatus
 
 
 @pytest.mark.unit

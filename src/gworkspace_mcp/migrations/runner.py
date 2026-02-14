@@ -14,13 +14,13 @@ from typing import Any
 
 import yaml
 
-from google_workspace_mcp.migrations.models import (
+from gworkspace_mcp.migrations.models import (
     AppliedMigration,
     Migration,
     MigrationOperation,
     MigrationState,
 )
-from google_workspace_mcp.migrations.operations import OperationResult, execute_operation
+from gworkspace_mcp.migrations.operations import OperationResult, execute_operation
 
 logger = logging.getLogger(__name__)
 

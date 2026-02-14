@@ -12,8 +12,8 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 
-from google_workspace_mcp.auth.models import OAuthToken, StoredToken, TokenMetadata
-from google_workspace_mcp.auth.token_storage import TokenStorage
+from gworkspace_mcp.auth.models import OAuthToken, StoredToken, TokenMetadata
+from gworkspace_mcp.auth.token_storage import TokenStorage
 
 # Google Workspace OAuth scopes
 GOOGLE_WORKSPACE_SCOPES = [
@@ -63,7 +63,7 @@ class OAuthManager:
         Returns:
             True if valid tokens exist, False otherwise.
         """
-        from google_workspace_mcp.auth.models import TokenStatus
+        from gworkspace_mcp.auth.models import TokenStatus
 
         status = self.storage.get_status(self._service_name)
         return status == TokenStatus.VALID
@@ -242,7 +242,7 @@ class OAuthManager:
         Returns:
             Tuple of (TokenStatus, StoredToken or None).
         """
-        from google_workspace_mcp.auth.models import TokenStatus
+        from gworkspace_mcp.auth.models import TokenStatus
 
         status = self.storage.get_status(self._service_name)
         stored = (

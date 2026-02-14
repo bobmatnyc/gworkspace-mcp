@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from google_workspace_mcp.auth.models import OAuthToken, StoredToken, TokenMetadata
+from gworkspace_mcp.auth.models import OAuthToken, StoredToken, TokenMetadata
 
 # =============================================================================
 # Token Fixtures
@@ -91,7 +91,7 @@ def temp_token_path(temp_token_dir: Path) -> Path:
 @pytest.fixture
 def token_storage(temp_token_path: Path):
     """Create a TokenStorage instance with temporary storage."""
-    from google_workspace_mcp.auth.token_storage import TokenStorage
+    from gworkspace_mcp.auth.token_storage import TokenStorage
 
     return TokenStorage(token_path=temp_token_path)
 
@@ -104,7 +104,7 @@ def token_storage(temp_token_path: Path):
 @pytest.fixture
 def oauth_manager(token_storage):
     """Create an OAuthManager with temporary storage."""
-    from google_workspace_mcp.auth.oauth_manager import OAuthManager
+    from gworkspace_mcp.auth.oauth_manager import OAuthManager
 
     return OAuthManager(storage=token_storage)
 

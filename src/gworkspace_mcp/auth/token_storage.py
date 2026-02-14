@@ -10,7 +10,7 @@ import json
 import logging
 from pathlib import Path
 
-from google_workspace_mcp.auth.models import (
+from gworkspace_mcp.auth.models import (
     OAuthToken,
     StoredToken,
     TokenMetadata,
@@ -77,7 +77,7 @@ class TokenStorage:
         before any token operations are attempted.
         """
         try:
-            from google_workspace_mcp.migrations import MigrationRunner
+            from gworkspace_mcp.migrations import MigrationRunner
 
             runner = MigrationRunner()
             pending = runner.get_pending_migrations()

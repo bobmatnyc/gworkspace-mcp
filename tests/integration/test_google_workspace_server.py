@@ -16,13 +16,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from google_workspace_mcp.server.google_workspace_server import GoogleWorkspaceServer
+from gworkspace_mcp.server.google_workspace_server import GoogleWorkspaceServer
 
 
 @pytest.fixture
 def mock_token_storage():
     """Create a mock token storage that returns valid tokens."""
-    from google_workspace_mcp.auth.models import TokenStatus
+    from gworkspace_mcp.auth.models import TokenStatus
 
     mock_storage = MagicMock()
     mock_storage.get_status.return_value = TokenStatus.VALID
@@ -38,10 +38,10 @@ def mock_token_storage():
 def server(mock_token_storage):
     """Create a GoogleWorkspaceServer instance with mocked token storage."""
     with patch(
-        "google_workspace_mcp.server.google_workspace_server.TokenStorage",
+        "gworkspace_mcp.server.google_workspace_server.TokenStorage",
         return_value=mock_token_storage,
     ):
-        with patch("google_workspace_mcp.server.google_workspace_server.OAuthManager"):
+        with patch("gworkspace_mcp.server.google_workspace_server.OAuthManager"):
             server = GoogleWorkspaceServer()
             server.storage = mock_token_storage
             return server
@@ -725,15 +725,15 @@ class TestErrorHandling:
     @pytest.mark.asyncio
     async def test_missing_token_raises_error(self, mock_token_storage):
         """Test that missing token raises RuntimeError."""
-        from google_workspace_mcp.auth.models import TokenStatus
+        from gworkspace_mcp.auth.models import TokenStatus
 
         mock_token_storage.get_status.return_value = TokenStatus.MISSING
 
         with patch(
-            "google_workspace_mcp.server.google_workspace_server.TokenStorage",
+            "gworkspace_mcp.server.google_workspace_server.TokenStorage",
             return_value=mock_token_storage,
         ):
-            with patch("google_workspace_mcp.server.google_workspace_server.OAuthManager"):
+            with patch("gworkspace_mcp.server.google_workspace_server.OAuthManager"):
                 server = GoogleWorkspaceServer()
                 server.storage = mock_token_storage
 
@@ -746,7 +746,7 @@ class TestErrorHandling:
     @pytest.mark.asyncio
     async def test_expired_token_triggers_refresh(self, mock_token_storage):
         """Test that expired token triggers refresh mechanism."""
-        from google_workspace_mcp.auth.models import TokenStatus
+        from gworkspace_mcp.auth.models import TokenStatus
 
         # First call returns EXPIRED, triggering refresh
         mock_token_storage.get_status.return_value = TokenStatus.EXPIRED
@@ -757,11 +757,11 @@ class TestErrorHandling:
         mock_oauth_manager.refresh_if_needed = AsyncMock(return_value=refreshed_token)
 
         with patch(
-            "google_workspace_mcp.server.google_workspace_server.TokenStorage",
+            "gworkspace_mcp.server.google_workspace_server.TokenStorage",
             return_value=mock_token_storage,
         ):
             with patch(
-                "google_workspace_mcp.server.google_workspace_server.OAuthManager",
+                "gworkspace_mcp.server.google_workspace_server.OAuthManager",
                 return_value=mock_oauth_manager,
             ):
                 server = GoogleWorkspaceServer()

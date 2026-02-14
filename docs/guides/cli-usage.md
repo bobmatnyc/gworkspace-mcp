@@ -322,7 +322,7 @@ If `workspace` isn't recognized:
 
 2. Find the executable:
    ```bash
-   python -c "import google_workspace_mcp; print(google_workspace_mcp.__file__)"
+   python -c "import gworkspace_mcp; print(gworkspace_mcp.__file__)"
    ```
 
 3. Add to PATH or use full path:
@@ -360,7 +360,7 @@ If you have multiple Python versions:
 
 ```bash
 # Use specific Python version
-python3.10 -m google_workspace_mcp.cli.main doctor
+python3.10 -m gworkspace_mcp.cli.main doctor
 
 # Or use pipx
 pipx run gworkspace-mcp doctor

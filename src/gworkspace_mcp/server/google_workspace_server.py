@@ -21,7 +21,7 @@ import httpx
 # Optional rclone support for Drive operations
 try:
     if TYPE_CHECKING:
-        from google_workspace_mcp.rclone_manager import RcloneManager
+        from gworkspace_mcp.rclone_manager import RcloneManager
     HAS_RCLONE = True
 except ImportError:
     HAS_RCLONE = False
@@ -30,7 +30,7 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
-from google_workspace_mcp.auth import OAuthManager, TokenStatus, TokenStorage
+from gworkspace_mcp.auth import OAuthManager, TokenStatus, TokenStorage
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -5226,7 +5226,7 @@ class GoogleWorkspaceServer:
         """
         # Import here to avoid circular imports and make rclone optional
         try:
-            from google_workspace_mcp.rclone_manager import RcloneManager, RcloneNotInstalledError
+            from gworkspace_mcp.rclone_manager import RcloneManager, RcloneNotInstalledError
         except ImportError as e:
             raise RuntimeError(
                 "rclone features are not available. RcloneManager module not found. "

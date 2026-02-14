@@ -2,10 +2,28 @@
 
 import asyncio
 import sys
+from pathlib import Path
 
 import click
+from dotenv import load_dotenv
 
-from google_workspace_mcp.__version__ import __version__
+from gworkspace_mcp.__version__ import __version__
+
+# Load environment files in priority order
+# .env.local takes precedence (loaded first, won't be overwritten)
+# .env is fallback (loaded second)
+_env_local = Path(".env.local")
+_env_file = Path(".env")
+
+if _env_local.exists():
+    load_dotenv(_env_local)
+if _env_file.exists():
+    load_dotenv(_env_file)
+
+# Also check user config directory
+_user_env = Path.home() / ".gworkspace-mcp" / ".env"
+if _user_env.exists():
+    load_dotenv(_user_env, override=False)  # Don't override project-level
 
 
 @click.group()
@@ -40,7 +58,7 @@ def setup(client_id: str | None, client_secret: str | None) -> None:
     - GOOGLE_OAUTH_CLIENT_ID environment variable or --client-id option
     - GOOGLE_OAUTH_CLIENT_SECRET environment variable or --client-secret option
     """
-    from google_workspace_mcp.auth import OAuthManager
+    from gworkspace_mcp.auth import OAuthManager
 
     manager = OAuthManager()
 
@@ -59,7 +77,9 @@ def setup(client_id: str | None, client_secret: str | None) -> None:
         click.echo("")
         click.echo("Set environment variables:")
         click.echo("  export GOOGLE_OAUTH_CLIENT_ID='your-client-id'")
-        click.echo("  export GOOGLE_OAUTH_CLIENT_SECRET='your-client-secret'")
+        click.echo(
+            "  export GOOGLE_OAUTH_CLIENT_SECRET='your-client-secret'"
+        )  # pragma: allowlist secret  # noqa: E501
         click.echo("")
         click.echo("Or pass as options:")
         click.echo("  workspace setup --client-id=... --client-secret=...")
@@ -97,8 +117,8 @@ def mcp() -> None:
 
     This command is typically invoked by Claude Desktop via the MCP protocol.
     """
-    from google_workspace_mcp.auth import OAuthManager, TokenStatus
-    from google_workspace_mcp.server import main as server_main
+    from gworkspace_mcp.auth import OAuthManager, TokenStatus
+    from gworkspace_mcp.server import main as server_main
 
     # Check authentication status
     manager = OAuthManager()
@@ -135,7 +155,7 @@ def migrate(dry_run: bool) -> None:
 
     Use --dry-run to preview what changes would be made without applying them.
     """
-    from google_workspace_mcp.migrations import MigrationRunner
+    from gworkspace_mcp.migrations import MigrationRunner
 
     runner = MigrationRunner()
 
@@ -174,7 +194,7 @@ def migration_status() -> None:
     Displays the current schema version, applied migrations,
     and any pending migrations that need to be run.
     """
-    from google_workspace_mcp.migrations import MigrationRunner
+    from gworkspace_mcp.migrations import MigrationRunner
 
     runner = MigrationRunner()
     status = runner.get_status()
@@ -211,7 +231,7 @@ def doctor() -> None:
     2. OAuth credentials configured
     3. Token validity
     """
-    from google_workspace_mcp.auth import OAuthManager, TokenStatus
+    from gworkspace_mcp.auth import OAuthManager, TokenStatus
 
     click.echo("Google Workspace MCP Status:")
     click.echo("")

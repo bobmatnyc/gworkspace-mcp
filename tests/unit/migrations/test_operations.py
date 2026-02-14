@@ -5,8 +5,8 @@ from pathlib import Path
 
 import yaml
 
-from google_workspace_mcp.migrations.models import MigrationOperation, OperationType
-from google_workspace_mcp.migrations.operations import (
+from gworkspace_mcp.migrations.models import MigrationOperation, OperationType
+from gworkspace_mcp.migrations.operations import (
     create_backup,
     execute_operation,
     expand_path,

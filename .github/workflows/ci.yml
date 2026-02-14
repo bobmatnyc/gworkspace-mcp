@@ -47,7 +47,7 @@ jobs:
         continue-on-error: true
 
       - name: Run tests with coverage
-        run: pytest --cov=google_workspace_mcp --cov-report=xml --cov-report=term-missing
+        run: pytest --cov=gworkspace_mcp --cov-report=xml --cov-report=term-missing
 
       - name: Upload coverage to Codecov
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'

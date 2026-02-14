@@ -179,14 +179,14 @@ from pathlib import Path
 import httpx
 from pydantic import BaseModel
 
-from google_workspace_mcp.auth import OAuthManager
+from gworkspace_mcp.auth import OAuthManager
 ```
 
 ## Project Structure
 
 ```
 gworkspace-mcp/
-├── src/google_workspace_mcp/
+├── src/gworkspace_mcp/
 │   ├── __init__.py
 │   ├── __version__.py
 │   ├── cli/
@@ -260,7 +260,7 @@ To add a new MCP tool:
 pytest
 
 # With coverage
-pytest --cov=src/google_workspace_mcp
+pytest --cov=src/gworkspace_mcp
 
 # Only unit tests
 pytest tests/unit/
@@ -281,7 +281,7 @@ pytest -v
 
 ```python
 import pytest
-from google_workspace_mcp.auth import TokenStorage
+from gworkspace_mcp.auth import TokenStorage
 
 
 class TestTokenStorage:

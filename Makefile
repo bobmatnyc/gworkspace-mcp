@@ -92,7 +92,7 @@ test: ## Run pytest
 
 test-cov: ## Run pytest with coverage
 	@echo "$(YELLOW)Running tests with coverage...$(NC)"
-	@python -m pytest tests/ -v --cov=src/google_workspace_mcp --cov-report=html --cov-report=term
+	@python -m pytest tests/ -v --cov=src/gworkspace_mcp --cov-report=html --cov-report=term
 	@echo "$(GREEN)Coverage report generated in htmlcov/$(NC)"
 
 # ============================================================================
@@ -162,9 +162,9 @@ build: clean ## Build wheel and sdist
 sync-versions: ## Sync VERSION files across the project
 	@echo "$(YELLOW)Syncing version files...$(NC)"
 	@VERSION=$$(cat VERSION); \
-	echo "$$VERSION" > src/google_workspace_mcp/VERSION; \
-	sed -i '' "s/__version__ = \".*\"/__version__ = \"$$VERSION\"/" src/google_workspace_mcp/__version__.py 2>/dev/null || \
-	sed -i "s/__version__ = \".*\"/__version__ = \"$$VERSION\"/" src/google_workspace_mcp/__version__.py; \
+	echo "$$VERSION" > src/gworkspace_mcp/VERSION; \
+	sed -i '' "s/__version__ = \".*\"/__version__ = \"$$VERSION\"/" src/gworkspace_mcp/__version__.py 2>/dev/null || \
+	sed -i "s/__version__ = \".*\"/__version__ = \"$$VERSION\"/" src/gworkspace_mcp/__version__.py; \
 	echo "$(GREEN)Synced to version $$VERSION$(NC)"
 
 release-patch: ## Bump patch version (x.y.Z+1)

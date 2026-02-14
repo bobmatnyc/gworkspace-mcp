@@ -41,7 +41,7 @@ Transport: Stdio (for Claude Desktop)
 Authentication: OAuth 2.0 with automatic token refresh
 """
 
-from google_workspace_mcp.server.google_workspace_server import (
+from gworkspace_mcp.server.google_workspace_server import (
     GoogleWorkspaceServer,
     main,
 )

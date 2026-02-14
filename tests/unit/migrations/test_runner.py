@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from google_workspace_mcp.migrations.models import Migration, MigrationOperation, OperationType
-from google_workspace_mcp.migrations.runner import MigrationRunner
+from gworkspace_mcp.migrations.models import Migration, MigrationOperation, OperationType
+from gworkspace_mcp.migrations.runner import MigrationRunner
 
 
 @pytest.fixture
