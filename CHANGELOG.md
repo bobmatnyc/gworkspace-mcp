@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-02-13
+
+### Added
+- Declarative YAML-based migration system for configuration updates
+
+### Changed
+- **BREAKING**: Standardized naming to gworkspace-mcp throughout the codebase
+  - Credentials directory changed from `~/.google-workspace-mcp/` to `~/.gworkspace-mcp/`
+  - Run migration to update existing installations
+
+### Fixed
+- Token storage path references in documentation
+
+## [0.1.2] - 2026-02-12
+
 ### Added
 - Comprehensive documentation structure (22 files, ~5,700 lines)
 - API reference for all 66 tools (Gmail, Calendar, Drive, Docs, Tasks)
@@ -75,5 +90,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - No external dependencies on claude-mpm
 - RcloneManager optional (4 tools degrade gracefully if rclone not installed)
 
-[Unreleased]: https://github.com/masapasa/gworkspace-mcp/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/masapasa/gworkspace-mcp/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/masapasa/gworkspace-mcp/compare/v0.1.2...v0.1.3
+[0.1.2]: https://github.com/masapasa/gworkspace-mcp/compare/v0.1.0...v0.1.2
 [0.1.0]: https://github.com/masapasa/gworkspace-mcp/releases/tag/v0.1.0
