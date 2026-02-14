@@ -1,4 +1,4 @@
-"""Version information for google-workspace-mcp."""
+"""Version information for gworkspace-mcp."""
 
 from pathlib import Path
 

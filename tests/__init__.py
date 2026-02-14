@@ -1,1 +1,1 @@
-"""Tests for google-workspace-mcp."""
+"""Tests for gworkspace-mcp."""

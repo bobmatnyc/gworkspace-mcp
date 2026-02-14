@@ -1,4 +1,4 @@
-"""Shared pytest fixtures for google-workspace-mcp tests.
+"""Shared pytest fixtures for gworkspace-mcp tests.
 
 This module provides reusable fixtures for testing OAuth authentication,
 token storage, and Google API mocks.

@@ -1,1 +1,1 @@
-"""CLI module for google-workspace-mcp."""
+"""CLI module for gworkspace-mcp."""

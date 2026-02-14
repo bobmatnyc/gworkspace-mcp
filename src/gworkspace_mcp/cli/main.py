@@ -1,4 +1,4 @@
-"""Command-line interface for google-workspace-mcp."""
+"""Command-line interface for gworkspace-mcp."""
 
 import asyncio
 import sys

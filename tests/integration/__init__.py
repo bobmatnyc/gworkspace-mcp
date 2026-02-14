@@ -1,1 +1,1 @@
-"""Integration tests for google-workspace-mcp."""
+"""Integration tests for gworkspace-mcp."""

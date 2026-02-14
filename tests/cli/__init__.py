@@ -1,1 +1,1 @@
-"""CLI tests for google-workspace-mcp."""
+"""CLI tests for gworkspace-mcp."""
