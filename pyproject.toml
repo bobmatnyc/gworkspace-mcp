@@ -39,7 +39,7 @@ dev = [
 ]
 
 [project.scripts]
-google-workspace-mcp = "google_workspace_mcp.cli.main:main"
+gworkspace-mcp = "google_workspace_mcp.cli.main:main"
 workspace = "google_workspace_mcp.cli.main:main"
 
 [project.urls]

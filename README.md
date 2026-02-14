@@ -132,7 +132,7 @@ The server requests the following OAuth scopes:
 
 ### Token Storage
 
-Tokens are stored at: `~/.google-workspace-mcp/tokens.json`
+Tokens are stored at: `~/.gworkspace-mcp/tokens.json`
 
 This file contains your OAuth tokens. Keep it secure and do not share it.
 
@@ -292,7 +292,7 @@ Run `workspace setup` to authenticate, or check status with `workspace doctor`.
 
 ### Token refresh failing
 
-Delete `~/.google-workspace-mcp/tokens.json` and run `workspace setup` again.
+Delete `~/.gworkspace-mcp/tokens.json` and run `workspace setup` again.
 
 ### Missing rclone tools
 

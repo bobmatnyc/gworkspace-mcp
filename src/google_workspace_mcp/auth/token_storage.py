@@ -3,7 +3,7 @@
 This module provides basic JSON-based token persistence without
 encryption. For production use, consider adding encryption.
 
-Storage Location: ~/.google-workspace-mcp/tokens.json
+Storage Location: ~/.gworkspace-mcp/tokens.json
 """
 
 import json
@@ -17,14 +17,14 @@ from google_workspace_mcp.auth.models import (
 )
 
 # Default credentials directory
-CREDENTIALS_DIR = Path.home() / ".google-workspace-mcp"
+CREDENTIALS_DIR = Path.home() / ".gworkspace-mcp"
 TOKEN_FILE = CREDENTIALS_DIR / "tokens.json"
 
 
 class TokenStorage:
     """Simple JSON-based storage for OAuth tokens.
 
-    Tokens are stored in ~/.google-workspace-mcp/tokens.json.
+    Tokens are stored in ~/.gworkspace-mcp/tokens.json.
     For production, consider adding encryption (Fernet + keyring).
 
     Attributes:
@@ -55,7 +55,7 @@ class TokenStorage:
 
         Args:
             token_path: Custom path for tokens.json.
-                Defaults to ~/.google-workspace-mcp/tokens.json
+                Defaults to ~/.gworkspace-mcp/tokens.json
         """
         self.token_path = token_path or TOKEN_FILE
         self._ensure_credentials_dir()

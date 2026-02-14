@@ -2,7 +2,7 @@
 
 This MCP server provides tools for interacting with Google Workspace APIs
 (Calendar, Gmail, Drive, Docs, Tasks) using OAuth tokens managed by the
-standalone google-workspace-mcp TokenStorage system.
+standalone gworkspace-mcp TokenStorage system.
 
 The server automatically handles token refresh when tokens expire,
 using the OAuthManager for seamless re-authentication.
@@ -36,8 +36,8 @@ from google_workspace_mcp.auth import OAuthManager, TokenStatus, TokenStorage
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Service name for token storage - matches google-workspace-mcp convention
-SERVICE_NAME = "google-workspace-mcp"
+# Service name for token storage - matches gworkspace-mcp convention
+SERVICE_NAME = "gworkspace-mcp"
 
 # Google API base URLs
 CALENDAR_API_BASE = "https://www.googleapis.com/calendar/v3"

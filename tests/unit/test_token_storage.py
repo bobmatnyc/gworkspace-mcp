@@ -23,7 +23,7 @@ class TestTokenStorageInit:
         with patch.object(TokenStorage, "_ensure_credentials_dir"):
             storage = TokenStorage()
             assert storage.token_path.name == "tokens.json"
-            assert ".google-workspace-mcp" in str(storage.token_path)
+            assert ".gworkspace-mcp" in str(storage.token_path)
 
     def test_should_create_storage_with_custom_path(self, temp_token_path: Path) -> None:
         """Verify storage accepts custom token path."""

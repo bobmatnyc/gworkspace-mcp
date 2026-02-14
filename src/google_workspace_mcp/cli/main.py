@@ -33,7 +33,7 @@ def setup(client_id: str | None, client_secret: str | None) -> None:
 
     This will:
     1. Open browser for OAuth2 consent flow
-    2. Store refresh tokens securely at ~/.google-workspace-mcp/tokens.json
+    2. Store refresh tokens securely at ~/.gworkspace-mcp/tokens.json
     3. Validate API access
 
     Requires:

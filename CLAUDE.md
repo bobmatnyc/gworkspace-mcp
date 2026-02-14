@@ -11,7 +11,7 @@
 ### Completed Phases ✅
 - **Phase 1**: Project scaffolding (pyproject.toml, CLI structure)
 - **Phase 2**: OAuth infrastructure (~400 lines, simplified from claude-mpm)
-  - Token storage at `~/.google-workspace-mcp/tokens.json`
+  - Token storage at `~/.gworkspace-mcp/tokens.json`
   - CLI commands: `workspace setup`, `workspace doctor`
 - **Phase 3**: MCP server extraction (4,595 lines, 65 tools)
   - Extracted from claude-mpm monorepo
@@ -142,7 +142,7 @@ src/google_workspace_mcp/
 - Simplified OAuth from 850 → 400 lines
 - No claude-mpm dependencies remaining
 - RcloneManager optional (4 tools degrade gracefully if missing)
-- Token storage: `~/.google-workspace-mcp/tokens.json`
+- Token storage: `~/.gworkspace-mcp/tokens.json`
 
 ---
 

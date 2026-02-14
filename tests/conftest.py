@@ -77,7 +77,7 @@ def stored_token(valid_token: OAuthToken, token_metadata: TokenMetadata) -> Stor
 @pytest.fixture
 def temp_token_dir(tmp_path: Path) -> Path:
     """Create a temporary directory for token storage tests."""
-    token_dir = tmp_path / ".google-workspace-mcp"
+    token_dir = tmp_path / ".gworkspace-mcp"
     token_dir.mkdir(parents=True, mode=0o700)
     return token_dir
 
