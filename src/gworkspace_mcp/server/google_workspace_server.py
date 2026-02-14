@@ -324,6 +324,104 @@ class GoogleWorkspaceServer:
                         "required": ["spreadsheet_id"],
                     },
                 ),
+                # Google Sheets write tools
+                Tool(
+                    name="create_spreadsheet",
+                    description="Create a new Google Spreadsheet. Returns the new spreadsheet ID and URL.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "title": {
+                                "type": "string",
+                                "description": "Title of the new spreadsheet",
+                            },
+                            "sheet_names": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Optional list of sheet/tab names to create (default: ['Sheet1'])",
+                            },
+                        },
+                        "required": ["title"],
+                    },
+                ),
+                Tool(
+                    name="update_sheet_values",
+                    description="Update values in a specific range of a Google Spreadsheet. Overwrites existing values in the specified range.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "spreadsheet_id": {
+                                "type": "string",
+                                "description": "Google Spreadsheet ID (from the URL)",
+                            },
+                            "sheet_name": {
+                                "type": "string",
+                                "description": "Name of the sheet/tab to update (e.g., 'Sheet1')",
+                            },
+                            "range": {
+                                "type": "string",
+                                "description": "Cell range in A1 notation (e.g., 'A1:C3', 'A1')",
+                            },
+                            "values": {
+                                "type": "array",
+                                "items": {
+                                    "type": "array",
+                                    "items": {},
+                                },
+                                "description": "2D array of values to write (rows of cells)",
+                            },
+                        },
+                        "required": ["spreadsheet_id", "sheet_name", "range", "values"],
+                    },
+                ),
+                Tool(
+                    name="append_sheet_values",
+                    description="Append rows to the end of data in a Google Spreadsheet sheet. Automatically finds the last row with data and appends below it.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "spreadsheet_id": {
+                                "type": "string",
+                                "description": "Google Spreadsheet ID (from the URL)",
+                            },
+                            "sheet_name": {
+                                "type": "string",
+                                "description": "Name of the sheet/tab to append to (e.g., 'Sheet1')",
+                            },
+                            "values": {
+                                "type": "array",
+                                "items": {
+                                    "type": "array",
+                                    "items": {},
+                                },
+                                "description": "2D array of values to append (rows of cells)",
+                            },
+                        },
+                        "required": ["spreadsheet_id", "sheet_name", "values"],
+                    },
+                ),
+                Tool(
+                    name="clear_sheet_values",
+                    description="Clear values from a specific range in a Google Spreadsheet. Removes cell values but preserves formatting.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "spreadsheet_id": {
+                                "type": "string",
+                                "description": "Google Spreadsheet ID (from the URL)",
+                            },
+                            "sheet_name": {
+                                "type": "string",
+                                "description": "Name of the sheet/tab to clear (e.g., 'Sheet1')",
+                            },
+                            "range": {
+                                "type": "string",
+                                "description": "Cell range in A1 notation to clear (e.g., 'A1:C10', 'A:Z')",
+                            },
+                        },
+                        "required": ["spreadsheet_id", "sheet_name", "range"],
+                    },
+                ),
                 Tool(
                     name="list_document_comments",
                     description="List all comments on a Google Docs, Sheets, or Slides file. Returns comment content, author, timestamps, resolved status, and replies.",
@@ -2079,6 +2177,11 @@ class GoogleWorkspaceServer:
             "list_spreadsheet_sheets": self._list_spreadsheet_sheets,
             "get_sheet_values": self._get_sheet_values,
             "get_spreadsheet_data": self._get_spreadsheet_data,
+            # Sheets write operations
+            "create_spreadsheet": self._create_spreadsheet,
+            "update_sheet_values": self._update_sheet_values,
+            "append_sheet_values": self._append_sheet_values,
+            "clear_sheet_values": self._clear_sheet_values,
             "list_document_comments": self._list_document_comments,
             "add_document_comment": self._add_document_comment,
             "reply_to_comment": self._reply_to_comment,
@@ -2756,6 +2859,124 @@ class GoogleWorkspaceServer:
             "title": sheets_response.get("title", ""),
             "sheets": sheets_data,
             "count": len(sheets_data),
+        }
+
+    async def _create_spreadsheet(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Create a new Google Spreadsheet.
+
+        Args:
+            arguments: Tool arguments with title and optional sheet_names.
+
+        Returns:
+            New spreadsheet ID and URL.
+        """
+        title = arguments["title"]
+        sheet_names = arguments.get("sheet_names", ["Sheet1"])
+
+        # Build spreadsheet request body
+        sheets = []
+        for i, name in enumerate(sheet_names):
+            sheets.append({"properties": {"title": name, "index": i}})
+
+        body = {"properties": {"title": title}, "sheets": sheets}
+
+        url = f"{SHEETS_API_BASE}/spreadsheets"
+        response = await self._make_request("POST", url, json_data=body)
+
+        spreadsheet_id = response.get("spreadsheetId", "")
+        return {
+            "spreadsheet_id": spreadsheet_id,
+            "title": response.get("properties", {}).get("title", title),
+            "url": f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}",
+            "sheets": [
+                s.get("properties", {}).get("title", "") for s in response.get("sheets", [])
+            ],
+        }
+
+    async def _update_sheet_values(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Update values in a specific range of a Google Spreadsheet.
+
+        Args:
+            arguments: Tool arguments with spreadsheet_id, sheet_name, range, and values.
+
+        Returns:
+            Update result with updated cell count.
+        """
+        spreadsheet_id = arguments["spreadsheet_id"]
+        sheet_name = arguments["sheet_name"]
+        cell_range = arguments["range"]
+        values = arguments["values"]
+
+        # Build A1 notation range with sheet name
+        range_notation = f"'{sheet_name}'!{cell_range}"
+
+        url = f"{SHEETS_API_BASE}/spreadsheets/{spreadsheet_id}/values/{range_notation}"
+        params = {"valueInputOption": "USER_ENTERED"}
+        body = {"range": range_notation, "values": values}
+
+        response = await self._make_request("PUT", url, params=params, json_data=body)
+
+        return {
+            "spreadsheet_id": spreadsheet_id,
+            "updated_range": response.get("updatedRange", range_notation),
+            "updated_rows": response.get("updatedRows", 0),
+            "updated_columns": response.get("updatedColumns", 0),
+            "updated_cells": response.get("updatedCells", 0),
+        }
+
+    async def _append_sheet_values(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Append rows to the end of data in a Google Spreadsheet sheet.
+
+        Args:
+            arguments: Tool arguments with spreadsheet_id, sheet_name, and values.
+
+        Returns:
+            Append result with updated cell count.
+        """
+        spreadsheet_id = arguments["spreadsheet_id"]
+        sheet_name = arguments["sheet_name"]
+        values = arguments["values"]
+
+        # Use sheet name as range - API will find last row automatically
+        range_notation = f"'{sheet_name}'"
+
+        url = f"{SHEETS_API_BASE}/spreadsheets/{spreadsheet_id}/values/{range_notation}:append"
+        params = {"valueInputOption": "USER_ENTERED", "insertDataOption": "INSERT_ROWS"}
+        body = {"values": values}
+
+        response = await self._make_request("POST", url, params=params, json_data=body)
+
+        updates = response.get("updates", {})
+        return {
+            "spreadsheet_id": spreadsheet_id,
+            "updated_range": updates.get("updatedRange", ""),
+            "updated_rows": updates.get("updatedRows", 0),
+            "updated_columns": updates.get("updatedColumns", 0),
+            "updated_cells": updates.get("updatedCells", 0),
+        }
+
+    async def _clear_sheet_values(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Clear values from a specific range in a Google Spreadsheet.
+
+        Args:
+            arguments: Tool arguments with spreadsheet_id, sheet_name, and range.
+
+        Returns:
+            Clear result with cleared range.
+        """
+        spreadsheet_id = arguments["spreadsheet_id"]
+        sheet_name = arguments["sheet_name"]
+        cell_range = arguments["range"]
+
+        # Build A1 notation range with sheet name
+        range_notation = f"'{sheet_name}'!{cell_range}"
+
+        url = f"{SHEETS_API_BASE}/spreadsheets/{spreadsheet_id}/values/{range_notation}:clear"
+        response = await self._make_request("POST", url)
+
+        return {
+            "spreadsheet_id": spreadsheet_id,
+            "cleared_range": response.get("clearedRange", range_notation),
         }
 
     async def _list_document_comments(self, arguments: dict[str, Any]) -> dict[str, Any]:

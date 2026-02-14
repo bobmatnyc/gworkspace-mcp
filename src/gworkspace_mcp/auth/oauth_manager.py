@@ -30,7 +30,7 @@ GOOGLE_WORKSPACE_SCOPES = [
     "https://www.googleapis.com/auth/drive",
     "https://www.googleapis.com/auth/documents",
     "https://www.googleapis.com/auth/tasks",
-    "https://www.googleapis.com/auth/spreadsheets.readonly",
+    "https://www.googleapis.com/auth/spreadsheets",
 ]
 
 # OAuth configuration defaults
@@ -143,6 +143,7 @@ class OAuthManager:
         """Perform complete OAuth2 authentication flow.
 
         Uses google-auth-oauthlib for the OAuth flow with local server.
+        The authorization URL is always printed for the user to copy/paste.
 
         Args:
             scopes: OAuth scopes to request. Uses GOOGLE_WORKSPACE_SCOPES if not specified.
@@ -213,6 +214,9 @@ class OAuthManager:
     def _run_oauth_flow(self, client_config: dict, scopes: list[str]) -> Credentials:
         """Run the OAuth flow (blocking operation).
 
+        The authorization URL is always printed for the user to copy/paste.
+        Browser is never opened automatically.
+
         Args:
             client_config: Google OAuth client configuration.
             scopes: List of OAuth scopes.
@@ -250,15 +254,30 @@ class OAuthManager:
             # Warn if custom path is specified (not supported by run_local_server)
             if parsed.path and parsed.path not in ("/", ""):
                 print(
-                    f"⚠️  Warning: Custom path '{parsed.path}' in redirect URI is ignored.\n"
+                    f"Warning: Custom path '{parsed.path}' in redirect URI is ignored.\n"
                     f"   Google's OAuth flow only supports root path '/'.\n"
                     f"   Update your Google Cloud Console redirect URI to:\n"
                     f"   http://{host}:{port}/\n",
                     file=sys.stderr,
                 )
 
-        # Run local server (always uses root path "/")
-        credentials = flow.run_local_server(host=host, port=port, open_browser=True)
+        # Print helpful message - browser is never opened automatically
+        print(
+            "\n"
+            "=================================================================\n"
+            "MANUAL AUTHENTICATION REQUIRED\n"
+            "=================================================================\n"
+            "Open this URL in a browser on any device:\n"
+            "  (URL will be displayed when the server starts)\n"
+            "\n"
+            "After authorizing, copy the URL from the browser's address bar\n"
+            "and the server will complete the authentication.\n"
+            "=================================================================\n",
+            file=sys.stderr,
+        )
+
+        # Run local server (always uses root path "/", never opens browser)
+        credentials = flow.run_local_server(host=host, port=port, open_browser=False)
 
         return credentials
 

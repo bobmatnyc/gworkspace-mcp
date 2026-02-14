@@ -79,9 +79,9 @@ def setup(client_id: str | None, client_secret: str | None) -> None:
     """Set up Google Workspace OAuth authentication.
 
     This will:
-    1. Open browser for OAuth2 consent flow
-    2. Store refresh tokens at ./.gworkspace-mcp/tokens.json (PROJECT-LEVEL)
-    3. Validate API access
+    1. Display an authorization URL for you to visit
+    2. Wait for OAuth2 redirect after you authorize
+    3. Store refresh tokens at ./.gworkspace-mcp/tokens.json (PROJECT-LEVEL)
 
     Note: Run this command from your project directory. Each project needs
     its own authentication for isolation.
@@ -119,11 +119,16 @@ def setup(client_id: str | None, client_secret: str | None) -> None:
 
     # Run authentication
     click.echo("Starting OAuth authentication flow...")
-    click.echo("Browser will open for Google consent...")
+    click.echo("An authorization URL will be displayed. Open it in your browser.")
     click.echo("")
 
     try:
-        asyncio.run(manager.authenticate(client_id=client_id, client_secret=client_secret))
+        asyncio.run(
+            manager.authenticate(
+                client_id=client_id,
+                client_secret=client_secret,
+            )
+        )
         click.echo("✓ Authentication successful!")
         click.echo(f"Token stored at: {manager.token_path}")
 

@@ -904,6 +904,148 @@ class TestSheetsTools:
             # Verify batch get was used (2 calls: one for sheets list, one for batch values)
             assert call_count[0] == 2
 
+    @pytest.mark.asyncio
+    async def test_create_spreadsheet_success(self, server):
+        """Test creating a new spreadsheet returns spreadsheet details."""
+        # Arrange
+        create_response = {
+            "spreadsheetId": "new_spreadsheet_001",
+            "properties": {"title": "New Budget"},
+            "sheets": [
+                {"properties": {"title": "Sheet1"}},
+                {"properties": {"title": "Summary"}},
+            ],
+        }
+
+        async def mock_request(method, url, **kwargs):
+            return create_mock_response(create_response)
+
+        with patch.object(server, "_get_http_client") as mock_get_client:
+            mock_client = AsyncMock()
+            mock_client.request = mock_request
+            mock_get_client.return_value = mock_client
+
+            # Act
+            result = await server._create_spreadsheet(
+                {"title": "New Budget", "sheet_names": ["Sheet1", "Summary"]}
+            )
+
+            # Assert
+            assert result["spreadsheet_id"] == "new_spreadsheet_001"
+            assert result["title"] == "New Budget"
+            assert "docs.google.com/spreadsheets" in result["url"]
+            assert len(result["sheets"]) == 2
+            assert "Sheet1" in result["sheets"]
+            assert "Summary" in result["sheets"]
+
+    @pytest.mark.asyncio
+    async def test_update_sheet_values_success(self, server):
+        """Test updating sheet values returns update details."""
+        # Arrange
+        update_response = {
+            "spreadsheetId": "spreadsheet_001",
+            "updatedRange": "'Sheet1'!A1:B2",
+            "updatedRows": 2,
+            "updatedColumns": 2,
+            "updatedCells": 4,
+        }
+
+        captured_body = {}
+
+        async def mock_request(method, url, **kwargs):
+            if kwargs.get("json"):
+                captured_body.update(kwargs["json"])
+            return create_mock_response(update_response)
+
+        with patch.object(server, "_get_http_client") as mock_get_client:
+            mock_client = AsyncMock()
+            mock_client.request = mock_request
+            mock_get_client.return_value = mock_client
+
+            # Act
+            result = await server._update_sheet_values(
+                {
+                    "spreadsheet_id": "spreadsheet_001",
+                    "sheet_name": "Sheet1",
+                    "range": "A1:B2",
+                    "values": [["Header1", "Header2"], ["Value1", "Value2"]],
+                }
+            )
+
+            # Assert
+            assert result["spreadsheet_id"] == "spreadsheet_001"
+            assert result["updated_range"] == "'Sheet1'!A1:B2"
+            assert result["updated_rows"] == 2
+            assert result["updated_columns"] == 2
+            assert result["updated_cells"] == 4
+            assert captured_body["values"] == [["Header1", "Header2"], ["Value1", "Value2"]]
+
+    @pytest.mark.asyncio
+    async def test_append_sheet_values_success(self, server):
+        """Test appending sheet values returns append details."""
+        # Arrange
+        append_response = {
+            "spreadsheetId": "spreadsheet_001",
+            "tableRange": "'Sheet1'!A1:B3",
+            "updates": {
+                "spreadsheetId": "spreadsheet_001",
+                "updatedRange": "'Sheet1'!A4:B5",
+                "updatedRows": 2,
+                "updatedColumns": 2,
+                "updatedCells": 4,
+            },
+        }
+
+        async def mock_request(method, url, **kwargs):
+            return create_mock_response(append_response)
+
+        with patch.object(server, "_get_http_client") as mock_get_client:
+            mock_client = AsyncMock()
+            mock_client.request = mock_request
+            mock_get_client.return_value = mock_client
+
+            # Act
+            result = await server._append_sheet_values(
+                {
+                    "spreadsheet_id": "spreadsheet_001",
+                    "sheet_name": "Sheet1",
+                    "values": [["New1", "New2"], ["New3", "New4"]],
+                }
+            )
+
+            # Assert
+            assert result["spreadsheet_id"] == "spreadsheet_001"
+            assert result["updated_range"] == "'Sheet1'!A4:B5"
+            assert result["updated_rows"] == 2
+            assert result["updated_cells"] == 4
+
+    @pytest.mark.asyncio
+    async def test_clear_sheet_values_success(self, server):
+        """Test clearing sheet values returns cleared range."""
+        # Arrange
+        clear_response = {"spreadsheetId": "spreadsheet_001", "clearedRange": "'Sheet1'!A1:C10"}
+
+        async def mock_request(method, url, **kwargs):
+            return create_mock_response(clear_response)
+
+        with patch.object(server, "_get_http_client") as mock_get_client:
+            mock_client = AsyncMock()
+            mock_client.request = mock_request
+            mock_get_client.return_value = mock_client
+
+            # Act
+            result = await server._clear_sheet_values(
+                {
+                    "spreadsheet_id": "spreadsheet_001",
+                    "sheet_name": "Sheet1",
+                    "range": "A1:C10",
+                }
+            )
+
+            # Assert
+            assert result["spreadsheet_id"] == "spreadsheet_001"
+            assert result["cleared_range"] == "'Sheet1'!A1:C10"
+
 
 # =============================================================================
 # Error Handling Tests

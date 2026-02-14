@@ -444,7 +444,7 @@ class TestOAuthManagerRunOAuthFlow:
             result = oauth_manager._run_oauth_flow(client_config, [])
 
             mock_flow.run_local_server.assert_called_once_with(
-                host="localhost", port=0, open_browser=True
+                host="localhost", port=0, open_browser=False
             )
             assert result == mock_credentials
 
@@ -473,9 +473,9 @@ class TestGoogleWorkspaceScopes:
         """Verify tasks scope is included."""
         assert "https://www.googleapis.com/auth/tasks" in GOOGLE_WORKSPACE_SCOPES
 
-    def test_should_include_sheets_readonly_scope(self) -> None:
-        """Verify spreadsheets readonly scope is included for multi-tab support."""
-        assert "https://www.googleapis.com/auth/spreadsheets.readonly" in GOOGLE_WORKSPACE_SCOPES
+    def test_should_include_sheets_scope(self) -> None:
+        """Verify spreadsheets scope is included for read/write support."""
+        assert "https://www.googleapis.com/auth/spreadsheets" in GOOGLE_WORKSPACE_SCOPES
 
     def test_should_have_six_scopes(self) -> None:
         """Verify exactly six scopes are defined."""
