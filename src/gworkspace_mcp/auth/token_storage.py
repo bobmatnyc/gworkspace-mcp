@@ -3,7 +3,13 @@
 This module provides basic JSON-based token persistence without
 encryption. For production use, consider adding encryption.
 
-Storage Location: ~/.gworkspace-mcp/tokens.json
+Storage Location Priority:
+1. Project-level: ./.gworkspace-mcp/tokens.json (if directory exists)
+2. User-level: ~/.gworkspace-mcp/tokens.json (default fallback)
+
+To use project-level tokens, create the directory first:
+    mkdir -p .gworkspace-mcp
+    gworkspace-mcp setup
 """
 
 import json
@@ -19,19 +25,54 @@ from gworkspace_mcp.auth.models import (
 
 logger = logging.getLogger(__name__)
 
-# Default credentials directory
-CREDENTIALS_DIR = Path.home() / ".gworkspace-mcp"
-TOKEN_FILE = CREDENTIALS_DIR / "tokens.json"
+# User-level credentials directory (default)
+USER_CREDENTIALS_DIR = Path.home() / ".gworkspace-mcp"
+USER_TOKEN_FILE = USER_CREDENTIALS_DIR / "tokens.json"
 
-# Legacy location (pre-0.2.0)
+# Project-level credentials directory (takes precedence if exists)
+PROJECT_CREDENTIALS_DIR = Path.cwd() / ".gworkspace-mcp"
+PROJECT_TOKEN_FILE = PROJECT_CREDENTIALS_DIR / "tokens.json"
+
+# Legacy location (pre-0.2.0) - kept for migration compatibility
 OLD_CREDENTIALS_DIR = Path.home() / ".google-workspace-mcp"
 OLD_TOKEN_FILE = OLD_CREDENTIALS_DIR / "tokens.json"
+
+# Backwards compatibility aliases
+CREDENTIALS_DIR = USER_CREDENTIALS_DIR
+TOKEN_FILE = USER_TOKEN_FILE
+
+
+def get_token_path() -> Path:
+    """Determine the appropriate token storage path.
+
+    Returns project-level path if .gworkspace-mcp directory exists
+    in current working directory, otherwise returns user-level path.
+
+    Returns:
+        Path to tokens.json file.
+    """
+    # Check if project-level directory exists
+    if PROJECT_CREDENTIALS_DIR.exists():
+        logger.debug(f"Using project-level tokens: {PROJECT_TOKEN_FILE}")
+        return PROJECT_TOKEN_FILE
+
+    # Fall back to user-level
+    logger.debug(f"Using user-level tokens: {USER_TOKEN_FILE}")
+    return USER_TOKEN_FILE
 
 
 class TokenStorage:
     """Simple JSON-based storage for OAuth tokens.
 
-    Tokens are stored in ~/.gworkspace-mcp/tokens.json.
+    Storage location priority:
+    1. Project-level: ./.gworkspace-mcp/tokens.json (if directory exists)
+    2. User-level: ~/.gworkspace-mcp/tokens.json (default fallback)
+
+    This allows different projects to connect to different Google accounts.
+    To use project-level tokens, create the directory first:
+        mkdir -p .gworkspace-mcp
+        gworkspace-mcp setup
+
     For production, consider adding encryption (Fernet + keyring).
 
     Attributes:
@@ -47,11 +88,11 @@ class TokenStorage:
             expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
             scopes=["read", "write"]
         )
-        metadata = TokenMetadata(service_name="google-workspace", provider="google")
-        storage.store("google-workspace", token, metadata)
+        metadata = TokenMetadata(service_name="gworkspace-mcp", provider="google")
+        storage.store("gworkspace-mcp", token, metadata)
 
         # Retrieve the token
-        stored = storage.retrieve("google-workspace")
+        stored = storage.retrieve("gworkspace-mcp")
         if stored:
             print(f"Token expires at: {stored.token.expires_at}")
         ```
@@ -62,9 +103,10 @@ class TokenStorage:
 
         Args:
             token_path: Custom path for tokens.json.
-                Defaults to ~/.gworkspace-mcp/tokens.json
+                If not provided, uses project-level (./.gworkspace-mcp/tokens.json)
+                if directory exists, otherwise user-level (~/.gworkspace-mcp/tokens.json).
         """
-        self.token_path = token_path or TOKEN_FILE
+        self.token_path = token_path or get_token_path()
         self.credentials_dir = self.token_path.parent
         # Run pending migrations automatically before any other operations
         self._run_migrations()
