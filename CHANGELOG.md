@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-02-14
+
+### Changed
+- Simplify OAuth environment variables to use only GOOGLE_OAUTH_REDIRECT_URI
+- Port is now automatically parsed from the redirect URI
+- Removed GOOGLE_OAUTH_PORT environment variable (redundant)
+- Removed GOOGLE_REDIRECT_URI alias (use GOOGLE_OAUTH_REDIRECT_URI instead)
+
 ## [0.1.8] - 2026-02-14
 
 ### Fixed
@@ -124,7 +132,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - No external dependencies on claude-mpm
 - RcloneManager optional (4 tools degrade gracefully if rclone not installed)
 
-[Unreleased]: https://github.com/masapasa/gworkspace-mcp/compare/v0.1.8...HEAD
+[Unreleased]: https://github.com/masapasa/gworkspace-mcp/compare/v0.1.9...HEAD
+[0.1.9]: https://github.com/masapasa/gworkspace-mcp/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/masapasa/gworkspace-mcp/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/masapasa/gworkspace-mcp/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/masapasa/gworkspace-mcp/compare/v0.1.5...v0.1.6
