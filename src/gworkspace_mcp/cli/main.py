@@ -9,21 +9,20 @@ from dotenv import load_dotenv
 
 from gworkspace_mcp.__version__ import __version__
 
-# Load environment files in priority order
-# .env.local takes precedence (loaded first, won't be overwritten)
-# .env is fallback (loaded second)
-_env_local = Path(".env.local")
-_env_file = Path(".env")
-
-if _env_local.exists():
-    load_dotenv(_env_local)
-if _env_file.exists():
-    load_dotenv(_env_file)
-
-# Also check user config directory
+# Load environment files in priority order (later files override earlier)
+# 1. User config directory (lowest priority)
+# 2. Project .env
+# 3. Project .env.local (highest priority)
 _user_env = Path.home() / ".gworkspace-mcp" / ".env"
+_env_file = Path(".env")
+_env_local = Path(".env.local")
+
 if _user_env.exists():
-    load_dotenv(_user_env, override=False)  # Don't override project-level
+    load_dotenv(_user_env, override=True)
+if _env_file.exists():
+    load_dotenv(_env_file, override=True)
+if _env_local.exists():
+    load_dotenv(_env_local, override=True)
 
 
 @click.group()

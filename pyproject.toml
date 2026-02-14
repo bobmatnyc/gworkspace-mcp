@@ -42,7 +42,6 @@ dev = [
 
 [project.scripts]
 gworkspace-mcp = "gworkspace_mcp.cli.main:main"
-workspace = "gworkspace_mcp.cli.main:main"
 
 [project.urls]
 Homepage = "https://github.com/masapasa/google-workspace-mcp"

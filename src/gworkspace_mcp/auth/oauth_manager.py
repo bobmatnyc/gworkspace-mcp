@@ -164,8 +164,11 @@ class OAuthManager:
                 "GOOGLE_OAUTH_CLIENT_SECRET environment variables."
             )
 
-        # Get redirect URI from environment or use default
-        redirect_uri = os.environ.get("GOOGLE_OAUTH_REDIRECT_URI", DEFAULT_REDIRECT_URI)
+        # Get redirect URI from environment (support both naming conventions)
+        redirect_uri = os.environ.get(
+            "GOOGLE_REDIRECT_URI",
+            os.environ.get("GOOGLE_OAUTH_REDIRECT_URI", DEFAULT_REDIRECT_URI),
+        )
 
         # Create client config
         client_config = {
@@ -206,14 +209,36 @@ class OAuthManager:
 
         Environment Variables:
             GOOGLE_OAUTH_PORT: Port for callback server (default: 0 = random)
+            GOOGLE_REDIRECT_URI: Redirect URI (can extract port from here)
         """
+        from urllib.parse import urlparse
+
         flow = InstalledAppFlow.from_client_config(client_config, scopes=scopes)
 
-        # Get port from environment or use default (0 = random available port)
-        port = int(os.environ.get("GOOGLE_OAUTH_PORT", DEFAULT_OAUTH_PORT))
+        # Get port from environment or parse from redirect URI
+        port_str = os.environ.get("GOOGLE_OAUTH_PORT")
+        redirect_uri = os.environ.get(
+            "GOOGLE_REDIRECT_URI", os.environ.get("GOOGLE_OAUTH_REDIRECT_URI", "")
+        )
+
+        # Parse port from redirect URI if not explicitly set
+        if port_str:
+            port = int(port_str)
+        elif redirect_uri:
+            parsed = urlparse(redirect_uri)
+            port = parsed.port or DEFAULT_OAUTH_PORT
+        else:
+            port = DEFAULT_OAUTH_PORT
+
+        # Parse host from redirect URI (127.0.0.1 vs localhost)
+        host = "localhost"
+        if redirect_uri:
+            parsed = urlparse(redirect_uri)
+            if parsed.hostname:
+                host = parsed.hostname
 
         # Run local server
-        credentials = flow.run_local_server(port=port, open_browser=True)
+        credentials = flow.run_local_server(host=host, port=port, open_browser=True)
 
         return credentials
 
