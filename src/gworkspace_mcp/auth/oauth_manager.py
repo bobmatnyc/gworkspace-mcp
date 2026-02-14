@@ -2,9 +2,14 @@
 
 This module provides a streamlined OAuth2 authentication flow
 specifically for Google Workspace services using google-auth-oauthlib.
+
+Environment Variables:
+    GOOGLE_OAUTH_PORT: Port for OAuth callback server (default: 0 = random)
+    GOOGLE_OAUTH_REDIRECT_URI: Custom redirect URI (default: http://localhost/)
 """
 
 import asyncio
+import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -23,6 +28,10 @@ GOOGLE_WORKSPACE_SCOPES = [
     "https://www.googleapis.com/auth/documents",
     "https://www.googleapis.com/auth/tasks",
 ]
+
+# OAuth configuration defaults
+DEFAULT_OAUTH_PORT = 0  # 0 = random available port
+DEFAULT_REDIRECT_URI = "http://localhost/"
 
 
 class OAuthManager:
@@ -155,6 +164,9 @@ class OAuthManager:
                 "GOOGLE_OAUTH_CLIENT_SECRET environment variables."
             )
 
+        # Get redirect URI from environment or use default
+        redirect_uri = os.environ.get("GOOGLE_OAUTH_REDIRECT_URI", DEFAULT_REDIRECT_URI)
+
         # Create client config
         client_config = {
             "installed": {
@@ -162,7 +174,7 @@ class OAuthManager:
                 "client_secret": client_secret,
                 "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                 "token_uri": "https://oauth2.googleapis.com/token",
-                "redirect_uris": ["http://localhost/"],
+                "redirect_uris": [redirect_uri],
             }
         }
 
@@ -191,11 +203,17 @@ class OAuthManager:
 
         Returns:
             Google OAuth2 credentials.
+
+        Environment Variables:
+            GOOGLE_OAUTH_PORT: Port for callback server (default: 0 = random)
         """
         flow = InstalledAppFlow.from_client_config(client_config, scopes=scopes)
 
-        # Run local server (port=0 picks random available port)
-        credentials = flow.run_local_server(port=0, open_browser=True)
+        # Get port from environment or use default (0 = random available port)
+        port = int(os.environ.get("GOOGLE_OAUTH_PORT", DEFAULT_OAUTH_PORT))
+
+        # Run local server
+        credentials = flow.run_local_server(port=port, open_browser=True)
 
         return credentials
 
