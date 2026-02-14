@@ -3,13 +3,11 @@
 This module provides basic JSON-based token persistence without
 encryption. For production use, consider adding encryption.
 
-Storage Location Priority:
-1. Project-level: ./.gworkspace-mcp/tokens.json (if directory exists)
-2. User-level: ~/.gworkspace-mcp/tokens.json (default fallback)
+Storage Location: ./.gworkspace-mcp/tokens.json (project-level)
 
-To use project-level tokens, create the directory first:
-    mkdir -p .gworkspace-mcp
-    gworkspace-mcp setup
+Tokens are stored at project level since OAuth credentials (.env)
+are also project-specific. This allows different projects to connect
+to different Google accounts.
 """
 
 import json
@@ -25,53 +23,33 @@ from gworkspace_mcp.auth.models import (
 
 logger = logging.getLogger(__name__)
 
-# User-level credentials directory (default)
-USER_CREDENTIALS_DIR = Path.home() / ".gworkspace-mcp"
-USER_TOKEN_FILE = USER_CREDENTIALS_DIR / "tokens.json"
+# Project-level credentials directory
+CREDENTIALS_DIR = Path.cwd() / ".gworkspace-mcp"
+TOKEN_FILE = CREDENTIALS_DIR / "tokens.json"
 
-# Project-level credentials directory (takes precedence if exists)
-PROJECT_CREDENTIALS_DIR = Path.cwd() / ".gworkspace-mcp"
-PROJECT_TOKEN_FILE = PROJECT_CREDENTIALS_DIR / "tokens.json"
-
-# Legacy location (pre-0.2.0) - kept for migration compatibility
+# Legacy locations (for migration compatibility)
 OLD_CREDENTIALS_DIR = Path.home() / ".google-workspace-mcp"
 OLD_TOKEN_FILE = OLD_CREDENTIALS_DIR / "tokens.json"
-
-# Backwards compatibility aliases
-CREDENTIALS_DIR = USER_CREDENTIALS_DIR
-TOKEN_FILE = USER_TOKEN_FILE
+OLD_USER_CREDENTIALS_DIR = Path.home() / ".gworkspace-mcp"
+OLD_USER_TOKEN_FILE = OLD_USER_CREDENTIALS_DIR / "tokens.json"
 
 
 def get_token_path() -> Path:
-    """Determine the appropriate token storage path.
-
-    Returns project-level path if .gworkspace-mcp directory exists
-    in current working directory, otherwise returns user-level path.
+    """Get the project-level token storage path.
 
     Returns:
-        Path to tokens.json file.
+        Path to tokens.json file in ./.gworkspace-mcp/
     """
-    # Check if project-level directory exists
-    if PROJECT_CREDENTIALS_DIR.exists():
-        logger.debug(f"Using project-level tokens: {PROJECT_TOKEN_FILE}")
-        return PROJECT_TOKEN_FILE
-
-    # Fall back to user-level
-    logger.debug(f"Using user-level tokens: {USER_TOKEN_FILE}")
-    return USER_TOKEN_FILE
+    return TOKEN_FILE
 
 
 class TokenStorage:
     """Simple JSON-based storage for OAuth tokens.
 
-    Storage location priority:
-    1. Project-level: ./.gworkspace-mcp/tokens.json (if directory exists)
-    2. User-level: ~/.gworkspace-mcp/tokens.json (default fallback)
+    Tokens are stored at project level: ./.gworkspace-mcp/tokens.json
 
-    This allows different projects to connect to different Google accounts.
-    To use project-level tokens, create the directory first:
-        mkdir -p .gworkspace-mcp
-        gworkspace-mcp setup
+    This matches the project-level .env files that contain OAuth credentials,
+    allowing different projects to connect to different Google accounts.
 
     For production, consider adding encryption (Fernet + keyring).
 
