@@ -1883,7 +1883,7 @@ class GoogleWorkspaceServer:
             token = await self.manager.refresh_if_needed()
             if token is None:
                 raise RuntimeError(
-                    "Token refresh failed. Please re-authenticate using: " "workspace setup"
+                    "Token refresh failed. Please re-authenticate using: workspace setup"
                 )
             return token.access_token
 
