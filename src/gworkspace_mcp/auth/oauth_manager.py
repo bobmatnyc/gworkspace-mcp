@@ -6,19 +6,22 @@ specifically for Google Workspace services using google-auth-oauthlib.
 Environment Variables:
     GOOGLE_OAUTH_CLIENT_ID: Google OAuth client ID (required)
     GOOGLE_OAUTH_CLIENT_SECRET: Google OAuth client secret (required)
-    GOOGLE_OAUTH_REDIRECT_URI: Redirect URI (default: http://localhost/)
-        Port and host are automatically parsed from the URI.
-        Example: http://127.0.0.1:8789/callback
+    GOOGLE_OAUTH_REDIRECT_URI: Redirect URI (default: http://127.0.0.1:8789/callback)
+        Supports custom paths like /callback for Web Application OAuth clients.
 """
 
 import asyncio
 import os
+import secrets
+import webbrowser
 from datetime import datetime, timedelta, timezone
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
+from google_auth_oauthlib.flow import Flow
 
 from gworkspace_mcp.auth.models import OAuthToken, StoredToken, TokenMetadata
 from gworkspace_mcp.auth.token_storage import TokenStorage
@@ -35,8 +38,9 @@ GOOGLE_WORKSPACE_SCOPES = [
 ]
 
 # OAuth configuration defaults
-DEFAULT_OAUTH_PORT = 0  # 0 = random available port
-DEFAULT_REDIRECT_URI = "http://localhost/"
+DEFAULT_OAUTH_HOST = "127.0.0.1"
+DEFAULT_OAUTH_PORT = 8789
+DEFAULT_REDIRECT_URI = "http://127.0.0.1:8789/callback"
 
 
 class OAuthManager:
@@ -143,8 +147,8 @@ class OAuthManager:
     ) -> OAuthToken:
         """Perform complete OAuth2 authentication flow.
 
-        Uses google-auth-oauthlib for the OAuth flow with local server.
-        The authorization URL is always printed for the user to copy/paste.
+        Uses google-auth-oauthlib Flow for Web Application OAuth with local server.
+        Supports custom redirect URIs like http://127.0.0.1:8789/callback.
 
         Args:
             scopes: OAuth scopes to request. Uses GOOGLE_WORKSPACE_SCOPES if not specified.
@@ -161,8 +165,6 @@ class OAuthManager:
         if scopes is None:
             scopes = GOOGLE_WORKSPACE_SCOPES
 
-        # For now, require credentials to be passed or use default
-        # TODO: Support reading from client_secrets.json or environment
         if not client_id or not client_secret:
             raise ValueError(
                 "Client ID and secret required. "
@@ -170,24 +172,12 @@ class OAuthManager:
                 "GOOGLE_OAUTH_CLIENT_SECRET environment variables."
             )
 
-        # Get redirect URI from environment and normalize it
-        # (Google's InstalledAppFlow only supports root path "/")
-        from urllib.parse import urlparse
+        # Get redirect URI from environment (supports custom paths like /callback)
+        redirect_uri = os.environ.get("GOOGLE_OAUTH_REDIRECT_URI", DEFAULT_REDIRECT_URI)
 
-        redirect_uri_env = os.environ.get("GOOGLE_OAUTH_REDIRECT_URI", DEFAULT_REDIRECT_URI)
-        parsed = urlparse(redirect_uri_env)
-
-        # Construct normalized redirect URI (always use root path)
-        if parsed.hostname and parsed.port:
-            redirect_uri = f"http://{parsed.hostname}:{parsed.port}/"
-        elif parsed.hostname:
-            redirect_uri = f"http://{parsed.hostname}/"
-        else:
-            redirect_uri = DEFAULT_REDIRECT_URI
-
-        # Create client config
+        # Create client config for Web Application
         client_config = {
-            "installed": {
+            "web": {
                 "client_id": client_id,
                 "client_secret": client_secret,
                 "auth_uri": "https://accounts.google.com/o/oauth2/auth",
@@ -198,7 +188,9 @@ class OAuthManager:
 
         # Run OAuth flow in executor (it's blocking)
         loop = asyncio.get_event_loop()
-        credentials = await loop.run_in_executor(None, self._run_oauth_flow, client_config, scopes)
+        credentials = await loop.run_in_executor(
+            None, self._run_oauth_flow, client_config, scopes, redirect_uri
+        )
 
         # Convert to our token model
         token = self._credentials_to_token(credentials, scopes)
@@ -212,75 +204,127 @@ class OAuthManager:
 
         return token
 
-    def _run_oauth_flow(self, client_config: dict, scopes: list[str]) -> Credentials:
+    def _run_oauth_flow(
+        self, client_config: dict, scopes: list[str], redirect_uri: str
+    ) -> Credentials:
         """Run the OAuth flow (blocking operation).
 
-        The authorization URL is always printed for the user to copy/paste.
-        Browser is never opened automatically.
+        Uses Web Application OAuth flow with custom redirect URI support.
+        Opens browser for authorization and starts local server to receive callback.
 
         Args:
-            client_config: Google OAuth client configuration.
+            client_config: Google OAuth client configuration (web type).
             scopes: List of OAuth scopes.
+            redirect_uri: Full redirect URI including path (e.g., http://127.0.0.1:8789/callback).
 
         Returns:
             Google OAuth2 credentials.
-
-        Note:
-            Host and port are parsed from GOOGLE_OAUTH_REDIRECT_URI.
-            Defaults to localhost with random available port.
-
-            IMPORTANT: Google's InstalledAppFlow.run_local_server() only supports
-            the root path "/". Custom paths like "/callback" are NOT supported.
-            Configure your Google Cloud Console redirect URI as:
-            http://127.0.0.1:PORT/ (not http://127.0.0.1:PORT/callback)
         """
-        import sys
-        from urllib.parse import urlparse
-
-        flow = InstalledAppFlow.from_client_config(client_config, scopes=scopes)
-
-        # Get redirect URI and parse host/port from it
-        redirect_uri = os.environ.get("GOOGLE_OAUTH_REDIRECT_URI", "")
-
-        host = "localhost"
-        port = DEFAULT_OAUTH_PORT
-
-        if redirect_uri:
-            parsed = urlparse(redirect_uri)
-            if parsed.hostname:
-                host = parsed.hostname
-            if parsed.port:
-                port = parsed.port
-
-            # Warn if custom path is specified (not supported by run_local_server)
-            if parsed.path and parsed.path not in ("/", ""):
-                print(
-                    f"Warning: Custom path '{parsed.path}' in redirect URI is ignored.\n"
-                    f"   Google's OAuth flow only supports root path '/'.\n"
-                    f"   Update your Google Cloud Console redirect URI to:\n"
-                    f"   http://{host}:{port}/\n",
-                    file=sys.stderr,
-                )
-
-        # Print helpful message - browser is never opened automatically
-        print(
-            "\n"
-            "=================================================================\n"
-            "MANUAL AUTHENTICATION REQUIRED\n"
-            "=================================================================\n"
-            "Open this URL in a browser on any device:\n"
-            "  (URL will be displayed when the server starts)\n"
-            "\n"
-            "After authorizing, copy the URL from the browser's address bar\n"
-            "and the server will complete the authentication.\n"
-            "=================================================================\n",
-            file=sys.stderr,
+        # Create flow for web application
+        flow = Flow.from_client_config(
+            client_config,
+            scopes=scopes,
+            redirect_uri=redirect_uri,
         )
 
-        # Run local server (always uses root path "/")
-        credentials = flow.run_local_server(host=host, port=port, open_browser=True)
+        # Generate state for CSRF protection
+        state = secrets.token_urlsafe(32)
 
-        return credentials
+        # Get authorization URL
+        auth_url, _ = flow.authorization_url(
+            access_type="offline",
+            prompt="consent",
+            state=state,
+        )
+
+        # Parse redirect URI to get host, port, and path
+        parsed = urlparse(redirect_uri)
+        host = parsed.hostname or DEFAULT_OAUTH_HOST
+        port = parsed.port or DEFAULT_OAUTH_PORT
+        callback_path = parsed.path or "/callback"
+
+        # Create callback handler
+        auth_code: list[str | None] = [None]
+        error_message: list[str | None] = [None]
+
+        class OAuthCallbackHandler(BaseHTTPRequestHandler):
+            """HTTP handler for OAuth callback."""
+
+            def log_message(self, format: str, *args) -> None:
+                """Suppress HTTP server logs."""
+                pass
+
+            def do_GET(self) -> None:
+                """Handle GET request from OAuth redirect."""
+                # Parse the request path
+                request_parsed = urlparse(self.path)
+
+                # Only handle the callback path
+                if request_parsed.path != callback_path:
+                    self.send_response(404)
+                    self.end_headers()
+                    self.wfile.write(b"Not Found")
+                    return
+
+                # Parse query parameters
+                query_params = parse_qs(request_parsed.query)
+
+                # Check for error
+                if "error" in query_params:
+                    error_message[0] = query_params["error"][0]
+                    self.send_response(400)
+                    self.send_header("Content-type", "text/html")
+                    self.end_headers()
+                    self.wfile.write(
+                        b"<html><body><h1>Authentication Failed</h1>"
+                        b"<p>Please close this window and try again.</p></body></html>"
+                    )
+                    return
+
+                # Get authorization code
+                if "code" in query_params:
+                    auth_code[0] = query_params["code"][0]
+                    self.send_response(200)
+                    self.send_header("Content-type", "text/html")
+                    self.end_headers()
+                    self.wfile.write(
+                        b"<html><body><h1>Authentication Successful!</h1>"
+                        b"<p>You can close this window and return to the terminal.</p>"
+                        b"</body></html>"
+                    )
+                else:
+                    self.send_response(400)
+                    self.send_header("Content-type", "text/html")
+                    self.end_headers()
+                    self.wfile.write(
+                        b"<html><body><h1>Authentication Failed</h1>"
+                        b"<p>No authorization code received.</p></body></html>"
+                    )
+
+        # Start local server
+        server = HTTPServer((host, port), OAuthCallbackHandler)
+        server.timeout = 300  # 5 minute timeout
+
+        # Open browser with authorization URL
+        print("Opening browser for Google authorization...")
+        print(f"If browser doesn't open, visit: {auth_url}")
+        webbrowser.open(auth_url)
+
+        # Wait for single callback request
+        server.handle_request()
+        server.server_close()
+
+        # Check for errors
+        if error_message[0]:
+            raise Exception(f"OAuth authentication failed: {error_message[0]}")
+
+        if not auth_code[0]:
+            raise Exception("No authorization code received from Google")
+
+        # Exchange code for tokens
+        flow.fetch_token(code=auth_code[0])
+
+        return flow.credentials
 
     async def refresh_if_needed(self) -> OAuthToken | None:
         """Refresh token if expired or about to expire.

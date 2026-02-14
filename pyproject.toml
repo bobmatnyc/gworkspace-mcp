@@ -1,6 +1,6 @@
 [project]
 name = "gworkspace-mcp"
-version = "0.1.19"
+version = "0.1.20"
 description = "Google Workspace MCP Server - Connect Claude to Google Workspace APIs"
 authors = [
     {name = "Bob Matsuoka", email = "bob@matsuoka.com"}
@@ -110,7 +110,7 @@ exclude_lines = [
 
 [tool.commitizen]
 name = "cz_conventional_commits"
-version = "0.1.19"
+version = "0.1.20"
 version_files = [
     "VERSION",
     "src/gworkspace_mcp/VERSION",

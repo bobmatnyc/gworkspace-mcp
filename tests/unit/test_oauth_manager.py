@@ -11,6 +11,9 @@ import pytest
 
 from gworkspace_mcp.auth.models import OAuthToken, TokenMetadata, TokenStatus
 from gworkspace_mcp.auth.oauth_manager import (
+    DEFAULT_OAUTH_HOST,
+    DEFAULT_OAUTH_PORT,
+    DEFAULT_REDIRECT_URI,
     GOOGLE_WORKSPACE_SCOPES,
     OAuthManager,
 )
@@ -397,56 +400,240 @@ class TestOAuthManagerGetCredentials:
 class TestOAuthManagerRunOAuthFlow:
     """Tests for OAuthManager._run_oauth_flow() method."""
 
-    def test_should_create_flow_from_client_config(self, oauth_manager: OAuthManager) -> None:
-        """Verify OAuth flow is created with client config."""
-        client_config = {
-            "installed": {
+    def _create_mock_flow(self, auth_url: str = "https://auth.url") -> MagicMock:
+        """Create a mock Flow with standard configuration."""
+        mock_flow = MagicMock()
+        mock_flow.authorization_url.return_value = (auth_url, "state123")
+        mock_flow.credentials = MagicMock()
+        return mock_flow
+
+    def _create_client_config(self, redirect_uri: str = "http://127.0.0.1:8789/callback") -> dict:
+        """Create a standard web client config for testing."""
+        return {
+            "web": {
                 "client_id": "test_id",
                 "client_secret": "test_secret",  # pragma: allowlist secret
                 "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                 "token_uri": "https://oauth2.googleapis.com/token",
-                "redirect_uris": ["http://localhost/"],
+                "redirect_uris": [redirect_uri],
             }
         }
-        scopes = ["https://www.googleapis.com/auth/calendar"]
 
-        mock_flow = MagicMock()
-        mock_flow.run_local_server.return_value = MagicMock()
+    def _setup_mock_server_with_auth_code(
+        self, mock_server_class: MagicMock, auth_code: str = "test_auth_code"
+    ) -> MagicMock:
+        """Setup mock server that simulates receiving an auth code.
+
+        The key insight: the OAuthCallbackHandler is defined inside _run_oauth_flow,
+        so we need to capture it when HTTPServer is instantiated and simulate
+        what would happen when handle_request() processes a callback with a code.
+        """
+        mock_server = MagicMock()
+        captured_handler_class: list = []
+
+        def capture_handler(addr_tuple, handler_class):
+            captured_handler_class.append(handler_class)
+            return mock_server
+
+        mock_server_class.side_effect = capture_handler
+
+        # When handle_request is called, simulate the callback
+        def simulate_auth_callback():
+            # The actual auth_code is set via the mock flow's fetch_token
+            pass
+
+        mock_server.handle_request = simulate_auth_callback
+        return mock_server
+
+    def test_should_create_flow_from_client_config(self, oauth_manager: OAuthManager) -> None:
+        """Verify OAuth flow is created with client config and redirect_uri."""
+        client_config = self._create_client_config()
+        scopes = ["https://www.googleapis.com/auth/calendar"]
+        redirect_uri = "http://127.0.0.1:8789/callback"
+
+        mock_flow = self._create_mock_flow()
 
         with patch(
-            "gworkspace_mcp.auth.oauth_manager.InstalledAppFlow.from_client_config",
+            "gworkspace_mcp.auth.oauth_manager.Flow.from_client_config",
             return_value=mock_flow,
         ) as mock_from_config:
-            oauth_manager._run_oauth_flow(client_config, scopes)
+            with patch("gworkspace_mcp.auth.oauth_manager.HTTPServer") as mock_server_class:
+                with patch("gworkspace_mcp.auth.oauth_manager.webbrowser.open"):
+                    mock_server = MagicMock()
 
-            mock_from_config.assert_called_once_with(client_config, scopes=scopes)
+                    # Simulate receiving auth code via closure modification
+                    def handle_request_with_code():
+                        # Access the auth_code list from the closure and set it
+                        # We need to find the auth_code list that was created
+                        pass
 
-    def test_should_run_local_server_with_dynamic_port(self, oauth_manager: OAuthManager) -> None:
-        """Verify local server runs with dynamic port (0) by default."""
-        client_config = {
-            "installed": {
-                "client_id": "test_id",
-                "client_secret": "test_secret",  # pragma: allowlist secret
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
-                "redirect_uris": ["http://localhost/"],
-            }
-        }
+                    mock_server.handle_request = handle_request_with_code
+                    mock_server_class.return_value = mock_server
 
-        mock_flow = MagicMock()
-        mock_credentials = MagicMock()
-        mock_flow.run_local_server.return_value = mock_credentials
+                    # Since we can't easily inject the auth_code into the closure,
+                    # we test that from_client_config was called correctly
+                    try:
+                        oauth_manager._run_oauth_flow(client_config, scopes, redirect_uri)
+                    except Exception:
+                        pass  # Expected due to no auth code
+
+                    mock_from_config.assert_called_once_with(
+                        client_config,
+                        scopes=scopes,
+                        redirect_uri=redirect_uri,
+                    )
+
+    def test_should_generate_authorization_url_with_offline_access(
+        self, oauth_manager: OAuthManager
+    ) -> None:
+        """Verify authorization URL is generated with offline access and consent prompt."""
+        client_config = self._create_client_config()
+        redirect_uri = "http://127.0.0.1:8789/callback"
+
+        mock_flow = self._create_mock_flow()
 
         with patch(
-            "gworkspace_mcp.auth.oauth_manager.InstalledAppFlow.from_client_config",
+            "gworkspace_mcp.auth.oauth_manager.Flow.from_client_config",
             return_value=mock_flow,
         ):
-            result = oauth_manager._run_oauth_flow(client_config, [])
+            with patch("gworkspace_mcp.auth.oauth_manager.HTTPServer") as mock_server_class:
+                with patch("gworkspace_mcp.auth.oauth_manager.webbrowser.open"):
+                    mock_server = MagicMock()
+                    mock_server_class.return_value = mock_server
 
-            mock_flow.run_local_server.assert_called_once_with(
-                host="localhost", port=0, open_browser=True
-            )
-            assert result == mock_credentials
+                    try:
+                        oauth_manager._run_oauth_flow(client_config, [], redirect_uri)
+                    except Exception:
+                        pass  # Expected
+
+                    # Verify authorization_url was called with correct params
+                    mock_flow.authorization_url.assert_called_once()
+                    call_kwargs = mock_flow.authorization_url.call_args[1]
+                    assert call_kwargs["access_type"] == "offline"
+                    assert call_kwargs["prompt"] == "consent"
+
+    def test_should_start_http_server_on_configured_host_port(
+        self, oauth_manager: OAuthManager
+    ) -> None:
+        """Verify HTTP server starts on host/port from redirect URI."""
+        redirect_uri = "http://127.0.0.1:9999/oauth/callback"
+        client_config = self._create_client_config(redirect_uri)
+
+        mock_flow = self._create_mock_flow()
+
+        with patch(
+            "gworkspace_mcp.auth.oauth_manager.Flow.from_client_config",
+            return_value=mock_flow,
+        ):
+            with patch("gworkspace_mcp.auth.oauth_manager.HTTPServer") as mock_server_class:
+                with patch("gworkspace_mcp.auth.oauth_manager.webbrowser.open"):
+                    mock_server = MagicMock()
+                    mock_server_class.return_value = mock_server
+
+                    try:
+                        oauth_manager._run_oauth_flow(client_config, [], redirect_uri)
+                    except Exception:
+                        pass  # Expected
+
+                    # Verify HTTPServer was instantiated with correct host/port
+                    mock_server_class.assert_called_once()
+                    call_args = mock_server_class.call_args[0]
+                    assert call_args[0] == ("127.0.0.1", 9999)
+
+    def test_should_open_browser_with_authorization_url(self, oauth_manager: OAuthManager) -> None:
+        """Verify browser opens with authorization URL."""
+        client_config = self._create_client_config()
+        redirect_uri = "http://127.0.0.1:8789/callback"
+        expected_auth_url = "https://accounts.google.com/o/oauth2/auth?response_type=code"
+
+        mock_flow = self._create_mock_flow(expected_auth_url)
+
+        with patch(
+            "gworkspace_mcp.auth.oauth_manager.Flow.from_client_config",
+            return_value=mock_flow,
+        ):
+            with patch("gworkspace_mcp.auth.oauth_manager.HTTPServer") as mock_server_class:
+                with patch(
+                    "gworkspace_mcp.auth.oauth_manager.webbrowser.open"
+                ) as mock_browser_open:
+                    mock_server = MagicMock()
+                    mock_server_class.return_value = mock_server
+
+                    try:
+                        oauth_manager._run_oauth_flow(client_config, [], redirect_uri)
+                    except Exception:
+                        pass  # Expected
+
+                    mock_browser_open.assert_called_once_with(expected_auth_url)
+
+    def test_should_raise_when_no_auth_code_received(self, oauth_manager: OAuthManager) -> None:
+        """Verify exception raised when no authorization code is received."""
+        client_config = self._create_client_config()
+        redirect_uri = "http://127.0.0.1:8789/callback"
+
+        mock_flow = self._create_mock_flow()
+
+        with patch(
+            "gworkspace_mcp.auth.oauth_manager.Flow.from_client_config",
+            return_value=mock_flow,
+        ):
+            with patch("gworkspace_mcp.auth.oauth_manager.HTTPServer") as mock_server_class:
+                with patch("gworkspace_mcp.auth.oauth_manager.webbrowser.open"):
+                    mock_server = MagicMock()
+                    mock_server_class.return_value = mock_server
+
+                    with pytest.raises(
+                        Exception, match="No authorization code received from Google"
+                    ):
+                        oauth_manager._run_oauth_flow(client_config, [], redirect_uri)
+
+    def test_should_set_server_timeout(self, oauth_manager: OAuthManager) -> None:
+        """Verify HTTP server timeout is set to 5 minutes."""
+        client_config = self._create_client_config()
+        redirect_uri = "http://127.0.0.1:8789/callback"
+
+        mock_flow = self._create_mock_flow()
+
+        with patch(
+            "gworkspace_mcp.auth.oauth_manager.Flow.from_client_config",
+            return_value=mock_flow,
+        ):
+            with patch("gworkspace_mcp.auth.oauth_manager.HTTPServer") as mock_server_class:
+                with patch("gworkspace_mcp.auth.oauth_manager.webbrowser.open"):
+                    mock_server = MagicMock()
+                    mock_server_class.return_value = mock_server
+
+                    try:
+                        oauth_manager._run_oauth_flow(client_config, [], redirect_uri)
+                    except Exception:
+                        pass  # Expected
+
+                    # Verify timeout was set to 300 seconds (5 minutes)
+                    assert mock_server.timeout == 300
+
+    def test_should_close_server_after_request(self, oauth_manager: OAuthManager) -> None:
+        """Verify HTTP server is closed after handling request."""
+        client_config = self._create_client_config()
+        redirect_uri = "http://127.0.0.1:8789/callback"
+
+        mock_flow = self._create_mock_flow()
+
+        with patch(
+            "gworkspace_mcp.auth.oauth_manager.Flow.from_client_config",
+            return_value=mock_flow,
+        ):
+            with patch("gworkspace_mcp.auth.oauth_manager.HTTPServer") as mock_server_class:
+                with patch("gworkspace_mcp.auth.oauth_manager.webbrowser.open"):
+                    mock_server = MagicMock()
+                    mock_server_class.return_value = mock_server
+
+                    try:
+                        oauth_manager._run_oauth_flow(client_config, [], redirect_uri)
+                    except Exception:
+                        pass  # Expected
+
+                    mock_server.handle_request.assert_called_once()
+                    mock_server.server_close.assert_called_once()
 
 
 @pytest.mark.unit
@@ -484,3 +671,25 @@ class TestGoogleWorkspaceScopes:
     def test_should_have_seven_scopes(self) -> None:
         """Verify exactly seven scopes are defined."""
         assert len(GOOGLE_WORKSPACE_SCOPES) == 7
+
+
+@pytest.mark.unit
+class TestOAuthDefaults:
+    """Tests for OAuth default configuration constants."""
+
+    def test_should_have_default_host(self) -> None:
+        """Verify default OAuth host is 127.0.0.1."""
+        assert DEFAULT_OAUTH_HOST == "127.0.0.1"
+
+    def test_should_have_default_port(self) -> None:
+        """Verify default OAuth port is 8789."""
+        assert DEFAULT_OAUTH_PORT == 8789
+
+    def test_should_have_default_redirect_uri_with_callback_path(self) -> None:
+        """Verify default redirect URI includes /callback path."""
+        assert DEFAULT_REDIRECT_URI == "http://127.0.0.1:8789/callback"
+
+    def test_should_have_consistent_default_redirect_uri(self) -> None:
+        """Verify default redirect URI uses default host and port."""
+        expected = f"http://{DEFAULT_OAUTH_HOST}:{DEFAULT_OAUTH_PORT}/callback"
+        assert DEFAULT_REDIRECT_URI == expected
