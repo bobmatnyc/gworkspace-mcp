@@ -405,7 +405,7 @@ class TestOAuthManagerRunOAuthFlow:
                 "client_secret": "test_secret",  # pragma: allowlist secret
                 "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                 "token_uri": "https://oauth2.googleapis.com/token",
-                "redirect_uris": ["http://localhost:8080/"],
+                "redirect_uris": ["http://localhost/"],
             }
         }
         scopes = ["https://www.googleapis.com/auth/calendar"]
@@ -419,19 +419,17 @@ class TestOAuthManagerRunOAuthFlow:
         ) as mock_from_config:
             oauth_manager._run_oauth_flow(client_config, scopes)
 
-            mock_from_config.assert_called_once_with(
-                client_config, scopes=scopes, redirect_uri="http://localhost:8080/"
-            )
+            mock_from_config.assert_called_once_with(client_config, scopes=scopes)
 
-    def test_should_run_local_server_on_port_8080(self, oauth_manager: OAuthManager) -> None:
-        """Verify local server runs on port 8080 with browser open."""
+    def test_should_run_local_server_with_dynamic_port(self, oauth_manager: OAuthManager) -> None:
+        """Verify local server runs with dynamic port (0) by default."""
         client_config = {
             "installed": {
                 "client_id": "test_id",
                 "client_secret": "test_secret",  # pragma: allowlist secret
                 "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                 "token_uri": "https://oauth2.googleapis.com/token",
-                "redirect_uris": ["http://localhost:8080/"],
+                "redirect_uris": ["http://localhost/"],
             }
         }
 
@@ -445,7 +443,9 @@ class TestOAuthManagerRunOAuthFlow:
         ):
             result = oauth_manager._run_oauth_flow(client_config, [])
 
-            mock_flow.run_local_server.assert_called_once_with(port=8080, open_browser=True)
+            mock_flow.run_local_server.assert_called_once_with(
+                host="localhost", port=0, open_browser=True
+            )
             assert result == mock_credentials
 
 

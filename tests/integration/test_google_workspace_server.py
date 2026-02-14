@@ -440,21 +440,18 @@ class TestDriveTools:
 
         async def mock_request(method, url, **kwargs):
             call_urls.append(url)
+            # Return metadata for metadata request, export content for export request
+            if "/export" in url:
+                mock_resp = MagicMock()
+                mock_resp.text = export_content
+                mock_resp.raise_for_status = MagicMock()
+                return mock_resp
             return create_mock_response(metadata_response)
 
-        async def mock_get(url, **kwargs):
-            mock_resp = MagicMock()
-            mock_resp.text = export_content
-            mock_resp.raise_for_status = MagicMock()
-            return mock_resp
-
-        with patch("httpx.AsyncClient") as mock_client_class:
+        with patch.object(server, "_get_http_client") as mock_get_client:
             mock_client = AsyncMock()
             mock_client.request = mock_request
-            mock_client.get = mock_get
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
+            mock_get_client.return_value = mock_client
 
             # Act
             result = await server._get_drive_file_content({"file_id": "doc_001"})

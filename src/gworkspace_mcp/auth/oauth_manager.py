@@ -167,8 +167,20 @@ class OAuthManager:
                 "GOOGLE_OAUTH_CLIENT_SECRET environment variables."
             )
 
-        # Get redirect URI from environment
-        redirect_uri = os.environ.get("GOOGLE_OAUTH_REDIRECT_URI", DEFAULT_REDIRECT_URI)
+        # Get redirect URI from environment and normalize it
+        # (Google's InstalledAppFlow only supports root path "/")
+        from urllib.parse import urlparse
+
+        redirect_uri_env = os.environ.get("GOOGLE_OAUTH_REDIRECT_URI", DEFAULT_REDIRECT_URI)
+        parsed = urlparse(redirect_uri_env)
+
+        # Construct normalized redirect URI (always use root path)
+        if parsed.hostname and parsed.port:
+            redirect_uri = f"http://{parsed.hostname}:{parsed.port}/"
+        elif parsed.hostname:
+            redirect_uri = f"http://{parsed.hostname}/"
+        else:
+            redirect_uri = DEFAULT_REDIRECT_URI
 
         # Create client config
         client_config = {
@@ -210,7 +222,13 @@ class OAuthManager:
         Note:
             Host and port are parsed from GOOGLE_OAUTH_REDIRECT_URI.
             Defaults to localhost with random available port.
+
+            IMPORTANT: Google's InstalledAppFlow.run_local_server() only supports
+            the root path "/". Custom paths like "/callback" are NOT supported.
+            Configure your Google Cloud Console redirect URI as:
+            http://127.0.0.1:PORT/ (not http://127.0.0.1:PORT/callback)
         """
+        import sys
         from urllib.parse import urlparse
 
         flow = InstalledAppFlow.from_client_config(client_config, scopes=scopes)
@@ -228,7 +246,17 @@ class OAuthManager:
             if parsed.port:
                 port = parsed.port
 
-        # Run local server
+            # Warn if custom path is specified (not supported by run_local_server)
+            if parsed.path and parsed.path not in ("/", ""):
+                print(
+                    f"⚠️  Warning: Custom path '{parsed.path}' in redirect URI is ignored.\n"
+                    f"   Google's OAuth flow only supports root path '/'.\n"
+                    f"   Update your Google Cloud Console redirect URI to:\n"
+                    f"   http://{host}:{port}/\n",
+                    file=sys.stderr,
+                )
+
+        # Run local server (always uses root path "/")
         credentials = flow.run_local_server(host=host, port=port, open_browser=True)
 
         return credentials
