@@ -1,0 +1,8 @@
+id: "0002_rename_service_key"
+version: "0.1.11"
+description: "Rename token service key from 'google-workspace' to 'gworkspace-mcp'"
+operations:
+  - type: rename_key
+    file: "~/.gworkspace-mcp/tokens.json"
+    old_key: "google-workspace"
+    new_key: "gworkspace-mcp"

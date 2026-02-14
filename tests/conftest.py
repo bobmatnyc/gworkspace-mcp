@@ -53,7 +53,7 @@ def expired_token() -> OAuthToken:
 def token_metadata() -> TokenMetadata:
     """Create token metadata for testing."""
     return TokenMetadata(
-        service_name="google-workspace",
+        service_name="gworkspace-mcp",
         provider="google",
         created_at=datetime.now(timezone.utc) - timedelta(days=1),
     )

@@ -34,8 +34,8 @@ class TestOAuthManagerInit:
         assert manager.storage is token_storage
 
     def test_should_set_service_name(self, oauth_manager: OAuthManager) -> None:
-        """Verify service name is set to google-workspace."""
-        assert oauth_manager._service_name == "google-workspace"
+        """Verify service name is set to gworkspace-mcp."""
+        assert oauth_manager._service_name == "gworkspace-mcp"
 
 
 @pytest.mark.unit
@@ -49,7 +49,7 @@ class TestOAuthManagerHasValidTokens:
         token_metadata: TokenMetadata,
     ) -> None:
         """Verify True returned when valid token is stored."""
-        oauth_manager.storage.store("google-workspace", valid_token, token_metadata)
+        oauth_manager.storage.store("gworkspace-mcp", valid_token, token_metadata)
 
         result = oauth_manager.has_valid_tokens()
 
@@ -67,7 +67,7 @@ class TestOAuthManagerHasValidTokens:
         token_metadata: TokenMetadata,
     ) -> None:
         """Verify False returned when token is expired."""
-        oauth_manager.storage.store("google-workspace", expired_token, token_metadata)
+        oauth_manager.storage.store("gworkspace-mcp", expired_token, token_metadata)
 
         result = oauth_manager.has_valid_tokens()
 
@@ -204,7 +204,7 @@ class TestOAuthManagerAuthenticate:
                 client_id="test_id", client_secret="test_secret"
             )  # pragma: allowlist secret
 
-            stored = oauth_manager.storage.retrieve("google-workspace")
+            stored = oauth_manager.storage.retrieve("gworkspace-mcp")
             assert stored is not None
             assert stored.token.access_token == "mock_access_token"
 
@@ -243,7 +243,7 @@ class TestOAuthManagerRefreshIfNeeded:
         token_metadata: TokenMetadata,
     ) -> None:
         """Verify valid token is returned without refresh."""
-        oauth_manager.storage.store("google-workspace", valid_token, token_metadata)
+        oauth_manager.storage.store("gworkspace-mcp", valid_token, token_metadata)
 
         result = await oauth_manager.refresh_if_needed()
 
@@ -261,7 +261,7 @@ class TestOAuthManagerRefreshIfNeeded:
             expires_at=datetime.now(timezone.utc) - timedelta(hours=1),
             scopes=[],
         )
-        oauth_manager.storage.store("google-workspace", expired_no_refresh, token_metadata)
+        oauth_manager.storage.store("gworkspace-mcp", expired_no_refresh, token_metadata)
 
         result = await oauth_manager.refresh_if_needed()
 
@@ -275,7 +275,7 @@ class TestOAuthManagerRefreshIfNeeded:
         token_metadata: TokenMetadata,
     ) -> None:
         """Verify expired token triggers refresh."""
-        oauth_manager.storage.store("google-workspace", expired_token, token_metadata)
+        oauth_manager.storage.store("gworkspace-mcp", expired_token, token_metadata)
 
         # Mock the credentials refresh
         mock_creds = MagicMock()
@@ -298,7 +298,7 @@ class TestOAuthManagerRefreshIfNeeded:
         token_metadata: TokenMetadata,
     ) -> None:
         """Verify stored token is updated after refresh."""
-        oauth_manager.storage.store("google-workspace", expired_token, token_metadata)
+        oauth_manager.storage.store("gworkspace-mcp", expired_token, token_metadata)
 
         mock_creds = MagicMock()
         mock_creds.token = "refreshed_access_token"
@@ -309,7 +309,7 @@ class TestOAuthManagerRefreshIfNeeded:
             with patch.object(mock_creds, "refresh"):
                 await oauth_manager.refresh_if_needed()
 
-                stored = oauth_manager.storage.retrieve("google-workspace")
+                stored = oauth_manager.storage.retrieve("gworkspace-mcp")
                 assert stored.token.access_token == "refreshed_access_token"
 
 
@@ -331,7 +331,7 @@ class TestOAuthManagerGetStatus:
         token_metadata: TokenMetadata,
     ) -> None:
         """Verify VALID status and token when valid token exists."""
-        oauth_manager.storage.store("google-workspace", valid_token, token_metadata)
+        oauth_manager.storage.store("gworkspace-mcp", valid_token, token_metadata)
 
         status, stored = oauth_manager.get_status()
 
@@ -346,7 +346,7 @@ class TestOAuthManagerGetStatus:
         token_metadata: TokenMetadata,
     ) -> None:
         """Verify EXPIRED status when token is expired."""
-        oauth_manager.storage.store("google-workspace", expired_token, token_metadata)
+        oauth_manager.storage.store("gworkspace-mcp", expired_token, token_metadata)
 
         status, stored = oauth_manager.get_status()
 
@@ -370,7 +370,7 @@ class TestOAuthManagerGetCredentials:
         token_metadata: TokenMetadata,
     ) -> None:
         """Verify credentials returned when token exists."""
-        oauth_manager.storage.store("google-workspace", valid_token, token_metadata)
+        oauth_manager.storage.store("gworkspace-mcp", valid_token, token_metadata)
 
         credentials = oauth_manager.get_credentials()
 
@@ -385,7 +385,7 @@ class TestOAuthManagerGetCredentials:
         token_metadata: TokenMetadata,
     ) -> None:
         """Verify credentials returned even for expired token."""
-        oauth_manager.storage.store("google-workspace", expired_token, token_metadata)
+        oauth_manager.storage.store("gworkspace-mcp", expired_token, token_metadata)
 
         credentials = oauth_manager.get_credentials()
 

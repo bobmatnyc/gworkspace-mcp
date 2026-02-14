@@ -54,7 +54,7 @@ class TestTokenMetadata:
 
     def test_should_track_service_name(self, token_metadata: TokenMetadata) -> None:
         """Verify service name is preserved."""
-        assert token_metadata.service_name == "google-workspace"
+        assert token_metadata.service_name == "gworkspace-mcp"
 
 
 @pytest.mark.unit
@@ -65,7 +65,7 @@ class TestStoredToken:
         """Verify stored token combines token and metadata."""
         assert stored_token.version == 1
         assert stored_token.token.access_token == "test_access_token_abc123"
-        assert stored_token.metadata.service_name == "google-workspace"
+        assert stored_token.metadata.service_name == "gworkspace-mcp"
 
 
 @pytest.mark.unit

@@ -67,7 +67,7 @@ class OAuthManager:
             storage: Token storage instance. Creates default if not provided.
         """
         self.storage = storage or TokenStorage()
-        self._service_name = "google-workspace"
+        self._service_name = "gworkspace-mcp"
 
     def has_valid_tokens(self) -> bool:
         """Check if valid tokens exist.
