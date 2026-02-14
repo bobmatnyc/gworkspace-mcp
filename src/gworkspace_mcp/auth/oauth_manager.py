@@ -276,8 +276,8 @@ class OAuthManager:
             file=sys.stderr,
         )
 
-        # Run local server (always uses root path "/", never opens browser)
-        credentials = flow.run_local_server(host=host, port=port, open_browser=False)
+        # Run local server (always uses root path "/")
+        credentials = flow.run_local_server(host=host, port=port, open_browser=True)
 
         return credentials
 

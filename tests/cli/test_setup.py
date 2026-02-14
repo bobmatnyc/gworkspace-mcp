@@ -50,8 +50,8 @@ class TestSetupCommand:
             )
             assert "Authentication successful" in result.output
 
-    def test_should_show_authorization_url_message(self, cli_runner: CliRunner) -> None:
-        """Verify message about authorization URL is shown."""
+    def test_should_show_browser_message(self, cli_runner: CliRunner) -> None:
+        """Verify message about browser opening is shown."""
         with patch("gworkspace_mcp.auth.OAuthManager") as mock_manager_class:
             mock_manager = MagicMock()
             mock_manager.has_valid_tokens.return_value = False
@@ -68,4 +68,4 @@ class TestSetupCommand:
                 ],
             )
 
-            assert "authorization URL will be displayed" in result.output
+            assert "Browser will open" in result.output

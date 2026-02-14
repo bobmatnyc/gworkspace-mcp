@@ -444,7 +444,7 @@ class TestOAuthManagerRunOAuthFlow:
             result = oauth_manager._run_oauth_flow(client_config, [])
 
             mock_flow.run_local_server.assert_called_once_with(
-                host="localhost", port=0, open_browser=False
+                host="localhost", port=0, open_browser=True
             )
             assert result == mock_credentials
 

@@ -79,9 +79,9 @@ def setup(client_id: str | None, client_secret: str | None) -> None:
     """Set up Google Workspace OAuth authentication.
 
     This will:
-    1. Display an authorization URL for you to visit
-    2. Wait for OAuth2 redirect after you authorize
-    3. Store refresh tokens at ./.gworkspace-mcp/tokens.json (PROJECT-LEVEL)
+    1. Open browser for OAuth2 consent flow
+    2. Store refresh tokens at ./.gworkspace-mcp/tokens.json (PROJECT-LEVEL)
+    3. Validate API access
 
     Note: Run this command from your project directory. Each project needs
     its own authentication for isolation.
@@ -119,7 +119,7 @@ def setup(client_id: str | None, client_secret: str | None) -> None:
 
     # Run authentication
     click.echo("Starting OAuth authentication flow...")
-    click.echo("An authorization URL will be displayed. Open it in your browser.")
+    click.echo("Browser will open for Google consent...")
     click.echo("")
 
     try:
