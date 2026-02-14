@@ -62,10 +62,10 @@ class MigrationRunner:
             migrations_dir: Directory containing migration YAML files.
                 Defaults to the package's migrations/ directory.
             state_file: Path to store migration state.
-                Defaults to ~/.gworkspace-mcp/.migration_state.json
+                Defaults to ./.gworkspace-mcp/.migration_state.json (project-level)
         """
         self.migrations_dir = migrations_dir or Path(__file__).parent
-        self.state_file = state_file or (Path.home() / ".gworkspace-mcp" / ".migration_state.json")
+        self.state_file = state_file or (Path.cwd() / ".gworkspace-mcp" / ".migration_state.json")
         self._on_progress: Callable[[str], None] | None = None
 
     def set_progress_callback(self, callback: Callable[[str], None] | None) -> None:

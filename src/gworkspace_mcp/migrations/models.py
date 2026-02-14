@@ -88,7 +88,7 @@ class AppliedMigration(BaseModel):
 class MigrationState(BaseModel):
     """State tracking for applied migrations.
 
-    Stored in ~/.gworkspace-mcp/.migration_state.json
+    Stored in ./.gworkspace-mcp/.migration_state.json (project-level)
 
     Attributes:
         applied_migrations: List of migrations that have been applied.

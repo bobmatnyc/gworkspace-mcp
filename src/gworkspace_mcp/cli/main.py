@@ -40,6 +40,36 @@ def main() -> None:
     pass
 
 
+def _add_to_gitignore(entry: str) -> bool:
+    """Add an entry to .gitignore if not already present.
+
+    Args:
+        entry: The pattern to add (e.g., ".gworkspace-mcp/")
+
+    Returns:
+        True if entry was added, False if already present or no .gitignore
+    """
+    gitignore_path = Path(".gitignore")
+
+    # Read existing content
+    existing_lines: list[str] = []
+    if gitignore_path.exists():
+        existing_lines = gitignore_path.read_text().splitlines()
+
+    # Check if entry already exists
+    if entry in existing_lines or entry.rstrip("/") in existing_lines:
+        return False
+
+    # Add entry
+    with open(gitignore_path, "a") as f:
+        # Add newline if file doesn't end with one
+        if existing_lines and existing_lines[-1]:
+            f.write("\n")
+        f.write(f"\n# gworkspace-mcp OAuth tokens (project-level)\n{entry}\n")
+
+    return True
+
+
 @main.command()
 @click.option("--client-id", envvar="GOOGLE_OAUTH_CLIENT_ID", help="Google OAuth client ID")
 @click.option(
@@ -50,8 +80,11 @@ def setup(client_id: str | None, client_secret: str | None) -> None:
 
     This will:
     1. Open browser for OAuth2 consent flow
-    2. Store refresh tokens securely at ~/.gworkspace-mcp/tokens.json
+    2. Store refresh tokens at ./.gworkspace-mcp/tokens.json (PROJECT-LEVEL)
     3. Validate API access
+
+    Note: Run this command from your project directory. Each project needs
+    its own authentication for isolation.
 
     Requires:
     - GOOGLE_OAUTH_CLIENT_ID environment variable or --client-id option
@@ -93,8 +126,13 @@ def setup(client_id: str | None, client_secret: str | None) -> None:
         asyncio.run(manager.authenticate(client_id=client_id, client_secret=client_secret))
         click.echo("✓ Authentication successful!")
         click.echo(f"Token stored at: {manager.token_path}")
+
+        # Add .gworkspace-mcp/ to .gitignore
+        if _add_to_gitignore(".gworkspace-mcp/"):
+            click.echo("✓ Added .gworkspace-mcp/ to .gitignore")
+
         click.echo("")
-        click.echo("Run 'workspace doctor' to verify setup.")
+        click.echo("Run 'gworkspace-mcp doctor' to verify setup.")
     except Exception as e:
         click.echo(f"❌ Authentication failed: {e}")
         sys.exit(1)
@@ -112,7 +150,7 @@ def mcp() -> None:
     - Tasks (10 tools): Task lists and task management
 
     Authentication is required before starting the server.
-    Run 'workspace setup' if not already authenticated.
+    Run 'gworkspace-mcp setup' if not already authenticated.
 
     This command is typically invoked by Claude Desktop via the MCP protocol.
     """
@@ -124,11 +162,11 @@ def mcp() -> None:
     status, _ = manager.get_status()
 
     if status == TokenStatus.MISSING:
-        click.echo("❌ Not authenticated. Run 'workspace setup' first.")
+        click.echo("❌ Not authenticated. Run 'gworkspace-mcp setup' first.")
         sys.exit(1)
 
     if status == TokenStatus.INVALID:
-        click.echo("❌ Token file corrupted. Run 'workspace setup' to re-authenticate.")
+        click.echo("❌ Token file corrupted. Run 'gworkspace-mcp setup' to re-authenticate.")
         sys.exit(1)
 
     # Start the MCP server (runs indefinitely)
@@ -229,10 +267,20 @@ def doctor() -> None:
     1. Python dependencies installed
     2. OAuth credentials configured
     3. Token validity
+
+    Note: Authentication is PROJECT-LEVEL. Each project directory requires
+    its own 'gworkspace-mcp setup' to authenticate.
     """
+    from pathlib import Path
+
     from gworkspace_mcp.auth import OAuthManager, TokenStatus
 
     click.echo("Google Workspace MCP Status:")
+    click.echo("")
+
+    # Show current project context
+    click.echo("Project:")
+    click.echo(f"  Working directory: {Path.cwd()}")
     click.echo("")
 
     # Check dependencies
@@ -259,17 +307,18 @@ def doctor() -> None:
     if status == TokenStatus.MISSING:
         click.echo("  ❌ Not authenticated")
         click.echo("")
-        click.echo("Run 'workspace setup' to authenticate.")
+        click.echo("Run 'gworkspace-mcp setup' FROM THIS DIRECTORY to authenticate.")
+        click.echo("(Authentication is project-specific)")
         sys.exit(1)
     elif status == TokenStatus.INVALID:
         click.echo("  ❌ Token file corrupted")
         click.echo("")
-        click.echo("Run 'workspace setup' to re-authenticate.")
+        click.echo("Run 'gworkspace-mcp setup' to re-authenticate.")
         sys.exit(1)
     elif status == TokenStatus.EXPIRED:
         click.echo("  ⚠️  Token expired (can be refreshed)")
         click.echo("")
-        click.echo("Run 'workspace setup' or token will refresh automatically on use.")
+        click.echo("Run 'gworkspace-mcp setup' or token will refresh automatically on use.")
     elif status == TokenStatus.VALID:
         click.echo("  ✓ Authenticated")
         if stored:
@@ -283,7 +332,7 @@ def doctor() -> None:
     if status in (TokenStatus.VALID, TokenStatus.EXPIRED):
         click.echo("✓ Ready to use!")
     else:
-        click.echo("❌ Setup required. Run 'workspace setup' to authenticate.")
+        click.echo("❌ Setup required. Run 'gworkspace-mcp setup' from this directory.")
 
 
 if __name__ == "__main__":
