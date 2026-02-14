@@ -477,6 +477,10 @@ class TestGoogleWorkspaceScopes:
         """Verify spreadsheets scope is included for read/write support."""
         assert "https://www.googleapis.com/auth/spreadsheets" in GOOGLE_WORKSPACE_SCOPES
 
-    def test_should_have_six_scopes(self) -> None:
-        """Verify exactly six scopes are defined."""
-        assert len(GOOGLE_WORKSPACE_SCOPES) == 6
+    def test_should_include_slides_scope(self) -> None:
+        """Verify presentations scope is included for Slides access."""
+        assert "https://www.googleapis.com/auth/presentations" in GOOGLE_WORKSPACE_SCOPES
+
+    def test_should_have_seven_scopes(self) -> None:
+        """Verify exactly seven scopes are defined."""
+        assert len(GOOGLE_WORKSPACE_SCOPES) == 7

@@ -1133,3 +1133,432 @@ class TestErrorHandling:
                 # Assert
                 assert token == "refreshed_token_xyz"
                 mock_oauth_manager.refresh_if_needed.assert_called_once()
+
+
+# =============================================================================
+# Slides Integration Tests
+# =============================================================================
+
+
+@pytest.mark.integration
+class TestSlidesTools:
+    """Integration tests for Slides MCP tools."""
+
+    @pytest.mark.asyncio
+    async def test_list_presentations_success(self, server):
+        """Test listing presentations returns formatted list."""
+        # Arrange
+        drive_response = {
+            "files": [
+                {
+                    "id": "pres_001",
+                    "name": "Q1 Report",
+                    "mimeType": "application/vnd.google-apps.presentation",
+                    "modifiedTime": "2025-02-10T12:00:00Z",
+                    "owners": [{"emailAddress": "owner@example.com"}],
+                    "webViewLink": "https://docs.google.com/presentation/d/pres_001",
+                },
+                {
+                    "id": "pres_002",
+                    "name": "Project Plan",
+                    "mimeType": "application/vnd.google-apps.presentation",
+                    "modifiedTime": "2025-02-09T15:00:00Z",
+                    "owners": [{"emailAddress": "owner@example.com"}],
+                    "webViewLink": "https://docs.google.com/presentation/d/pres_002",
+                },
+            ]
+        }
+
+        async def mock_request(method, url, **kwargs):
+            return create_mock_response(drive_response)
+
+        with patch.object(server, "_get_http_client") as mock_get_client:
+            mock_client = AsyncMock()
+            mock_client.request = mock_request
+            mock_get_client.return_value = mock_client
+
+            # Act
+            result = await server._list_presentations({"query": "Report"})
+
+            # Assert
+            assert result["count"] == 2
+            assert len(result["presentations"]) == 2
+            assert result["presentations"][0]["id"] == "pres_001"
+            assert result["presentations"][0]["name"] == "Q1 Report"
+            assert result["presentations"][0]["owners"] == ["owner@example.com"]
+
+    @pytest.mark.asyncio
+    async def test_get_presentation_success(self, server):
+        """Test getting presentation metadata returns structure info."""
+        # Arrange
+        presentation_response = {
+            "presentationId": "pres_001",
+            "title": "Q1 Report",
+            "pageSize": {"width": {"magnitude": 9144000, "unit": "EMU"}},
+            "locale": "en",
+            "slides": [
+                {
+                    "objectId": "slide_001",
+                    "slideProperties": {"layoutObjectId": "layout_001"},
+                },
+                {
+                    "objectId": "slide_002",
+                    "slideProperties": {"layoutObjectId": "layout_002"},
+                },
+            ],
+            "masters": [{"objectId": "master_001"}],
+            "layouts": [
+                {
+                    "objectId": "layout_001",
+                    "layoutProperties": {"name": "TITLE", "displayName": "Title"},
+                }
+            ],
+        }
+
+        async def mock_request(method, url, **kwargs):
+            return create_mock_response(presentation_response)
+
+        with patch.object(server, "_get_http_client") as mock_get_client:
+            mock_client = AsyncMock()
+            mock_client.request = mock_request
+            mock_get_client.return_value = mock_client
+
+            # Act
+            result = await server._get_presentation({"presentation_id": "pres_001"})
+
+            # Assert
+            assert result["presentation_id"] == "pres_001"
+            assert result["title"] == "Q1 Report"
+            assert result["slide_count"] == 2
+            assert len(result["slides"]) == 2
+            assert result["slides"][0]["object_id"] == "slide_001"
+
+    @pytest.mark.asyncio
+    async def test_get_slide_success(self, server):
+        """Test getting slide content returns elements."""
+        # Arrange
+        presentation_response = {
+            "presentationId": "pres_001",
+            "slides": [
+                {
+                    "objectId": "slide_001",
+                    "pageElements": [
+                        {
+                            "objectId": "shape_001",
+                            "shape": {
+                                "shapeType": "TEXT_BOX",
+                                "text": {"textElements": [{"textRun": {"content": "Hello World"}}]},
+                            },
+                        },
+                        {
+                            "objectId": "image_001",
+                            "image": {
+                                "sourceUrl": "https://example.com/image.png",
+                            },
+                        },
+                    ],
+                }
+            ],
+        }
+
+        async def mock_request(method, url, **kwargs):
+            return create_mock_response(presentation_response)
+
+        with patch.object(server, "_get_http_client") as mock_get_client:
+            mock_client = AsyncMock()
+            mock_client.request = mock_request
+            mock_get_client.return_value = mock_client
+
+            # Act
+            result = await server._get_slide({"presentation_id": "pres_001", "slide_index": 0})
+
+            # Assert
+            assert result["presentation_id"] == "pres_001"
+            assert result["slide_index"] == 0
+            assert result["slide_id"] == "slide_001"
+            assert result["element_count"] == 2
+            assert result["elements"][0]["type"] == "shape"
+            assert result["elements"][0]["text"] == "Hello World"
+            assert result["elements"][1]["type"] == "image"
+
+    @pytest.mark.asyncio
+    async def test_get_slide_invalid_index(self, server):
+        """Test getting slide with invalid index raises error."""
+        # Arrange
+        presentation_response = {
+            "presentationId": "pres_001",
+            "slides": [{"objectId": "slide_001", "pageElements": []}],
+        }
+
+        async def mock_request(method, url, **kwargs):
+            return create_mock_response(presentation_response)
+
+        with patch.object(server, "_get_http_client") as mock_get_client:
+            mock_client = AsyncMock()
+            mock_client.request = mock_request
+            mock_get_client.return_value = mock_client
+
+            # Act & Assert
+            with pytest.raises(ValueError) as exc_info:
+                await server._get_slide({"presentation_id": "pres_001", "slide_index": 5})
+
+            assert "out of range" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_get_presentation_text_success(self, server):
+        """Test extracting all text from presentation."""
+        # Arrange
+        presentation_response = {
+            "presentationId": "pres_001",
+            "title": "Test Presentation",
+            "slides": [
+                {
+                    "objectId": "slide_001",
+                    "pageElements": [
+                        {
+                            "shape": {
+                                "text": {
+                                    "textElements": [{"textRun": {"content": "Slide 1 Title\n"}}]
+                                }
+                            }
+                        }
+                    ],
+                },
+                {
+                    "objectId": "slide_002",
+                    "pageElements": [
+                        {
+                            "shape": {
+                                "text": {
+                                    "textElements": [{"textRun": {"content": "Slide 2 Content\n"}}]
+                                }
+                            }
+                        }
+                    ],
+                },
+            ],
+        }
+
+        async def mock_request(method, url, **kwargs):
+            return create_mock_response(presentation_response)
+
+        with patch.object(server, "_get_http_client") as mock_get_client:
+            mock_client = AsyncMock()
+            mock_client.request = mock_request
+            mock_get_client.return_value = mock_client
+
+            # Act
+            result = await server._get_presentation_text({"presentation_id": "pres_001"})
+
+            # Assert
+            assert result["presentation_id"] == "pres_001"
+            assert result["title"] == "Test Presentation"
+            assert result["slide_count"] == 2
+            assert "Slide 1 Title" in result["combined_text"]
+            assert "Slide 2 Content" in result["combined_text"]
+
+    @pytest.mark.asyncio
+    async def test_create_presentation_success(self, server):
+        """Test creating a new presentation returns details."""
+        # Arrange
+        create_response = {
+            "presentationId": "new_pres_001",
+            "title": "New Presentation",
+        }
+
+        async def mock_request(method, url, **kwargs):
+            return create_mock_response(create_response)
+
+        with patch.object(server, "_get_http_client") as mock_get_client:
+            mock_client = AsyncMock()
+            mock_client.request = mock_request
+            mock_get_client.return_value = mock_client
+
+            # Act
+            result = await server._create_presentation({"title": "New Presentation"})
+
+            # Assert
+            assert result["status"] == "created"
+            assert result["presentation_id"] == "new_pres_001"
+            assert result["title"] == "New Presentation"
+            assert "docs.google.com/presentation" in result["url"]
+
+    @pytest.mark.asyncio
+    async def test_add_slide_success(self, server):
+        """Test adding a slide returns created slide details."""
+        # Arrange
+        batch_response = {
+            "presentationId": "pres_001",
+            "replies": [{"createSlide": {"objectId": "new_slide_001"}}],
+        }
+
+        captured_body = {}
+
+        async def mock_request(method, url, **kwargs):
+            if kwargs.get("json"):
+                captured_body.update(kwargs["json"])
+            return create_mock_response(batch_response)
+
+        with patch.object(server, "_get_http_client") as mock_get_client:
+            mock_client = AsyncMock()
+            mock_client.request = mock_request
+            mock_get_client.return_value = mock_client
+
+            # Act
+            result = await server._add_slide(
+                {"presentation_id": "pres_001", "layout": "TITLE_AND_BODY"}
+            )
+
+            # Assert
+            assert result["status"] == "created"
+            assert result["presentation_id"] == "pres_001"
+            assert result["layout"] == "TITLE_AND_BODY"
+            assert "createSlide" in captured_body["requests"][0]
+
+    @pytest.mark.asyncio
+    async def test_delete_slide_success(self, server):
+        """Test deleting a slide returns confirmation."""
+        # Arrange
+        batch_response = {"presentationId": "pres_001", "replies": [{}]}
+
+        async def mock_request(method, url, **kwargs):
+            return create_mock_response(batch_response)
+
+        with patch.object(server, "_get_http_client") as mock_get_client:
+            mock_client = AsyncMock()
+            mock_client.request = mock_request
+            mock_get_client.return_value = mock_client
+
+            # Act
+            result = await server._delete_slide(
+                {"presentation_id": "pres_001", "slide_id": "slide_001"}
+            )
+
+            # Assert
+            assert result["status"] == "deleted"
+            assert result["presentation_id"] == "pres_001"
+            assert result["slide_id"] == "slide_001"
+
+    @pytest.mark.asyncio
+    async def test_update_slide_text_success(self, server):
+        """Test updating text in a shape returns confirmation."""
+        # Arrange
+        batch_response = {"presentationId": "pres_001", "replies": [{}, {}]}
+
+        captured_body = {}
+
+        async def mock_request(method, url, **kwargs):
+            if kwargs.get("json"):
+                captured_body.update(kwargs["json"])
+            return create_mock_response(batch_response)
+
+        with patch.object(server, "_get_http_client") as mock_get_client:
+            mock_client = AsyncMock()
+            mock_client.request = mock_request
+            mock_get_client.return_value = mock_client
+
+            # Act
+            result = await server._update_slide_text(
+                {
+                    "presentation_id": "pres_001",
+                    "shape_id": "shape_001",
+                    "text": "Updated text content",
+                }
+            )
+
+            # Assert
+            assert result["status"] == "updated"
+            assert result["presentation_id"] == "pres_001"
+            assert result["shape_id"] == "shape_001"
+            assert result["text_length"] == len("Updated text content")
+            # Verify deleteText and insertText requests
+            assert len(captured_body["requests"]) == 2
+            assert "deleteText" in captured_body["requests"][0]
+            assert "insertText" in captured_body["requests"][1]
+
+    @pytest.mark.asyncio
+    async def test_add_text_box_success(self, server):
+        """Test adding a text box returns created element details."""
+        # Arrange
+        batch_response = {"presentationId": "pres_001", "replies": [{}, {}]}
+
+        captured_body = {}
+
+        async def mock_request(method, url, **kwargs):
+            if kwargs.get("json"):
+                captured_body.update(kwargs["json"])
+            return create_mock_response(batch_response)
+
+        with patch.object(server, "_get_http_client") as mock_get_client:
+            mock_client = AsyncMock()
+            mock_client.request = mock_request
+            mock_get_client.return_value = mock_client
+
+            # Act
+            result = await server._add_text_box(
+                {
+                    "presentation_id": "pres_001",
+                    "slide_id": "slide_001",
+                    "text": "New text box content",
+                    "x_pt": 150,
+                    "y_pt": 200,
+                    "width_pt": 400,
+                    "height_pt": 100,
+                }
+            )
+
+            # Assert
+            assert result["status"] == "created"
+            assert result["presentation_id"] == "pres_001"
+            assert result["slide_id"] == "slide_001"
+            assert result["text_length"] == len("New text box content")
+            assert result["position"]["x_pt"] == 150
+            assert result["size"]["width_pt"] == 400
+            # Verify createShape and insertText requests
+            assert "createShape" in captured_body["requests"][0]
+            assert "insertText" in captured_body["requests"][1]
+
+    @pytest.mark.asyncio
+    async def test_add_image_success(self, server):
+        """Test adding an image returns created element details."""
+        # Arrange
+        batch_response = {"presentationId": "pres_001", "replies": [{}]}
+
+        captured_body = {}
+
+        async def mock_request(method, url, **kwargs):
+            if kwargs.get("json"):
+                captured_body.update(kwargs["json"])
+            return create_mock_response(batch_response)
+
+        with patch.object(server, "_get_http_client") as mock_get_client:
+            mock_client = AsyncMock()
+            mock_client.request = mock_request
+            mock_get_client.return_value = mock_client
+
+            # Act
+            result = await server._add_image(
+                {
+                    "presentation_id": "pres_001",
+                    "slide_id": "slide_001",
+                    "image_url": "https://example.com/image.png",
+                    "x_pt": 100,
+                    "y_pt": 100,
+                    "width_pt": 500,
+                    "height_pt": 300,
+                }
+            )
+
+            # Assert
+            assert result["status"] == "created"
+            assert result["presentation_id"] == "pres_001"
+            assert result["slide_id"] == "slide_001"
+            assert result["image_url"] == "https://example.com/image.png"
+            assert result["position"]["x_pt"] == 100
+            assert result["size"]["width_pt"] == 500
+            # Verify createImage request
+            assert "createImage" in captured_body["requests"][0]
+            assert (
+                captured_body["requests"][0]["createImage"]["url"]
+                == "https://example.com/image.png"
+            )
