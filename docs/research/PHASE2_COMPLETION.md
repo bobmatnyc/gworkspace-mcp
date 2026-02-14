@@ -18,7 +18,7 @@ Successfully extracted and simplified OAuth infrastructure from claude-mpm to gw
 
 #### `auth/token_storage.py` (~209 lines)
 - **TokenStorage**: JSON-based token persistence
-- Storage location: `~/.gworkspace-mcp/tokens.json`
+- Storage location: `~/.google-workspace-mcp/tokens.json`
 - Secure file permissions (0o700 for directory, 0o600 for file)
 - Methods: `store()`, `retrieve()`, `delete()`, `list_services()`, `get_status()`
 
@@ -44,7 +44,7 @@ workspace setup
 
 Features:
 - Opens browser for Google OAuth consent
-- Stores refresh tokens at `~/.gworkspace-mcp/tokens.json`
+- Stores refresh tokens at `~/.google-workspace-mcp/tokens.json`
 - Validates API access
 - Prompts for re-authentication if already authenticated
 
@@ -84,7 +84,7 @@ GOOGLE_WORKSPACE_SCOPES = [
 ## ✅ Acceptance Criteria Met
 
 1. **OAuth Flow**: ✅ Implemented using `google-auth-oauthlib`
-2. **Token Storage**: ✅ At `~/.gworkspace-mcp/tokens.json`
+2. **Token Storage**: ✅ At `~/.google-workspace-mcp/tokens.json`
 3. **Setup Command**: ✅ Prompts for client credentials, opens browser
 4. **Doctor Command**: ✅ Checks dependencies, token status, expiration
 

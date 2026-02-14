@@ -25,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial release of Google Workspace MCP Server
 - OAuth 2.0 authentication infrastructure with token persistence
 - CLI commands: `workspace setup`, `workspace doctor`, `workspace mcp`
-- Token storage at `~/.gworkspace-mcp/tokens.json`
+- Token storage at `~/.google-workspace-mcp/tokens.json`
 
 ### Gmail Tools (18)
 - `search_gmail_messages` - Search emails with Gmail query syntax

@@ -152,13 +152,13 @@ Google Workspace MCP Doctor
 Tokens are stored at:
 
 ```
-~/.gworkspace-mcp/tokens.json
+~/.google-workspace-mcp/tokens.json
 ```
 
 **Security notes**:
 - File permissions are set to `600` (owner read/write only)
 - Contains refresh tokens - do not share this file
-- Delete to revoke access: `rm ~/.gworkspace-mcp/tokens.json`
+- Delete to revoke access: `rm ~/.google-workspace-mcp/tokens.json`
 
 ## Scopes Explained
 
@@ -176,7 +176,7 @@ Tokens refresh automatically when expired. If you encounter authentication error
 
 ```bash
 # Delete existing tokens
-rm ~/.gworkspace-mcp/tokens.json
+rm ~/.google-workspace-mcp/tokens.json
 
 # Re-authenticate
 workspace setup
@@ -201,7 +201,7 @@ The callback URL doesn't match. Ensure:
 The refresh token may have expired. Re-authenticate:
 
 ```bash
-rm ~/.gworkspace-mcp/tokens.json
+rm ~/.google-workspace-mcp/tokens.json
 workspace setup
 ```
 
@@ -210,14 +210,14 @@ workspace setup
 Check file permissions:
 
 ```bash
-ls -la ~/.gworkspace-mcp/
+ls -la ~/.google-workspace-mcp/
 ```
 
 The directory should have `700` permissions:
 
 ```bash
-chmod 700 ~/.gworkspace-mcp
-chmod 600 ~/.gworkspace-mcp/tokens.json
+chmod 700 ~/.google-workspace-mcp
+chmod 600 ~/.google-workspace-mcp/tokens.json
 ```
 
 ## Security Best Practices
@@ -234,7 +234,7 @@ chmod 600 ~/.gworkspace-mcp/tokens.json
 3. **Limit scopes** - Only request scopes you need (all are required for full functionality)
 
 4. **Revoke access if compromised**:
-   - Delete local tokens: `rm ~/.gworkspace-mcp/tokens.json`
+   - Delete local tokens: `rm ~/.google-workspace-mcp/tokens.json`
    - Revoke in Google: [myaccount.google.com/permissions](https://myaccount.google.com/permissions)
 
 ## Next Steps
