@@ -473,6 +473,10 @@ class TestGoogleWorkspaceScopes:
         """Verify tasks scope is included."""
         assert "https://www.googleapis.com/auth/tasks" in GOOGLE_WORKSPACE_SCOPES
 
-    def test_should_have_five_scopes(self) -> None:
-        """Verify exactly five scopes are defined."""
-        assert len(GOOGLE_WORKSPACE_SCOPES) == 5
+    def test_should_include_sheets_readonly_scope(self) -> None:
+        """Verify spreadsheets readonly scope is included for multi-tab support."""
+        assert "https://www.googleapis.com/auth/spreadsheets.readonly" in GOOGLE_WORKSPACE_SCOPES
+
+    def test_should_have_six_scopes(self) -> None:
+        """Verify exactly six scopes are defined."""
+        assert len(GOOGLE_WORKSPACE_SCOPES) == 6

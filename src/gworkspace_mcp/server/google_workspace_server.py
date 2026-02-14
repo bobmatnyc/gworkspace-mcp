@@ -45,6 +45,7 @@ GMAIL_API_BASE = "https://gmail.googleapis.com/gmail/v1"
 DRIVE_API_BASE = "https://www.googleapis.com/drive/v3"
 DOCS_API_BASE = "https://docs.googleapis.com/v1"
 TASKS_API_BASE = "https://tasks.googleapis.com/tasks/v1"
+SHEETS_API_BASE = "https://sheets.googleapis.com/v4"
 
 
 class GoogleWorkspaceServer:
@@ -264,6 +265,63 @@ class GoogleWorkspaceServer:
                             },
                         },
                         "required": ["file_id"],
+                    },
+                ),
+                # Google Sheets multi-tab tools
+                Tool(
+                    name="list_spreadsheet_sheets",
+                    description="List all tabs/sheets in a Google Spreadsheet. Returns sheet names with their properties (name, index, sheetId). Use this to discover available sheets before reading data.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "spreadsheet_id": {
+                                "type": "string",
+                                "description": "Google Spreadsheet ID (from the URL)",
+                            },
+                        },
+                        "required": ["spreadsheet_id"],
+                    },
+                ),
+                Tool(
+                    name="get_sheet_values",
+                    description="Get values from a specific sheet/tab in a Google Spreadsheet. Returns data as formatted CSV text. Use list_spreadsheet_sheets first to get available sheet names.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "spreadsheet_id": {
+                                "type": "string",
+                                "description": "Google Spreadsheet ID (from the URL)",
+                            },
+                            "sheet_name": {
+                                "type": "string",
+                                "description": "Name of the sheet/tab to read (e.g., 'Sheet1', 'Sales Data')",
+                            },
+                            "range": {
+                                "type": "string",
+                                "description": "Cell range in A1 notation (e.g., 'A1:Z100', 'A:ZZ'). Default: 'A:ZZ' (all columns)",
+                                "default": "A:ZZ",
+                            },
+                        },
+                        "required": ["spreadsheet_id", "sheet_name"],
+                    },
+                ),
+                Tool(
+                    name="get_spreadsheet_data",
+                    description="Get all sheets and their data from a Google Spreadsheet. Returns a dictionary mapping sheet names to their values. Efficient batch operation for multi-tab spreadsheets.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "spreadsheet_id": {
+                                "type": "string",
+                                "description": "Google Spreadsheet ID (from the URL)",
+                            },
+                            "max_rows": {
+                                "type": "integer",
+                                "description": "Maximum rows to retrieve per sheet (default: 1000)",
+                                "default": 1000,
+                            },
+                        },
+                        "required": ["spreadsheet_id"],
                     },
                 ),
                 Tool(
@@ -2017,6 +2075,10 @@ class GoogleWorkspaceServer:
             "get_gmail_message_content": self._get_gmail_message_content,
             "search_drive_files": self._search_drive_files,
             "get_drive_file_content": self._get_drive_file_content,
+            # Sheets multi-tab operations
+            "list_spreadsheet_sheets": self._list_spreadsheet_sheets,
+            "get_sheet_values": self._get_sheet_values,
+            "get_spreadsheet_data": self._get_spreadsheet_data,
             "list_document_comments": self._list_document_comments,
             "add_document_comment": self._add_document_comment,
             "reply_to_comment": self._reply_to_comment,
@@ -2527,6 +2589,173 @@ class GoogleWorkspaceServer:
             "name": metadata.get("name"),
             "mimeType": mime_type,
             "content": content,
+        }
+
+    async def _list_spreadsheet_sheets(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """List all sheets/tabs in a Google Spreadsheet.
+
+        Args:
+            arguments: Tool arguments with spreadsheet_id.
+
+        Returns:
+            List of sheets with their properties (name, index, sheetId).
+        """
+        spreadsheet_id = arguments["spreadsheet_id"]
+
+        url = f"{SHEETS_API_BASE}/spreadsheets/{spreadsheet_id}"
+        params = {"fields": "spreadsheetId,properties.title,sheets.properties"}
+
+        response = await self._make_request("GET", url, params=params)
+
+        sheets = []
+        for sheet in response.get("sheets", []):
+            props = sheet.get("properties", {})
+            sheets.append(
+                {
+                    "sheetId": props.get("sheetId"),
+                    "name": props.get("title", ""),
+                    "index": props.get("index", 0),
+                    "sheetType": props.get("sheetType", "GRID"),
+                    "rowCount": props.get("gridProperties", {}).get("rowCount"),
+                    "columnCount": props.get("gridProperties", {}).get("columnCount"),
+                }
+            )
+
+        return {
+            "spreadsheet_id": response.get("spreadsheetId"),
+            "title": response.get("properties", {}).get("title", ""),
+            "sheets": sheets,
+            "count": len(sheets),
+        }
+
+    async def _get_sheet_values(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Get values from a specific sheet/tab in a Google Spreadsheet.
+
+        Args:
+            arguments: Tool arguments with spreadsheet_id, sheet_name, and optional range.
+
+        Returns:
+            Sheet data as formatted CSV text.
+        """
+        spreadsheet_id = arguments["spreadsheet_id"]
+        sheet_name = arguments["sheet_name"]
+        cell_range = arguments.get("range", "A:ZZ")
+
+        # Build A1 notation range with sheet name (quote sheet name for spaces/special chars)
+        # Format: 'Sheet Name'!A1:Z100
+        range_notation = f"'{sheet_name}'!{cell_range}"
+
+        url = f"{SHEETS_API_BASE}/spreadsheets/{spreadsheet_id}/values/{range_notation}"
+        params = {"valueRenderOption": "FORMATTED_VALUE"}
+
+        response = await self._make_request("GET", url, params=params)
+
+        values = response.get("values", [])
+        if not values:
+            return {
+                "spreadsheet_id": spreadsheet_id,
+                "sheet_name": sheet_name,
+                "range": response.get("range", range_notation),
+                "data": "",
+                "row_count": 0,
+                "message": "No data found in the specified range.",
+            }
+
+        # Convert to CSV format
+        csv_lines = []
+        for row in values:
+            # Escape values containing commas or quotes
+            escaped_row = []
+            for cell in row:
+                cell_str = str(cell) if cell is not None else ""
+                if "," in cell_str or '"' in cell_str or "\n" in cell_str:
+                    cell_str = '"' + cell_str.replace('"', '""') + '"'
+                escaped_row.append(cell_str)
+            csv_lines.append(",".join(escaped_row))
+
+        csv_data = "\n".join(csv_lines)
+
+        return {
+            "spreadsheet_id": spreadsheet_id,
+            "sheet_name": sheet_name,
+            "range": response.get("range", range_notation),
+            "data": csv_data,
+            "row_count": len(values),
+            "column_count": max(len(row) for row in values) if values else 0,
+        }
+
+    async def _get_spreadsheet_data(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Get all sheets and their data from a Google Spreadsheet.
+
+        Args:
+            arguments: Tool arguments with spreadsheet_id and optional max_rows.
+
+        Returns:
+            Dictionary mapping sheet names to their values.
+        """
+        spreadsheet_id = arguments["spreadsheet_id"]
+        max_rows = arguments.get("max_rows", 1000)
+
+        # First, get the list of sheets
+        sheets_response = await self._list_spreadsheet_sheets({"spreadsheet_id": spreadsheet_id})
+        sheet_names = [sheet["name"] for sheet in sheets_response.get("sheets", [])]
+
+        if not sheet_names:
+            return {
+                "spreadsheet_id": spreadsheet_id,
+                "title": sheets_response.get("title", ""),
+                "sheets": {},
+                "count": 0,
+                "message": "No sheets found in this spreadsheet.",
+            }
+
+        # Build batch get ranges
+        ranges = [f"'{name}'!A1:ZZ{max_rows}" for name in sheet_names]
+
+        # Use batchGet for efficiency
+        url = f"{SHEETS_API_BASE}/spreadsheets/{spreadsheet_id}/values:batchGet"
+        params = {
+            "ranges": ranges,
+            "valueRenderOption": "FORMATTED_VALUE",
+        }
+
+        response = await self._make_request("GET", url, params=params)
+
+        # Process each sheet's data
+        sheets_data = {}
+        value_ranges = response.get("valueRanges", [])
+
+        for i, sheet_name in enumerate(sheet_names):
+            if i < len(value_ranges):
+                values = value_ranges[i].get("values", [])
+                # Convert to CSV format
+                csv_lines = []
+                for row in values:
+                    escaped_row = []
+                    for cell in row:
+                        cell_str = str(cell) if cell is not None else ""
+                        if "," in cell_str or '"' in cell_str or "\n" in cell_str:
+                            cell_str = '"' + cell_str.replace('"', '""') + '"'
+                        escaped_row.append(cell_str)
+                    csv_lines.append(",".join(escaped_row))
+
+                sheets_data[sheet_name] = {
+                    "data": "\n".join(csv_lines),
+                    "row_count": len(values),
+                    "column_count": max(len(row) for row in values) if values else 0,
+                }
+            else:
+                sheets_data[sheet_name] = {
+                    "data": "",
+                    "row_count": 0,
+                    "column_count": 0,
+                }
+
+        return {
+            "spreadsheet_id": spreadsheet_id,
+            "title": sheets_response.get("title", ""),
+            "sheets": sheets_data,
+            "count": len(sheets_data),
         }
 
     async def _list_document_comments(self, arguments: dict[str, Any]) -> dict[str, Any]:

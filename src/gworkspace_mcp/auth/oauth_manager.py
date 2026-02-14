@@ -30,6 +30,7 @@ GOOGLE_WORKSPACE_SCOPES = [
     "https://www.googleapis.com/auth/drive",
     "https://www.googleapis.com/auth/documents",
     "https://www.googleapis.com/auth/tasks",
+    "https://www.googleapis.com/auth/spreadsheets.readonly",
 ]
 
 # OAuth configuration defaults

@@ -686,6 +686,226 @@ class TestTasksTools:
 
 
 # =============================================================================
+# Sheets Integration Tests
+# =============================================================================
+
+
+@pytest.mark.integration
+class TestSheetsTools:
+    """Integration tests for Sheets MCP tools."""
+
+    @pytest.mark.asyncio
+    async def test_list_spreadsheet_sheets_success(self, server):
+        """Test listing sheets in a spreadsheet returns sheet properties."""
+        # Arrange
+        spreadsheet_response = {
+            "spreadsheetId": "spreadsheet_001",
+            "properties": {"title": "Sales Report 2025"},
+            "sheets": [
+                {
+                    "properties": {
+                        "sheetId": 0,
+                        "title": "Q1 Sales",
+                        "index": 0,
+                        "sheetType": "GRID",
+                        "gridProperties": {"rowCount": 1000, "columnCount": 26},
+                    }
+                },
+                {
+                    "properties": {
+                        "sheetId": 123456,
+                        "title": "Q2 Sales",
+                        "index": 1,
+                        "sheetType": "GRID",
+                        "gridProperties": {"rowCount": 1000, "columnCount": 26},
+                    }
+                },
+                {
+                    "properties": {
+                        "sheetId": 789012,
+                        "title": "Summary",
+                        "index": 2,
+                        "sheetType": "GRID",
+                        "gridProperties": {"rowCount": 100, "columnCount": 10},
+                    }
+                },
+            ],
+        }
+
+        async def mock_request(method, url, **kwargs):
+            return create_mock_response(spreadsheet_response)
+
+        with patch.object(server, "_get_http_client") as mock_get_client:
+            mock_client = AsyncMock()
+            mock_client.request = mock_request
+            mock_get_client.return_value = mock_client
+
+            # Act
+            result = await server._list_spreadsheet_sheets({"spreadsheet_id": "spreadsheet_001"})
+
+            # Assert
+            assert result["spreadsheet_id"] == "spreadsheet_001"
+            assert result["title"] == "Sales Report 2025"
+            assert result["count"] == 3
+            assert len(result["sheets"]) == 3
+            assert result["sheets"][0]["name"] == "Q1 Sales"
+            assert result["sheets"][0]["sheetId"] == 0
+            assert result["sheets"][1]["name"] == "Q2 Sales"
+            assert result["sheets"][2]["name"] == "Summary"
+
+    @pytest.mark.asyncio
+    async def test_get_sheet_values_success(self, server):
+        """Test getting values from a specific sheet returns CSV data."""
+        # Arrange
+        values_response = {
+            "range": "'Q1 Sales'!A1:C4",
+            "majorDimension": "ROWS",
+            "values": [
+                ["Product", "Units", "Revenue"],
+                ["Widget A", "100", "$1,000"],
+                ["Widget B", "250", "$2,500"],
+                ["Widget C", "75", "$750"],
+            ],
+        }
+
+        async def mock_request(method, url, **kwargs):
+            return create_mock_response(values_response)
+
+        with patch.object(server, "_get_http_client") as mock_get_client:
+            mock_client = AsyncMock()
+            mock_client.request = mock_request
+            mock_get_client.return_value = mock_client
+
+            # Act
+            result = await server._get_sheet_values(
+                {
+                    "spreadsheet_id": "spreadsheet_001",
+                    "sheet_name": "Q1 Sales",
+                    "range": "A1:C4",
+                }
+            )
+
+            # Assert
+            assert result["spreadsheet_id"] == "spreadsheet_001"
+            assert result["sheet_name"] == "Q1 Sales"
+            assert result["row_count"] == 4
+            assert result["column_count"] == 3
+            assert "Product,Units,Revenue" in result["data"]
+            assert "Widget A,100" in result["data"]
+
+    @pytest.mark.asyncio
+    async def test_get_sheet_values_with_special_characters(self, server):
+        """Test that values with commas and quotes are properly escaped."""
+        # Arrange
+        values_response = {
+            "range": "'Data'!A1:B3",
+            "values": [
+                ["Name", "Description"],
+                ["Item 1", 'Contains "quotes"'],
+                ["Item 2", "Has, commas"],
+            ],
+        }
+
+        async def mock_request(method, url, **kwargs):
+            return create_mock_response(values_response)
+
+        with patch.object(server, "_get_http_client") as mock_get_client:
+            mock_client = AsyncMock()
+            mock_client.request = mock_request
+            mock_get_client.return_value = mock_client
+
+            # Act
+            result = await server._get_sheet_values(
+                {"spreadsheet_id": "spreadsheet_001", "sheet_name": "Data"}
+            )
+
+            # Assert
+            assert result["row_count"] == 3
+            # Check that quotes are escaped
+            assert '""quotes""' in result["data"]
+            # Check that commas are handled
+            assert '"Has, commas"' in result["data"]
+
+    @pytest.mark.asyncio
+    async def test_get_sheet_values_empty_sheet(self, server):
+        """Test getting values from an empty sheet returns appropriate message."""
+        # Arrange
+        values_response = {"range": "'Empty Sheet'!A:ZZ"}
+
+        async def mock_request(method, url, **kwargs):
+            return create_mock_response(values_response)
+
+        with patch.object(server, "_get_http_client") as mock_get_client:
+            mock_client = AsyncMock()
+            mock_client.request = mock_request
+            mock_get_client.return_value = mock_client
+
+            # Act
+            result = await server._get_sheet_values(
+                {"spreadsheet_id": "spreadsheet_001", "sheet_name": "Empty Sheet"}
+            )
+
+            # Assert
+            assert result["row_count"] == 0
+            assert result["data"] == ""
+            assert "No data found" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_get_spreadsheet_data_success(self, server):
+        """Test getting all sheets data uses batch get efficiently."""
+        # Arrange
+        sheets_response = {
+            "spreadsheetId": "spreadsheet_001",
+            "properties": {"title": "Multi-Tab Spreadsheet"},
+            "sheets": [
+                {"properties": {"sheetId": 0, "title": "Sheet1", "index": 0}},
+                {"properties": {"sheetId": 1, "title": "Sheet2", "index": 1}},
+            ],
+        }
+        batch_response = {
+            "spreadsheetId": "spreadsheet_001",
+            "valueRanges": [
+                {
+                    "range": "'Sheet1'!A1:ZZ1000",
+                    "values": [["A", "B"], ["1", "2"]],
+                },
+                {
+                    "range": "'Sheet2'!A1:ZZ1000",
+                    "values": [["X", "Y", "Z"], ["10", "20", "30"]],
+                },
+            ],
+        }
+
+        call_count = [0]
+
+        async def mock_request(method, url, **kwargs):
+            call_count[0] += 1
+            if "batchGet" in url:
+                return create_mock_response(batch_response)
+            return create_mock_response(sheets_response)
+
+        with patch.object(server, "_get_http_client") as mock_get_client:
+            mock_client = AsyncMock()
+            mock_client.request = mock_request
+            mock_get_client.return_value = mock_client
+
+            # Act
+            result = await server._get_spreadsheet_data({"spreadsheet_id": "spreadsheet_001"})
+
+            # Assert
+            assert result["spreadsheet_id"] == "spreadsheet_001"
+            assert result["title"] == "Multi-Tab Spreadsheet"
+            assert result["count"] == 2
+            assert "Sheet1" in result["sheets"]
+            assert "Sheet2" in result["sheets"]
+            assert result["sheets"]["Sheet1"]["row_count"] == 2
+            assert result["sheets"]["Sheet2"]["row_count"] == 2
+            assert result["sheets"]["Sheet2"]["column_count"] == 3
+            # Verify batch get was used (2 calls: one for sheets list, one for batch values)
+            assert call_count[0] == 2
+
+
+# =============================================================================
 # Error Handling Tests
 # =============================================================================
 

@@ -1,6 +1,6 @@
 [project]
 name = "gworkspace-mcp"
-version = "0.1.15"
+version = "0.1.16"
 description = "Google Workspace MCP Server - Connect Claude to Google Workspace APIs"
 authors = [
     {name = "Bob Matsuoka", email = "bob@matsuoka.com"}
@@ -23,7 +23,7 @@ dependencies = [
     "google-auth>=2.35.0",
     "google-auth-oauthlib>=1.2.1",
     "google-api-python-client>=2.158.0",
-    "httpx>=0.28.1",
+    "httpx[http2]>=0.28.1",
     "mcp>=1.3.1",
     "click>=8.1.0",
     "pydantic>=2.10.5",
@@ -110,7 +110,7 @@ exclude_lines = [
 
 [tool.commitizen]
 name = "cz_conventional_commits"
-version = "0.1.15"
+version = "0.1.16"
 version_files = [
     "VERSION",
     "src/gworkspace_mcp/VERSION",
