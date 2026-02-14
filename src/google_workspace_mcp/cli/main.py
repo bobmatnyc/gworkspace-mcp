@@ -126,6 +126,83 @@ def mcp() -> None:
 
 
 @main.command()
+@click.option("--dry-run", is_flag=True, help="Show what would be migrated without making changes")
+def migrate(dry_run: bool) -> None:
+    """Run pending migrations.
+
+    Migrations handle schema changes, directory renames, and configuration
+    updates when upgrading between versions.
+
+    Use --dry-run to preview what changes would be made without applying them.
+    """
+    from google_workspace_mcp.migrations import MigrationRunner
+
+    runner = MigrationRunner()
+
+    def progress(msg: str) -> None:
+        click.echo(msg)
+
+    runner.set_progress_callback(progress)
+
+    pending = runner.get_pending_migrations()
+    if not pending:
+        click.echo("No pending migrations.")
+        return
+
+    click.echo(f"Found {len(pending)} pending migration(s):")
+    for m in pending:
+        click.echo(f"  - {m.id}: {m.description}")
+    click.echo("")
+
+    if dry_run:
+        click.echo("Dry-run mode - showing what would happen:")
+        click.echo("")
+
+    applied = runner.run_all_pending(dry_run=dry_run)
+
+    click.echo("")
+    if dry_run:
+        click.echo(f"Would apply {len(applied)} migration(s).")
+    else:
+        click.echo(f"Applied {len(applied)} migration(s).")
+
+
+@main.command("migration-status")
+def migration_status() -> None:
+    """Show migration status.
+
+    Displays the current schema version, applied migrations,
+    and any pending migrations that need to be run.
+    """
+    from google_workspace_mcp.migrations import MigrationRunner
+
+    runner = MigrationRunner()
+    status = runner.get_status()
+
+    click.echo("Migration Status:")
+    click.echo(f"  Current version: {status['current_version']}")
+    click.echo(f"  Total migrations: {status['total_migrations']}")
+    click.echo(f"  Applied: {status['applied_count']}")
+    click.echo(f"  Pending: {status['pending_count']}")
+    click.echo("")
+
+    if status["applied_migrations"]:
+        click.echo("Applied migrations:")
+        for m in status["applied_migrations"]:
+            click.echo(f"  - {m['id']} (v{m['version']}) applied at {m['applied_at']}")
+        click.echo("")
+
+    if status["pending_migrations"]:
+        click.echo("Pending migrations:")
+        for m in status["pending_migrations"]:
+            click.echo(f"  - {m['id']} (v{m['version']}): {m['description']}")
+        click.echo("")
+        click.echo("Run 'workspace migrate' to apply pending migrations.")
+    else:
+        click.echo("All migrations applied.")
+
+
+@main.command()
 def doctor() -> None:
     """Check installation and authentication status.
 

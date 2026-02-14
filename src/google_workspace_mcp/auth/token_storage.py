@@ -7,6 +7,7 @@ Storage Location: ~/.gworkspace-mcp/tokens.json
 """
 
 import json
+import logging
 from pathlib import Path
 
 from google_workspace_mcp.auth.models import (
@@ -16,9 +17,15 @@ from google_workspace_mcp.auth.models import (
     TokenStatus,
 )
 
+logger = logging.getLogger(__name__)
+
 # Default credentials directory
 CREDENTIALS_DIR = Path.home() / ".gworkspace-mcp"
 TOKEN_FILE = CREDENTIALS_DIR / "tokens.json"
+
+# Legacy location (pre-0.2.0)
+OLD_CREDENTIALS_DIR = Path.home() / ".google-workspace-mcp"
+OLD_TOKEN_FILE = OLD_CREDENTIALS_DIR / "tokens.json"
 
 
 class TokenStorage:
@@ -58,7 +65,28 @@ class TokenStorage:
                 Defaults to ~/.gworkspace-mcp/tokens.json
         """
         self.token_path = token_path or TOKEN_FILE
+        self.credentials_dir = self.token_path.parent
+        # Run pending migrations automatically before any other operations
+        self._run_migrations()
         self._ensure_credentials_dir()
+
+    def _run_migrations(self) -> None:
+        """Run pending migrations automatically.
+
+        This ensures the credentials directory is migrated from old locations
+        before any token operations are attempted.
+        """
+        try:
+            from google_workspace_mcp.migrations import MigrationRunner
+
+            runner = MigrationRunner()
+            pending = runner.get_pending_migrations()
+            if pending:
+                logger.info(f"Running {len(pending)} pending migration(s)")
+                runner.run_all_pending()
+        except Exception as e:
+            # Don't fail initialization if migrations fail
+            logger.warning(f"Migration check failed (non-fatal): {e}")
 
     def _ensure_credentials_dir(self) -> None:
         """Create credentials directory with secure permissions if needed."""
