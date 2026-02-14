@@ -4,8 +4,11 @@ This module provides a streamlined OAuth2 authentication flow
 specifically for Google Workspace services using google-auth-oauthlib.
 
 Environment Variables:
-    GOOGLE_OAUTH_PORT: Port for OAuth callback server (default: 0 = random)
-    GOOGLE_OAUTH_REDIRECT_URI: Custom redirect URI (default: http://localhost/)
+    GOOGLE_OAUTH_CLIENT_ID: Google OAuth client ID (required)
+    GOOGLE_OAUTH_CLIENT_SECRET: Google OAuth client secret (required)
+    GOOGLE_OAUTH_REDIRECT_URI: Redirect URI (default: http://localhost/)
+        Port and host are automatically parsed from the URI.
+        Example: http://127.0.0.1:8789/callback
 """
 
 import asyncio
@@ -164,11 +167,8 @@ class OAuthManager:
                 "GOOGLE_OAUTH_CLIENT_SECRET environment variables."
             )
 
-        # Get redirect URI from environment (support both naming conventions)
-        redirect_uri = os.environ.get(
-            "GOOGLE_REDIRECT_URI",
-            os.environ.get("GOOGLE_OAUTH_REDIRECT_URI", DEFAULT_REDIRECT_URI),
-        )
+        # Get redirect URI from environment
+        redirect_uri = os.environ.get("GOOGLE_OAUTH_REDIRECT_URI", DEFAULT_REDIRECT_URI)
 
         # Create client config
         client_config = {
@@ -207,35 +207,26 @@ class OAuthManager:
         Returns:
             Google OAuth2 credentials.
 
-        Environment Variables:
-            GOOGLE_OAUTH_PORT: Port for callback server (default: 0 = random)
-            GOOGLE_REDIRECT_URI: Redirect URI (can extract port from here)
+        Note:
+            Host and port are parsed from GOOGLE_OAUTH_REDIRECT_URI.
+            Defaults to localhost with random available port.
         """
         from urllib.parse import urlparse
 
         flow = InstalledAppFlow.from_client_config(client_config, scopes=scopes)
 
-        # Get port from environment or parse from redirect URI
-        port_str = os.environ.get("GOOGLE_OAUTH_PORT")
-        redirect_uri = os.environ.get(
-            "GOOGLE_REDIRECT_URI", os.environ.get("GOOGLE_OAUTH_REDIRECT_URI", "")
-        )
+        # Get redirect URI and parse host/port from it
+        redirect_uri = os.environ.get("GOOGLE_OAUTH_REDIRECT_URI", "")
 
-        # Parse port from redirect URI if not explicitly set
-        if port_str:
-            port = int(port_str)
-        elif redirect_uri:
-            parsed = urlparse(redirect_uri)
-            port = parsed.port or DEFAULT_OAUTH_PORT
-        else:
-            port = DEFAULT_OAUTH_PORT
-
-        # Parse host from redirect URI (127.0.0.1 vs localhost)
         host = "localhost"
+        port = DEFAULT_OAUTH_PORT
+
         if redirect_uri:
             parsed = urlparse(redirect_uri)
             if parsed.hostname:
                 host = parsed.hostname
+            if parsed.port:
+                port = parsed.port
 
         # Run local server
         credentials = flow.run_local_server(host=host, port=port, open_browser=True)
