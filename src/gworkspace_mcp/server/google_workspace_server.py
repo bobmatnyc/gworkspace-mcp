@@ -1498,7 +1498,7 @@ class GoogleWorkspaceServer:
                 ),
                 Tool(
                     name="upload_markdown_as_doc",
-                    description="Convert Markdown content to Google Docs format and upload to Drive. Uses pandoc for conversion.",
+                    description="Convert Markdown content to Google Docs format and upload to Drive. Uses pandoc for conversion. Supports automatic rendering of mermaid diagrams when render_mermaid is enabled.",
                     inputSchema={
                         "type": "object",
                         "properties": {
@@ -1519,6 +1519,17 @@ class GoogleWorkspaceServer:
                                 "description": "Output format: 'gdoc' (Google Docs) or 'docx' (Microsoft Word)",
                                 "default": "gdoc",
                                 "enum": ["gdoc", "docx"],
+                            },
+                            "render_mermaid": {
+                                "type": "boolean",
+                                "description": "Automatically render mermaid code blocks to images",
+                                "default": False,
+                            },
+                            "mermaid_theme": {
+                                "type": "string",
+                                "description": "Mermaid theme when render_mermaid is enabled",
+                                "default": "default",
+                                "enum": ["default", "forest", "dark", "neutral"],
                             },
                         },
                         "required": ["name", "markdown_content"],
@@ -1556,8 +1567,62 @@ class GoogleWorkspaceServer:
                                 "type": "integer",
                                 "description": "Image height in points (optional, maintains aspect ratio if only one dimension specified)",
                             },
+                            "theme": {
+                                "type": "string",
+                                "description": "Mermaid theme: 'default', 'forest', 'dark', or 'neutral'",
+                                "default": "default",
+                                "enum": ["default", "forest", "dark", "neutral"],
+                            },
+                            "background": {
+                                "type": "string",
+                                "description": "Background color: 'white' (default), 'transparent', or any CSS color",
+                                "default": "white",
+                            },
                         },
                         "required": ["document_id", "mermaid_code"],
+                    },
+                ),
+                Tool(
+                    name="publish_markdown_to_doc",
+                    description="Publish markdown content to Google Docs with enhanced mermaid diagram support. Auto-detects and renders mermaid code blocks as SVG diagrams with customizable themes. Can optionally preserve mermaid source code as document comments for future editing.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "markdown_content": {
+                                "type": "string",
+                                "description": "Markdown content to publish",
+                            },
+                            "title": {
+                                "type": "string",
+                                "description": "Document title",
+                            },
+                            "folder_id": {
+                                "type": "string",
+                                "description": "Parent folder ID (optional)",
+                            },
+                            "render_mermaid": {
+                                "type": "boolean",
+                                "description": "Auto-detect and render mermaid code blocks as images",
+                                "default": True,
+                            },
+                            "mermaid_theme": {
+                                "type": "string",
+                                "description": "Mermaid theme for diagrams",
+                                "default": "default",
+                                "enum": ["default", "forest", "dark", "neutral"],
+                            },
+                            "mermaid_background": {
+                                "type": "string",
+                                "description": "Background color for diagrams: 'transparent', 'white', or any CSS color",
+                                "default": "transparent",
+                            },
+                            "preserve_mermaid_source": {
+                                "type": "boolean",
+                                "description": "Add original mermaid source as document comments for future editing",
+                                "default": True,
+                            },
+                        },
+                        "required": ["markdown_content", "title"],
                     },
                 ),
                 # Google Tasks API - Task Lists Operations
@@ -2489,6 +2554,8 @@ class GoogleWorkspaceServer:
             "upload_markdown_as_doc": self._upload_markdown_as_doc,
             # Mermaid diagram rendering
             "render_mermaid_to_doc": self._render_mermaid_to_doc,
+            # Enhanced markdown publishing with mermaid
+            "publish_markdown_to_doc": self._publish_markdown_to_doc,
             # Tasks - Task Lists operations
             "list_task_lists": self._list_task_lists,
             "get_task_list": self._get_task_list,
@@ -5217,8 +5284,12 @@ class GoogleWorkspaceServer:
         - gdoc: Converts to Google Docs native format
         - docx: Uploads as Microsoft Word document
 
+        When render_mermaid is enabled, automatically detects and renders
+        ```mermaid code blocks to SVG images before pandoc conversion.
+
         Args:
-            arguments: Tool arguments with name, markdown_content, parent_id, output_format.
+            arguments: Tool arguments with name, markdown_content, parent_id,
+                      output_format, render_mermaid, mermaid_theme.
 
         Returns:
             Uploaded document details.
@@ -5226,6 +5297,7 @@ class GoogleWorkspaceServer:
         Raises:
             RuntimeError: If pandoc is not installed or conversion fails.
         """
+        import re
         import subprocess  # nosec B404 - pandoc is trusted executable
         import tempfile
         from pathlib import Path
@@ -5234,6 +5306,8 @@ class GoogleWorkspaceServer:
         markdown_content = arguments["markdown_content"]
         parent_id = arguments.get("parent_id")
         output_format = arguments.get("output_format", "gdoc")
+        render_mermaid = arguments.get("render_mermaid", False)
+        mermaid_theme = arguments.get("mermaid_theme", "default")
 
         # Check if pandoc is available
         try:
@@ -5251,11 +5325,91 @@ class GoogleWorkspaceServer:
             ) from err
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            input_path = Path(tmpdir) / "input.md"
-            output_path = Path(tmpdir) / "output.docx"
+            tmpdir_path = Path(tmpdir)
+            input_path = tmpdir_path / "input.md"
+            output_path = tmpdir_path / "output.docx"
 
-            # Write markdown to temp file
-            input_path.write_text(markdown_content, encoding="utf-8")
+            # Process mermaid blocks if enabled
+            processed_content = markdown_content
+            mermaid_count = 0
+
+            if render_mermaid:
+                # Check if npx is available for mermaid rendering
+                try:
+                    subprocess.run(  # nosec B603 B607 - npx is trusted
+                        ["npx", "--version"],
+                        capture_output=True,
+                        check=True,
+                    )
+                except FileNotFoundError as err:
+                    raise RuntimeError(
+                        "npx is not installed. Install Node.js for mermaid support:\n"
+                        "  https://nodejs.org/"
+                    ) from err
+
+                # Pattern to match mermaid code blocks
+                mermaid_pattern = r"```mermaid\s*\n([\s\S]*?)\n```"
+                mermaid_blocks = re.findall(mermaid_pattern, markdown_content)
+
+                # Create mermaid config for theme
+                mermaid_config: dict[str, Any] = {
+                    "theme": mermaid_theme,
+                    "backgroundColor": "white",
+                }
+                config_path = tmpdir_path / "mermaid-config.json"
+                config_path.write_text(json.dumps(mermaid_config), encoding="utf-8")
+
+                # Render each mermaid block
+                for i, mermaid_code in enumerate(mermaid_blocks):
+                    mermaid_input = tmpdir_path / f"mermaid_{i}.mmd"
+                    mermaid_output = tmpdir_path / f"mermaid_{i}.svg"
+
+                    mermaid_input.write_text(mermaid_code.strip(), encoding="utf-8")
+
+                    try:
+                        subprocess.run(  # nosec B603 B607 - controlled paths
+                            [
+                                "npx",
+                                "-y",
+                                "@mermaid-js/mermaid-cli@11.12.0",
+                                "-i",
+                                str(mermaid_input),
+                                "-o",
+                                str(mermaid_output),
+                                "-c",
+                                str(config_path),
+                            ],
+                            capture_output=True,
+                            check=True,
+                            text=True,
+                            timeout=30,
+                        )
+
+                        if mermaid_output.exists():
+                            # Replace mermaid block with image reference
+                            original_block = f"```mermaid\n{mermaid_code}\n```"
+                            image_ref = f"![Diagram {i + 1}]({mermaid_output})"
+                            processed_content = processed_content.replace(
+                                original_block, image_ref, 1
+                            )
+                            mermaid_count += 1
+                            logger.info(
+                                "Rendered mermaid diagram %d: %s",
+                                i + 1,
+                                mermaid_output,
+                            )
+                    except subprocess.CalledProcessError as e:
+                        logger.warning(
+                            "Failed to render mermaid diagram %d: %s",
+                            i + 1,
+                            e.stderr,
+                        )
+                        # Keep original mermaid block if rendering fails
+                    except subprocess.TimeoutExpired:
+                        logger.warning("Mermaid diagram %d timed out, keeping original", i + 1)
+
+            # Write processed markdown to temp file
+            input_path.write_text(processed_content, encoding="utf-8")
 
             # Convert markdown to docx using pandoc
             try:
@@ -5318,13 +5472,16 @@ class GoogleWorkspaceServer:
             )
             result = response.json()
 
-            return {
+            response_data: dict[str, Any] = {
                 "status": "created",
                 "format": "google_docs",
                 "id": result.get("id"),
                 "name": result.get("name"),
                 "mimeType": result.get("mimeType"),
             }
+            if render_mermaid:
+                response_data["mermaid_diagrams_rendered"] = mermaid_count
+            return response_data
 
         # Upload as DOCX file
         metadata = {"name": f"{name}.docx"}
@@ -5356,13 +5513,16 @@ class GoogleWorkspaceServer:
         )
         result = response.json()
 
-        return {
+        response_data = {
             "status": "uploaded",
             "format": "docx",
             "id": result.get("id"),
             "name": result.get("name"),
             "mimeType": result.get("mimeType"),
         }
+        if render_mermaid:
+            response_data["mermaid_diagrams_rendered"] = mermaid_count
+        return response_data
 
     async def _render_mermaid_to_doc(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Render Mermaid diagram to image and insert into Google Doc.
@@ -5373,7 +5533,7 @@ class GoogleWorkspaceServer:
 
         Args:
             arguments: Tool arguments with document_id, mermaid_code, insert_index,
-                      image_format, width_pt, height_pt.
+                      image_format, width_pt, height_pt, theme, background.
 
         Returns:
             Dictionary with status, image URL, insert index, and document ID.
@@ -5388,6 +5548,8 @@ class GoogleWorkspaceServer:
         image_format = arguments.get("image_format", "svg")
         width_pt = arguments.get("width_pt")
         height_pt = arguments.get("height_pt")
+        theme = arguments.get("theme", "default")
+        background = arguments.get("background", "white")
 
         # Check if npx is available
         try:
@@ -5404,9 +5566,18 @@ class GoogleWorkspaceServer:
         with tempfile.TemporaryDirectory() as tmpdir:
             input_path = Path(tmpdir) / "diagram.mmd"
             output_path = Path(tmpdir) / f"diagram.{image_format}"
+            config_path = Path(tmpdir) / "mermaid-config.json"
 
             # Write Mermaid code to temp file
             input_path.write_text(mermaid_code, encoding="utf-8")
+
+            # Create Mermaid config for theme and background
+            mermaid_config: dict[str, Any] = {"theme": theme}
+            if background == "transparent":
+                mermaid_config["backgroundColor"] = "transparent"
+            else:
+                mermaid_config["backgroundColor"] = background
+            config_path.write_text(json.dumps(mermaid_config), encoding="utf-8")
 
             # Render Mermaid diagram using mermaid-cli
             try:
@@ -5419,6 +5590,8 @@ class GoogleWorkspaceServer:
                         str(input_path),
                         "-o",
                         str(output_path),
+                        "-c",
+                        str(config_path),
                     ],
                     capture_output=True,
                     check=True,
@@ -5538,6 +5711,228 @@ class GoogleWorkspaceServer:
             "insertIndex": insert_index,
             "documentId": document_id,
             "format": image_format,
+        }
+
+    async def _publish_markdown_to_doc(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Publish markdown to Google Docs with enhanced mermaid diagram support.
+
+        Features:
+        - Auto-detects and renders mermaid code blocks as SVG diagrams
+        - Supports custom mermaid themes (default, forest, dark, neutral)
+        - Optional transparent backgrounds for diagrams
+        - Preserves mermaid source in document comments for future editing
+
+        Args:
+            arguments: Tool arguments with markdown_content, title, folder_id,
+                      render_mermaid, mermaid_theme, mermaid_background,
+                      preserve_mermaid_source.
+
+        Returns:
+            Dictionary with document details and mermaid rendering statistics.
+
+        Raises:
+            RuntimeError: If pandoc or npx (for mermaid) is not installed.
+        """
+        import re
+        import subprocess  # nosec B404 - pandoc/npx are trusted executables
+        import tempfile
+        from pathlib import Path
+
+        markdown_content = arguments["markdown_content"]
+        title = arguments["title"]
+        folder_id = arguments.get("folder_id")
+        render_mermaid = arguments.get("render_mermaid", True)
+        mermaid_theme = arguments.get("mermaid_theme", "default")
+        mermaid_background = arguments.get("mermaid_background", "transparent")
+        preserve_mermaid_source = arguments.get("preserve_mermaid_source", True)
+
+        # Check if pandoc is available
+        try:
+            subprocess.run(  # nosec B603 B607 - pandoc is trusted
+                ["pandoc", "--version"],
+                capture_output=True,
+                check=True,
+            )
+        except FileNotFoundError as err:
+            raise RuntimeError(
+                "pandoc is not installed. Install it with:\n"
+                "  macOS: brew install pandoc\n"
+                "  Ubuntu: sudo apt-get install pandoc\n"
+                "  Windows: choco install pandoc"
+            ) from err
+
+        # Track mermaid blocks and their sources for comment preservation
+        mermaid_sources: list[tuple[int, str]] = []  # (diagram_index, source_code)
+        processed_content = markdown_content
+        mermaid_count = 0
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir_path = Path(tmpdir)
+            input_path = tmpdir_path / "input.md"
+            output_path = tmpdir_path / "output.docx"
+
+            # Process mermaid blocks if enabled
+            if render_mermaid:
+                # Check if npx is available
+                try:
+                    subprocess.run(  # nosec B603 B607 - npx is trusted
+                        ["npx", "--version"],
+                        capture_output=True,
+                        check=True,
+                    )
+                except FileNotFoundError as err:
+                    raise RuntimeError(
+                        "npx is not installed. Install Node.js for mermaid support:\n"
+                        "  https://nodejs.org/"
+                    ) from err
+
+                # Pattern to match mermaid code blocks
+                mermaid_pattern = r"```mermaid\s*\n([\s\S]*?)\n```"
+                mermaid_blocks = re.findall(mermaid_pattern, markdown_content)
+
+                # Create mermaid config for theme and background
+                mermaid_config: dict[str, Any] = {
+                    "theme": mermaid_theme,
+                    "backgroundColor": mermaid_background
+                    if mermaid_background != "transparent"
+                    else "transparent",
+                }
+                config_path = tmpdir_path / "mermaid-config.json"
+                config_path.write_text(json.dumps(mermaid_config), encoding="utf-8")
+
+                # Render each mermaid block
+                for i, mermaid_code in enumerate(mermaid_blocks):
+                    mermaid_input = tmpdir_path / f"mermaid_{i}.mmd"
+                    mermaid_output = tmpdir_path / f"mermaid_{i}.svg"
+
+                    mermaid_input.write_text(mermaid_code.strip(), encoding="utf-8")
+
+                    try:
+                        subprocess.run(  # nosec B603 B607 - controlled paths
+                            [
+                                "npx",
+                                "-y",
+                                "@mermaid-js/mermaid-cli@11.12.0",
+                                "-i",
+                                str(mermaid_input),
+                                "-o",
+                                str(mermaid_output),
+                                "-c",
+                                str(config_path),
+                            ],
+                            capture_output=True,
+                            check=True,
+                            text=True,
+                            timeout=30,
+                        )
+
+                        if mermaid_output.exists():
+                            # Store source for later comment creation
+                            if preserve_mermaid_source:
+                                mermaid_sources.append((i + 1, mermaid_code.strip()))
+
+                            # Replace mermaid block with image reference
+                            original_block = f"```mermaid\n{mermaid_code}\n```"
+                            image_ref = f"![Diagram {i + 1}]({mermaid_output})"
+                            processed_content = processed_content.replace(
+                                original_block, image_ref, 1
+                            )
+                            mermaid_count += 1
+                            logger.info("Rendered mermaid diagram %d: %s", i + 1, mermaid_output)
+                    except subprocess.CalledProcessError as e:
+                        logger.warning("Failed to render mermaid diagram %d: %s", i + 1, e.stderr)
+                    except subprocess.TimeoutExpired:
+                        logger.warning("Mermaid diagram %d timed out, keeping original", i + 1)
+
+            # Write processed markdown to temp file
+            input_path.write_text(processed_content, encoding="utf-8")
+
+            # Convert markdown to docx using pandoc
+            try:
+                subprocess.run(  # nosec B603 B607 - controlled paths
+                    [
+                        "pandoc",
+                        str(input_path),
+                        "-o",
+                        str(output_path),
+                        "--from=markdown",
+                        "--to=docx",
+                    ],
+                    capture_output=True,
+                    check=True,
+                    text=True,
+                )
+            except subprocess.CalledProcessError as e:
+                raise RuntimeError(f"pandoc conversion failed: {e.stderr}") from e
+
+            # Read the converted docx
+            docx_content = output_path.read_bytes()
+
+        # Upload and convert to Google Docs
+        metadata: dict[str, Any] = {
+            "name": title,
+            "mimeType": "application/vnd.google-apps.document",
+        }
+        if folder_id:
+            metadata["parents"] = [folder_id]
+
+        upload_url = (
+            "https://www.googleapis.com/upload/drive/v3/files" "?uploadType=multipart&convert=true"
+        )
+
+        import base64
+
+        boundary = "publish_markdown_boundary"
+        docx_base64 = base64.b64encode(docx_content).decode("ascii")
+
+        body = (
+            f"--{boundary}\r\n"
+            f"Content-Type: application/json; charset=UTF-8\r\n\r\n"
+            f"{json.dumps(metadata)}\r\n"
+            f"--{boundary}\r\n"
+            f"Content-Type: application/vnd.openxmlformats-officedocument."
+            f"wordprocessingml.document\r\n"
+            f"Content-Transfer-Encoding: base64\r\n\r\n"
+            f"{docx_base64}\r\n"
+            f"--{boundary}--"
+        )
+
+        response = await self._make_raw_request(
+            "POST",
+            upload_url,
+            content=body.encode("utf-8"),
+            headers={"Content-Type": f"multipart/related; boundary={boundary}"},
+            timeout=120.0,
+        )
+        result = response.json()
+        document_id = result.get("id")
+
+        # Add mermaid source as document comments if enabled
+        comments_added = 0
+        if preserve_mermaid_source and mermaid_sources:
+            for diagram_num, source_code in mermaid_sources:
+                try:
+                    comment_content = (
+                        f"[Mermaid Source - Diagram {diagram_num}]\n"
+                        f"```mermaid\n{source_code}\n```"
+                    )
+                    comment_url = f"{DRIVE_API_BASE}/files/{document_id}/comments"
+                    comment_body = {"content": comment_content}
+                    await self._make_request("POST", comment_url, json_data=comment_body)
+                    comments_added += 1
+                    logger.info("Added mermaid source comment for diagram %d", diagram_num)
+                except Exception as e:
+                    logger.warning("Failed to add comment for diagram %d: %s", diagram_num, e)
+
+        return {
+            "status": "published",
+            "document_id": document_id,
+            "title": result.get("name"),
+            "mimeType": result.get("mimeType"),
+            "mermaid_diagrams_rendered": mermaid_count,
+            "mermaid_source_comments_added": comments_added,
+            "mermaid_theme": mermaid_theme if render_mermaid else None,
+            "mermaid_background": mermaid_background if render_mermaid else None,
         }
 
     # =========================================================================
