@@ -78,3 +78,11 @@ site/
 
 # gworkspace-mcp OAuth tokens (project-level)
 .gworkspace-mcp/
+
+# Claude Code config (local)
+.claude/
+.claude-mpm/
+.kuzu-memory-config
+
+# Research docs (local working files)
+docs/research/
