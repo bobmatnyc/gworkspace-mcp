@@ -5277,6 +5277,48 @@ class GoogleWorkspaceServer:
     # Markdown Conversion Operations
     # =========================================================================
 
+    def _clean_docx_for_gdocs(self, docx_path: "Path") -> None:
+        """Clean DOCX file for better Google Docs compatibility.
+
+        - Sets all text to Arial font
+        - Removes bookmark anchors from headings
+
+        Args:
+            docx_path: Path to the DOCX file to clean.
+        """
+        from docx import Document
+        from docx.oxml.ns import qn
+
+        doc = Document(str(docx_path))
+
+        # Remove all bookmarks (bookmarkStart and bookmarkEnd elements)
+        for element in list(doc.element.iter()):
+            tag = element.tag
+            if tag.endswith("bookmarkStart") or tag.endswith("bookmarkEnd"):
+                parent = element.getparent()
+                if parent is not None:
+                    parent.remove(element)
+
+        # Set Arial font on all paragraphs and runs
+        for para in doc.paragraphs:
+            for run in para.runs:
+                run.font.name = "Arial"
+                # Set font for East Asian and complex script text too
+                r_element = run._element
+                rpr = r_element.get_or_add_rPr()
+                rfonts = rpr.get_or_add_rFonts()
+                rfonts.set(qn("w:eastAsia"), "Arial")
+                rfonts.set(qn("w:ascii"), "Arial")
+                rfonts.set(qn("w:hAnsi"), "Arial")
+                rfonts.set(qn("w:cs"), "Arial")
+
+        # Also fix styles
+        for style in doc.styles:
+            if hasattr(style, "font") and style.font is not None:
+                style.font.name = "Arial"
+
+        doc.save(str(docx_path))
+
     async def _upload_markdown_as_doc(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Convert Markdown to Google Docs or DOCX and upload to Drive.
 
@@ -5428,6 +5470,9 @@ class GoogleWorkspaceServer:
                 )
             except subprocess.CalledProcessError as e:
                 raise RuntimeError(f"pandoc conversion failed: {e.stderr}") from e
+
+            # Clean DOCX for better Google Docs compatibility (Arial font, no bookmarks)
+            self._clean_docx_for_gdocs(output_path)
 
             # Read the converted docx
             docx_content = output_path.read_bytes()
@@ -5864,6 +5909,9 @@ class GoogleWorkspaceServer:
                 )
             except subprocess.CalledProcessError as e:
                 raise RuntimeError(f"pandoc conversion failed: {e.stderr}") from e
+
+            # Clean DOCX for better Google Docs compatibility (Arial font, no bookmarks)
+            self._clean_docx_for_gdocs(output_path)
 
             # Read the converted docx
             docx_content = output_path.read_bytes()
