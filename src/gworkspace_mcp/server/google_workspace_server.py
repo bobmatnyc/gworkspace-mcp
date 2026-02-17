@@ -5362,7 +5362,7 @@ class GoogleWorkspaceServer:
                 # Render each mermaid block
                 for i, mermaid_code in enumerate(mermaid_blocks):
                     mermaid_input = tmpdir_path / f"mermaid_{i}.mmd"
-                    mermaid_output = tmpdir_path / f"mermaid_{i}.svg"
+                    mermaid_output = tmpdir_path / f"mermaid_{i}.png"
 
                     mermaid_input.write_text(mermaid_code.strip(), encoding="utf-8")
 
@@ -5803,7 +5803,7 @@ class GoogleWorkspaceServer:
                 # Render each mermaid block
                 for i, mermaid_code in enumerate(mermaid_blocks):
                     mermaid_input = tmpdir_path / f"mermaid_{i}.mmd"
-                    mermaid_output = tmpdir_path / f"mermaid_{i}.svg"
+                    mermaid_output = tmpdir_path / f"mermaid_{i}.png"
 
                     mermaid_input.write_text(mermaid_code.strip(), encoding="utf-8")
 
