@@ -4,11 +4,18 @@
 # Automates development, testing, and publishing workflows
 #
 # Quick start:
-#   make help      - Show this help
-#   make install   - Install package in dev mode
-#   make test      - Run pytest
-#   make build     - Build wheel and sdist
+#   make help         - Show this help
+#   make install      - Install package in dev mode
+#   make test         - Run pytest
+#   make build        - Build wheel and sdist
 #   make publish-pypi - Publish to PyPI
+#
+# Version & Release:
+#   make version      - Show current version
+#   make bump-patch   - Bump patch version (0.1.21 -> 0.1.22)
+#   make bump-minor   - Bump minor version (0.1.21 -> 0.2.0)
+#   make bump-major   - Bump major version (0.1.21 -> 1.0.0)
+#   make release-patch - Full release: bump patch + commit + tag + push
 
 # ============================================================================
 # PHONY Target Declarations
@@ -16,6 +23,8 @@
 .PHONY: help install install-dev test lint format clean build
 .PHONY: publish-pypi pre-publish sync-versions
 .PHONY: release-patch release-minor release-major auto-patch
+.PHONY: version bump-patch bump-minor bump-major
+.PHONY: tag push push-tags publish
 
 # ============================================================================
 # Shell Configuration (Strict Mode)
@@ -53,13 +62,28 @@ help: ## Show this help message
 	@echo ""
 	@echo "Usage: make [target]"
 	@echo ""
-	@echo "$(BLUE)Quick Commands:$(NC)"
-	@echo "  $(GREEN)make install$(NC)      - Install package in dev mode"
-	@echo "  $(GREEN)make test$(NC)         - Run pytest"
-	@echo "  $(GREEN)make lint$(NC)         - Run ruff linter"
-	@echo "  $(GREEN)make format$(NC)       - Format code with ruff"
-	@echo "  $(GREEN)make build$(NC)        - Build wheel and sdist"
-	@echo "  $(GREEN)make publish-pypi$(NC) - Publish to PyPI"
+	@echo "$(BLUE)Version Management:$(NC)"
+	@echo "  $(GREEN)make version$(NC)       - Show current version"
+	@echo "  $(GREEN)make bump-patch$(NC)    - Bump patch version (x.y.Z+1)"
+	@echo "  $(GREEN)make bump-minor$(NC)    - Bump minor version (x.Y+1.0)"
+	@echo "  $(GREEN)make bump-major$(NC)    - Bump major version (X+1.0.0)"
+	@echo ""
+	@echo "$(BLUE)Publishing:$(NC)"
+	@echo "  $(GREEN)make tag$(NC)           - Create git tag for current version"
+	@echo "  $(GREEN)make push$(NC)          - Push commits to origin"
+	@echo "  $(GREEN)make push-tags$(NC)     - Push tags to origin"
+	@echo "  $(GREEN)make publish$(NC)       - Full publish: push commits + tags"
+	@echo "  $(GREEN)make release-patch$(NC) - Full release: bump + commit + tag + push"
+	@echo "  $(GREEN)make release-minor$(NC) - Full release: bump minor + commit + tag + push"
+	@echo ""
+	@echo "$(BLUE)Development:$(NC)"
+	@echo "  $(GREEN)make install$(NC)       - Install package in dev mode"
+	@echo "  $(GREEN)make test$(NC)          - Run pytest"
+	@echo "  $(GREEN)make lint$(NC)          - Run ruff linter"
+	@echo "  $(GREEN)make format$(NC)        - Format code with ruff"
+	@echo "  $(GREEN)make build$(NC)         - Build wheel and sdist"
+	@echo "  $(GREEN)make clean$(NC)         - Remove build artifacts"
+	@echo "  $(GREEN)make publish-pypi$(NC)  - Publish to PyPI"
 	@echo ""
 	@echo "$(BLUE)All Available Targets:$(NC)"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(GREEN)%-20s$(NC) %s\n", $$1, $$2}'
@@ -159,16 +183,23 @@ build: clean ## Build wheel and sdist
 # Version Management
 # ============================================================================
 
+version: ## Show current version
+	@cat VERSION
+
 sync-versions: ## Sync VERSION files across the project
 	@echo "$(YELLOW)Syncing version files...$(NC)"
 	@VERSION=$$(cat VERSION); \
 	echo "$$VERSION" > src/gworkspace_mcp/VERSION; \
-	sed -i '' "s/__version__ = \".*\"/__version__ = \"$$VERSION\"/" src/gworkspace_mcp/__version__.py 2>/dev/null || \
-	sed -i "s/__version__ = \".*\"/__version__ = \"$$VERSION\"/" src/gworkspace_mcp/__version__.py; \
+	sed -i '' "s/^version = \"[^\"]*\"/version = \"$$VERSION\"/" pyproject.toml 2>/dev/null || \
+	sed -i "s/^version = \"[^\"]*\"/version = \"$$VERSION\"/" pyproject.toml; \
 	echo "$(GREEN)Synced to version $$VERSION$(NC)"
 
-release-patch: ## Bump patch version (x.y.Z+1)
+bump-patch: ## Bump patch version (x.y.Z+1), updates all version files
 	@echo "$(YELLOW)Bumping patch version...$(NC)"
+	@if [ -n "$$(git status --porcelain 2>/dev/null)" ]; then \
+		echo "$(RED)Error: Working directory is not clean. Commit or stash changes first.$(NC)"; \
+		exit 1; \
+	fi
 	@VERSION=$$(cat VERSION); \
 	MAJOR=$$(echo $$VERSION | cut -d. -f1); \
 	MINOR=$$(echo $$VERSION | cut -d. -f2); \
@@ -179,8 +210,12 @@ release-patch: ## Bump patch version (x.y.Z+1)
 	echo "$(GREEN)Version bumped: $$VERSION -> $$NEW_VERSION$(NC)"
 	@$(MAKE) sync-versions
 
-release-minor: ## Bump minor version (x.Y+1.0)
+bump-minor: ## Bump minor version (x.Y+1.0), updates all version files
 	@echo "$(YELLOW)Bumping minor version...$(NC)"
+	@if [ -n "$$(git status --porcelain 2>/dev/null)" ]; then \
+		echo "$(RED)Error: Working directory is not clean. Commit or stash changes first.$(NC)"; \
+		exit 1; \
+	fi
 	@VERSION=$$(cat VERSION); \
 	MAJOR=$$(echo $$VERSION | cut -d. -f1); \
 	MINOR=$$(echo $$VERSION | cut -d. -f2); \
@@ -190,8 +225,12 @@ release-minor: ## Bump minor version (x.Y+1.0)
 	echo "$(GREEN)Version bumped: $$VERSION -> $$NEW_VERSION$(NC)"
 	@$(MAKE) sync-versions
 
-release-major: ## Bump major version (X+1.0.0)
+bump-major: ## Bump major version (X+1.0.0), updates all version files
 	@echo "$(YELLOW)Bumping major version...$(NC)"
+	@if [ -n "$$(git status --porcelain 2>/dev/null)" ]; then \
+		echo "$(RED)Error: Working directory is not clean. Commit or stash changes first.$(NC)"; \
+		exit 1; \
+	fi
 	@VERSION=$$(cat VERSION); \
 	MAJOR=$$(echo $$VERSION | cut -d. -f1); \
 	NEW_MAJOR=$$((MAJOR + 1)); \
@@ -199,6 +238,162 @@ release-major: ## Bump major version (X+1.0.0)
 	echo "$$NEW_VERSION" > VERSION; \
 	echo "$(GREEN)Version bumped: $$VERSION -> $$NEW_VERSION$(NC)"
 	@$(MAKE) sync-versions
+
+# ============================================================================
+# Git Operations
+# ============================================================================
+
+tag: ## Create git tag for current version
+	@VERSION=$$(cat VERSION); \
+	echo "$(YELLOW)Creating tag v$$VERSION...$(NC)"; \
+	git tag -a "v$$VERSION" -m "Release v$$VERSION"; \
+	echo "$(GREEN)Tag v$$VERSION created$(NC)"
+
+push: ## Push commits to origin
+	@echo "$(YELLOW)Pushing commits to origin...$(NC)"
+	@git push origin
+	@echo "$(GREEN)Commits pushed$(NC)"
+
+push-tags: ## Push tags to origin
+	@echo "$(YELLOW)Pushing tags to origin...$(NC)"
+	@git push origin --tags
+	@echo "$(GREEN)Tags pushed$(NC)"
+
+publish: push push-tags ## Full publish: push commits + tags
+	@echo "$(GREEN)Published: commits and tags pushed to origin$(NC)"
+
+# ============================================================================
+# Full Release Workflows
+# ============================================================================
+
+release-patch: ## Full release: bump patch + commit + tag + push all
+	@echo "$(BLUE)============================================$(NC)"
+	@echo "$(BLUE)Starting Patch Release$(NC)"
+	@echo "$(BLUE)============================================$(NC)"
+	@# Check clean working directory
+	@if [ -n "$$(git status --porcelain 2>/dev/null)" ]; then \
+		echo "$(RED)Error: Working directory is not clean. Commit or stash changes first.$(NC)"; \
+		exit 1; \
+	fi
+	@# Check we're on main branch
+	@BRANCH=$$(git rev-parse --abbrev-ref HEAD); \
+	if [ "$$BRANCH" != "main" ]; then \
+		echo "$(YELLOW)Warning: Not on main branch (currently on $$BRANCH)$(NC)"; \
+		read -p "Continue anyway? [y/N] " confirm; \
+		if [ "$$confirm" != "y" ] && [ "$$confirm" != "Y" ]; then \
+			echo "$(RED)Aborted.$(NC)"; \
+			exit 1; \
+		fi; \
+	fi
+	@# Bump version
+	@VERSION=$$(cat VERSION); \
+	MAJOR=$$(echo $$VERSION | cut -d. -f1); \
+	MINOR=$$(echo $$VERSION | cut -d. -f2); \
+	PATCH=$$(echo $$VERSION | cut -d. -f3); \
+	NEW_PATCH=$$((PATCH + 1)); \
+	NEW_VERSION="$$MAJOR.$$MINOR.$$NEW_PATCH"; \
+	echo "$$NEW_VERSION" > VERSION; \
+	echo "$$NEW_VERSION" > src/gworkspace_mcp/VERSION; \
+	sed -i '' "s/^version = \"[^\"]*\"/version = \"$$NEW_VERSION\"/" pyproject.toml 2>/dev/null || \
+	sed -i "s/^version = \"[^\"]*\"/version = \"$$NEW_VERSION\"/" pyproject.toml; \
+	echo "$(GREEN)Version bumped: $$VERSION -> $$NEW_VERSION$(NC)"; \
+	echo "$(YELLOW)Creating commit...$(NC)"; \
+	git add VERSION src/gworkspace_mcp/VERSION pyproject.toml; \
+	git commit -m "chore: Bump version to $$NEW_VERSION"; \
+	echo "$(YELLOW)Creating tag...$(NC)"; \
+	git tag -a "v$$NEW_VERSION" -m "Release v$$NEW_VERSION"; \
+	echo "$(YELLOW)Pushing to origin...$(NC)"; \
+	git push origin; \
+	git push origin --tags; \
+	echo ""; \
+	echo "$(GREEN)============================================$(NC)"; \
+	echo "$(GREEN)Release v$$NEW_VERSION complete!$(NC)"; \
+	echo "$(GREEN)============================================$(NC)"
+
+release-minor: ## Full release: bump minor + commit + tag + push all
+	@echo "$(BLUE)============================================$(NC)"
+	@echo "$(BLUE)Starting Minor Release$(NC)"
+	@echo "$(BLUE)============================================$(NC)"
+	@# Check clean working directory
+	@if [ -n "$$(git status --porcelain 2>/dev/null)" ]; then \
+		echo "$(RED)Error: Working directory is not clean. Commit or stash changes first.$(NC)"; \
+		exit 1; \
+	fi
+	@# Check we're on main branch
+	@BRANCH=$$(git rev-parse --abbrev-ref HEAD); \
+	if [ "$$BRANCH" != "main" ]; then \
+		echo "$(YELLOW)Warning: Not on main branch (currently on $$BRANCH)$(NC)"; \
+		read -p "Continue anyway? [y/N] " confirm; \
+		if [ "$$confirm" != "y" ] && [ "$$confirm" != "Y" ]; then \
+			echo "$(RED)Aborted.$(NC)"; \
+			exit 1; \
+		fi; \
+	fi
+	@# Bump version
+	@VERSION=$$(cat VERSION); \
+	MAJOR=$$(echo $$VERSION | cut -d. -f1); \
+	MINOR=$$(echo $$VERSION | cut -d. -f2); \
+	NEW_MINOR=$$((MINOR + 1)); \
+	NEW_VERSION="$$MAJOR.$$NEW_MINOR.0"; \
+	echo "$$NEW_VERSION" > VERSION; \
+	echo "$$NEW_VERSION" > src/gworkspace_mcp/VERSION; \
+	sed -i '' "s/^version = \"[^\"]*\"/version = \"$$NEW_VERSION\"/" pyproject.toml 2>/dev/null || \
+	sed -i "s/^version = \"[^\"]*\"/version = \"$$NEW_VERSION\"/" pyproject.toml; \
+	echo "$(GREEN)Version bumped: $$VERSION -> $$NEW_VERSION$(NC)"; \
+	echo "$(YELLOW)Creating commit...$(NC)"; \
+	git add VERSION src/gworkspace_mcp/VERSION pyproject.toml; \
+	git commit -m "chore: Bump version to $$NEW_VERSION"; \
+	echo "$(YELLOW)Creating tag...$(NC)"; \
+	git tag -a "v$$NEW_VERSION" -m "Release v$$NEW_VERSION"; \
+	echo "$(YELLOW)Pushing to origin...$(NC)"; \
+	git push origin; \
+	git push origin --tags; \
+	echo ""; \
+	echo "$(GREEN)============================================$(NC)"; \
+	echo "$(GREEN)Release v$$NEW_VERSION complete!$(NC)"; \
+	echo "$(GREEN)============================================$(NC)"
+
+release-major: ## Full release: bump major + commit + tag + push all
+	@echo "$(BLUE)============================================$(NC)"
+	@echo "$(BLUE)Starting Major Release$(NC)"
+	@echo "$(BLUE)============================================$(NC)"
+	@# Check clean working directory
+	@if [ -n "$$(git status --porcelain 2>/dev/null)" ]; then \
+		echo "$(RED)Error: Working directory is not clean. Commit or stash changes first.$(NC)"; \
+		exit 1; \
+	fi
+	@# Check we're on main branch
+	@BRANCH=$$(git rev-parse --abbrev-ref HEAD); \
+	if [ "$$BRANCH" != "main" ]; then \
+		echo "$(YELLOW)Warning: Not on main branch (currently on $$BRANCH)$(NC)"; \
+		read -p "Continue anyway? [y/N] " confirm; \
+		if [ "$$confirm" != "y" ] && [ "$$confirm" != "Y" ]; then \
+			echo "$(RED)Aborted.$(NC)"; \
+			exit 1; \
+		fi; \
+	fi
+	@# Bump version
+	@VERSION=$$(cat VERSION); \
+	MAJOR=$$(echo $$VERSION | cut -d. -f1); \
+	NEW_MAJOR=$$((MAJOR + 1)); \
+	NEW_VERSION="$$NEW_MAJOR.0.0"; \
+	echo "$$NEW_VERSION" > VERSION; \
+	echo "$$NEW_VERSION" > src/gworkspace_mcp/VERSION; \
+	sed -i '' "s/^version = \"[^\"]*\"/version = \"$$NEW_VERSION\"/" pyproject.toml 2>/dev/null || \
+	sed -i "s/^version = \"[^\"]*\"/version = \"$$NEW_VERSION\"/" pyproject.toml; \
+	echo "$(GREEN)Version bumped: $$VERSION -> $$NEW_VERSION$(NC)"; \
+	echo "$(YELLOW)Creating commit...$(NC)"; \
+	git add VERSION src/gworkspace_mcp/VERSION pyproject.toml; \
+	git commit -m "chore: Bump version to $$NEW_VERSION"; \
+	echo "$(YELLOW)Creating tag...$(NC)"; \
+	git tag -a "v$$NEW_VERSION" -m "Release v$$NEW_VERSION"; \
+	echo "$(YELLOW)Pushing to origin...$(NC)"; \
+	git push origin; \
+	git push origin --tags; \
+	echo ""; \
+	echo "$(GREEN)============================================$(NC)"; \
+	echo "$(GREEN)Release v$$NEW_VERSION complete!$(NC)"; \
+	echo "$(GREEN)============================================$(NC)"
 
 # ============================================================================
 # Publishing Targets
@@ -223,16 +418,3 @@ pre-publish: lint test ## Run quality checks before publishing
 publish-pypi: pre-publish build ## Publish to PyPI
 	@echo "$(YELLOW)Publishing to PyPI...$(NC)"
 	@./scripts/publish_to_pypi.sh
-
-auto-patch: pre-publish release-patch build ## Automated patch release (bump, build, ready to publish)
-	@echo ""
-	@echo "$(GREEN)============================================$(NC)"
-	@echo "$(GREEN)Patch release ready!$(NC)"
-	@echo "$(GREEN)============================================$(NC)"
-	@echo ""
-	@echo "$(YELLOW)Next steps:$(NC)"
-	@echo "  1. Review the changes"
-	@echo "  2. Commit: git add -A && git commit -m 'chore: release v$$(cat VERSION)'"
-	@echo "  3. Tag: git tag v$$(cat VERSION)"
-	@echo "  4. Push: git push && git push --tags"
-	@echo "  5. Publish: make publish-pypi"
