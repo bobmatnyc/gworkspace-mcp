@@ -107,7 +107,7 @@ make publish
 
 ### Customized for gworkspace-mcp
 - Package name: `gworkspace-mcp`
-- Repository: `masapasa/homebrew-gworkspace-mcp`
+- Repository: `bobmatnyc/homebrew-tools`
 - Version file structure
 - Project-specific paths and names
 
@@ -153,10 +153,10 @@ make pre-publish
 ## ⚠️ Prerequisites for First Use
 
 ### 1. Create Homebrew Tap Repository
-Create `homebrew-gworkspace-mcp` repository with formula file:
+Create `homebrew-tools` repository with formula file:
 ```bash
 # This repo needs to be created manually:
-# https://github.com/masapasa/homebrew-gworkspace-mcp
+# https://github.com/bobmatnyc/homebrew-tools
 ```
 
 ### 2. Install Required Tools

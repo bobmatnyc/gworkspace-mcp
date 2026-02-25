@@ -30,7 +30,7 @@ Usage:
 
 Environment Variables:
     HOMEBREW_TAP_TOKEN: GitHub token for authentication (required for push)
-    HOMEBREW_TAP_REPO: URL of tap repository (default: masapasa/homebrew-gworkspace-mcp)
+    HOMEBREW_TAP_REPO: URL of tap repository (default: bobmatnyc/homebrew-tools)
 
 Exit Codes:
     0: Success
@@ -98,17 +98,17 @@ class HomebrewFormulaUpdater:
         self.dry_run = dry_run
         self.verbose = verbose
 
-        # Default tap repository
+        # Default tap repository (shared bobmatnyc tools tap)
         self.tap_repo_url = tap_repo_url or os.getenv(
             "HOMEBREW_TAP_REPO",
-            "https://github.com/masapasa/homebrew-gworkspace-mcp.git",
+            "https://github.com/bobmatnyc/homebrew-tools.git",
         )
 
         # Default tap repo path
         if tap_repo_path:
             self.tap_repo_path = tap_repo_path
         else:
-            self.tap_repo_path = Path.home() / ".homebrew_tap_update" / "homebrew-gworkspace-mcp"
+            self.tap_repo_path = Path.home() / ".homebrew_tap_update" / "homebrew-tools"
 
         # GitHub token for authentication
         self.github_token = os.getenv("HOMEBREW_TAP_TOKEN")
@@ -712,7 +712,7 @@ Exit Codes:
     parser.add_argument(
         "--tap-repo-url",
         metavar="URL",
-        help="URL of tap repository (default: from HOMEBREW_TAP_REPO or masapasa/homebrew-gworkspace-mcp)",
+        help="URL of tap repository (default: from HOMEBREW_TAP_REPO or bobmatnyc/homebrew-tools)",
     )
 
     parser.add_argument(

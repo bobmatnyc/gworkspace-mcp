@@ -60,7 +60,7 @@ HOMEBREW_TAP_TOKEN=gho_your-token-here
    - Copy the full token
 
 3. **Homebrew Tap Token**: Usually same as GitHub token
-   - For updating the homebrew-gworkspace-mcp repository
+   - For updating the shared bobmatnyc/homebrew-tools tap
 
 ### Security Notes
 
