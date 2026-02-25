@@ -48,7 +48,7 @@ NC := \033[0m # No Color
 # Build directories
 BUILD_DIR := build
 DIST_DIR := dist
-PYTHON := python3
+PYTHON := uv run python
 
 # Default target
 all: help
@@ -121,7 +121,7 @@ install-dev: ## Install package with dev dependencies
 
 test: ## Run pytest
 	@echo "$(YELLOW)Running tests...$(NC)"
-	@python -m pytest tests/ -v
+	@$(PYTHON) -m pytest tests/ -v
 	@echo "$(GREEN)Tests completed.$(NC)"
 
 test-cov: ## Run pytest with coverage
