@@ -89,3 +89,6 @@ docs/research/
 
 # MCP Vector Search index directory
 .mcp-vector-search/
+.env.local
+.mcp.json
+kuzu-memories/
