@@ -31,9 +31,18 @@ if [ ! -f "pyproject.toml" ]; then
 fi
 print_message "$GREEN" "Running from project root"
 
-# 2. Get PyPI token from environment or ~/.pypirc
+# 2. Get PyPI token from environment, .env.local, or ~/.pypirc
 if [ -n "$UV_PUBLISH_TOKEN" ]; then
     print_message "$GREEN" "Using UV_PUBLISH_TOKEN from environment"
+elif [ -f ".env.local" ]; then
+    source .env.local
+    if [ -n "$PYPI_TOKEN" ]; then
+        export UV_PUBLISH_TOKEN="$PYPI_TOKEN"
+        print_message "$GREEN" "PyPI credentials loaded from .env.local"
+    else
+        print_message "$RED" "Error: PYPI_TOKEN not found in .env.local"
+        exit 1
+    fi
 elif [ -f "$HOME/.pypirc" ]; then
     PYPI_TOKEN=$(grep '^password' ~/.pypirc | head -1 | cut -d'=' -f2 | tr -d ' ')
     if [ -z "$PYPI_TOKEN" ]; then
@@ -44,7 +53,10 @@ elif [ -f "$HOME/.pypirc" ]; then
     print_message "$GREEN" "PyPI credentials loaded from ~/.pypirc"
 else
     print_message "$RED" "Error: No PyPI credentials found"
-    print_message "$YELLOW" "Set UV_PUBLISH_TOKEN environment variable or create ~/.pypirc"
+    print_message "$YELLOW" "Options:"
+    print_message "$YELLOW" "  1. Set UV_PUBLISH_TOKEN environment variable"
+    print_message "$YELLOW" "  2. Create .env.local with PYPI_TOKEN=your-token"
+    print_message "$YELLOW" "  3. Create ~/.pypirc with your credentials"
     exit 1
 fi
 
