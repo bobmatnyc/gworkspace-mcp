@@ -86,3 +86,6 @@ site/
 
 # Research docs (local working files)
 docs/research/
+
+# MCP Vector Search index directory
+.mcp-vector-search/
