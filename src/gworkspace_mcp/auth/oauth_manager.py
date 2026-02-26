@@ -136,6 +136,8 @@ class OAuthManager:
             token=token.access_token,
             refresh_token=token.refresh_token,
             token_uri="https://oauth2.googleapis.com/token",
+            client_id=os.environ.get("GOOGLE_OAUTH_CLIENT_ID"),
+            client_secret=os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET"),
             scopes=token.scopes,
         )
 
