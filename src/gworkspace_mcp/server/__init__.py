@@ -1,14 +1,15 @@
 """MCP server implementation for Google Workspace.
 
-Provides 66 tools across Gmail, Calendar, Drive, Docs, and Tasks:
+Provides 84 tools across Gmail, Calendar, Drive, Docs, Sheets, Slides, and Tasks:
 
-Gmail Tools (18):
+Gmail Tools (21):
 - List messages with search queries
 - Get message details and metadata
 - Send and reply to messages
 - Manage labels and filters
 - Search and archive operations
 - Batch operations for efficiency
+- NEW: Email formatting (HTML content, signatures, formatted emails)
 
 Calendar Tools (10):
 - List and create calendars
@@ -25,11 +26,33 @@ Drive Tools (17):
 - Trash and delete operations
 - Optional rclone sync features (4 tools)
 
-Docs Tools (11):
+Docs Tools (16):
 - Create and manage documents
 - Append and read content
 - Upload markdown as Google Docs
 - Comment management
+- NEW: Text formatting (bold, italic, font size, colors)
+- NEW: Paragraph formatting (alignment, spacing, indentation)
+- NEW: Lists and tables insertion
+- NEW: Heading styles application
+
+Sheets Tools (11):
+- List and manage spreadsheets
+- Read and write cell data
+- Multi-sheet operations
+- NEW: Cell formatting (colors, fonts, borders)
+- NEW: Number formatting (currency, percentage, dates)
+- NEW: Cell merging and column width
+- NEW: Chart creation (bar, line, pie charts)
+
+Slides Tools (15):
+- List and manage presentations
+- Read slide content and metadata
+- Create and modify slides
+- Add text boxes and images
+- NEW: Text formatting in slides
+- NEW: Slide backgrounds and layouts
+- NEW: Bulleted list slides
 
 Tasks Tools (10):
 - List and manage task lists

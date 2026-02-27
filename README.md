@@ -9,23 +9,34 @@ Connect Claude to Google Workspace APIs through the Model Context Protocol (MCP)
 
 ## Features
 
-**66 MCP tools** across 5 Google Workspace APIs:
+**114 MCP tools** across 7 Google Workspace APIs:
 
 | Service | Tools | Capabilities |
 |---------|-------|--------------|
-| **Gmail** | 18 | Search, send, reply, drafts, labels, archive, trash, star, batch operations |
-| **Calendar** | 10 | List calendars, create/update/delete events, manage attendees |
-| **Drive** | 17 | Search, upload, download, folders, move, sync (rclone integration) |
-| **Docs** | 11 | Create, read, append, tabs, comments, Mermaid diagrams |
-| **Tasks** | 10 | Task lists, create/update/complete tasks, subtasks, search |
+| **Gmail** | 26 | Search, send, reply, drafts, labels, filters, formatting, batch operations |
+| **Calendar** | 8 | List calendars, create/update/delete events, manage attendees, free/busy |
+| **Drive** | 17 | Search, upload, download, folders, permissions, sync (rclone integration) |
+| **Docs** | 17 | Create, edit, format text/paragraphs, tables, lists, tabs, comments |
+| **Sheets** | 12 | Create, read, write, format cells, charts, merge, conditional formatting |
+| **Slides** | 21 | Create presentations, slides, format text, backgrounds, layouts |
+| **Tasks** | 13 | Task lists, create/update/complete tasks, subtasks, search |
 
 ### Highlights
 
-- **Full Gmail Management**: Search with advanced queries, send/reply, organize with labels, batch operations for efficiency
-- **Calendar Integration**: Create events with attendees, manage multiple calendars, handle timezones
-- **Drive Operations**: Search files, manage folders, upload/download with optional rclone sync
-- **Google Docs**: Create and edit documents, manage tabs, add comments, render Mermaid diagrams to images
+- **Full Gmail Management**: Search with advanced queries, send/reply, organize with labels, filters, rich HTML formatting, batch operations
+- **Calendar Integration**: Create events with attendees, manage multiple calendars, handle timezones, check availability
+- **Drive Operations**: Search files, manage folders, permissions, upload/download with optional rclone sync
+- **Google Docs**: Create and edit documents, rich text formatting, tables, lists, tabs, comments, Mermaid diagrams
+- **Google Sheets**: Create spreadsheets, format cells, charts, conditional formatting, merge cells, number formats
+- **Google Slides**: Create presentations, format text, add images/text boxes, backgrounds, layouts, bullet lists
 - **Tasks API**: Full task management with lists, subtasks, due dates, and cross-list search
+
+### New Formatting Capabilities
+
+- **Rich Text Formatting**: Apply bold, italic, underline, colors, fonts across Docs, Slides, and Gmail
+- **Advanced Cell Formatting**: Background colors, borders, number formats, conditional formatting in Sheets
+- **Professional Presentations**: Custom layouts, formatted text boxes, backgrounds, and bullet lists in Slides
+- **HTML Email Creation**: Rich formatting for professional email communications
 
 ## Installation
 
@@ -58,6 +69,8 @@ pip install -e ".[dev]"
    - Google Calendar API
    - Google Drive API
    - Google Docs API
+   - Google Sheets API
+   - Google Slides API
    - Google Tasks API
 4. Create OAuth 2.0 credentials (Desktop application)
 5. Download and note your Client ID and Client Secret
@@ -114,7 +127,7 @@ Restart Claude Desktop to activate.
 This server uses OAuth 2.0 for secure authentication with Google APIs. The authentication flow:
 
 1. `workspace setup` opens your browser for Google consent
-2. You authorize access to Gmail, Calendar, Drive, Docs, and Tasks
+2. You authorize access to Gmail, Calendar, Drive, Docs, Sheets, Slides, and Tasks
 3. Tokens are securely stored locally
 4. Tokens auto-refresh when expired
 
@@ -128,6 +141,8 @@ The server requests the following OAuth scopes:
 | `https://www.googleapis.com/auth/calendar` | Full calendar access |
 | `https://www.googleapis.com/auth/drive` | Full Drive access |
 | `https://www.googleapis.com/auth/documents` | Read and write Google Docs |
+| `https://www.googleapis.com/auth/spreadsheets` | Read and write Google Sheets |
+| `https://www.googleapis.com/auth/presentations` | Read and write Google Slides |
 | `https://www.googleapis.com/auth/tasks` | Full Tasks access |
 
 ### Token Storage
@@ -138,7 +153,7 @@ This file contains your OAuth tokens. Keep it secure and do not share it.
 
 ## Available Tools
 
-### Gmail (18 tools)
+### Gmail (26 tools)
 
 | Tool | Description |
 |------|-------------|
@@ -163,8 +178,16 @@ This file contains your OAuth tokens. Keep it secure and do not share it.
 | `batch_trash_gmail_messages` | Bulk trash messages |
 | `batch_mark_gmail_as_read` | Bulk mark as read |
 | `batch_delete_gmail_messages` | Permanently delete messages (caution!) |
+| `format_email_content` | Format email content with HTML styling |
+| `set_email_signature` | Set Gmail signature with formatting |
+| `create_formatted_email` | Create rich HTML emails with formatting |
+| `list_gmail_filters` | List all Gmail filters |
+| `create_gmail_filter` | Create new Gmail filter |
+| `delete_gmail_filter` | Delete Gmail filter |
+| `get_vacation_settings` | Get vacation auto-responder settings |
+| `set_vacation_settings` | Configure vacation auto-responder |
 
-### Calendar (10 tools)
+### Calendar (8 tools)
 
 | Tool | Description |
 |------|-------------|
@@ -176,6 +199,7 @@ This file contains your OAuth tokens. Keep it secure and do not share it.
 | `create_event` | Create a new event |
 | `update_event` | Update an existing event |
 | `delete_event` | Delete an event |
+| `query_free_busy` | Check availability for attendees |
 
 ### Drive (17 tools)
 
@@ -194,7 +218,44 @@ This file contains your OAuth tokens. Keep it secure and do not share it.
 
 *Requires [rclone](https://rclone.org/) to be installed
 
-### Docs (11 tools)
+### Sheets (12 tools)
+
+| Tool | Description |
+|------|-------------|
+| `create_spreadsheet` | Create a new Google Spreadsheet |
+| `get_spreadsheet_data` | Get spreadsheet metadata and structure |
+| `list_spreadsheet_sheets` | List all sheets in a spreadsheet |
+| `get_sheet_values` | Get values from a specific sheet/range |
+| `update_sheet_values` | Update specific cells with new values |
+| `append_sheet_values` | Append rows to end of sheet data |
+| `clear_sheet_values` | Clear values from a range |
+| `format_cells` | Apply formatting (colors, fonts, borders) |
+| `set_number_format` | Set number formats (currency, percentage, date) |
+| `merge_cells` | Merge cells across ranges |
+| `set_column_width` | Adjust column widths |
+| `create_chart` | Create charts (bar, line, pie) from data |
+
+### Slides (21 tools)
+
+| Tool | Description |
+|------|-------------|
+| `create_presentation` | Create a new Google Slides presentation |
+| `get_presentation` | Get presentation metadata and structure |
+| `list_presentations` | List accessible presentations |
+| `get_presentation_text` | Extract all text from presentation |
+| `get_slide` | Get specific slide content |
+| `add_slide` | Add new slide with layout |
+| `delete_slide` | Delete a slide |
+| `update_slide_text` | Update text in slide shapes |
+| `format_text_in_slide` | Apply text formatting to slide content |
+| `add_formatted_text_box` | Add text box with custom formatting |
+| `add_text_box` | Add basic text box to slide |
+| `set_slide_background` | Set slide background color or image |
+| `create_bulleted_list_slide` | Create slide with bulleted list |
+| `apply_slide_layout` | Apply predefined layout to slide |
+| `add_image` | Add image from URL to slide |
+
+### Docs (17 tools)
 
 | Tool | Description |
 |------|-------------|
@@ -211,8 +272,15 @@ This file contains your OAuth tokens. Keep it secure and do not share it.
 | `update_tab_properties` | Update tab title or icon |
 | `move_tab` | Move tab to new position |
 | `render_mermaid_to_doc` | Render Mermaid diagram and insert into doc |
+| `format_text_in_document` | Apply text formatting (bold, italic, colors, fonts) |
+| `format_paragraph_in_document` | Apply paragraph formatting (alignment, spacing) |
+| `create_list_in_document` | Create bulleted or numbered lists |
+| `insert_table_in_document` | Insert tables with custom dimensions |
+| `apply_heading_style` | Apply heading styles (H1, H2, etc.) |
+| `set_document_margins` | Configure document margins |
+| `publish_markdown_to_doc` | Publish markdown content as Google Doc |
 
-### Tasks (10 tools)
+### Tasks (13 tools)
 
 | Tool | Description |
 |------|-------------|
@@ -255,7 +323,7 @@ For detailed documentation, see the [docs/](docs/) directory:
 
 - **[Getting Started](docs/getting-started/)** - Installation, authentication, quickstart
 - **[User Guides](docs/guides/)** - Claude Desktop integration, CLI reference
-- **[API Reference](docs/api/)** - Complete tool documentation for all 66 tools
+- **[API Reference](docs/api/)** - Complete tool documentation for all 114 tools
 - **[Development](docs/development/)** - Contributing, testing, releasing
 
 ## Development
