@@ -11,6 +11,8 @@ Environment Variables:
 """
 
 import asyncio
+import base64
+import hashlib
 import os
 import secrets
 import webbrowser
@@ -47,7 +49,10 @@ class OAuthManager:
     """OAuth authentication manager for Google Workspace.
 
     Handles the complete OAuth2 flow including authorization,
-    token exchange, storage, and refresh.
+    token exchange, storage, and refresh. The authorization flow
+    uses PKCE (Proof Key for Code Exchange, RFC 7636) with S256
+    challenge method to protect against authorization code
+    interception attacks.
 
     Attributes:
         storage: Token storage instance for persisting credentials.
@@ -56,7 +61,7 @@ class OAuthManager:
         ```python
         manager = OAuthManager()
 
-        # Authenticate with Google
+        # Authenticate with Google (uses PKCE internally)
         token = await manager.authenticate(scopes=GOOGLE_WORKSPACE_SCOPES)
 
         # Check token status
@@ -206,12 +211,35 @@ class OAuthManager:
 
         return token
 
+    def _generate_pkce_pair(self) -> tuple[str, str]:
+        """Generate a PKCE code_verifier and code_challenge pair.
+
+        Implements RFC 7636 Proof Key for Code Exchange using the S256
+        challenge method. The code_verifier is a high-entropy random string;
+        the code_challenge is BASE64URL(SHA256(ASCII(code_verifier))) without
+        padding characters.
+
+        Returns:
+            Tuple of (code_verifier, code_challenge) where:
+                - code_verifier: URL-safe base64 string, ~86 chars (43-128 range).
+                - code_challenge: BASE64URL-encoded SHA-256 digest of the verifier.
+        """
+        code_verifier = secrets.token_urlsafe(64)  # ~86 URL-safe base64 chars
+        code_challenge = (
+            base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode()).digest())
+            .rstrip(b"=")
+            .decode()
+        )
+        return code_verifier, code_challenge
+
     def _run_oauth_flow(
         self, client_config: dict, scopes: list[str], redirect_uri: str
     ) -> Credentials:
         """Run the OAuth flow (blocking operation).
 
-        Uses Web Application OAuth flow with custom redirect URI support.
+        Uses Web Application OAuth flow with custom redirect URI support and
+        PKCE (Proof Key for Code Exchange, RFC 7636) with S256 challenge method
+        to prevent authorization code interception attacks.
         Opens browser for authorization and starts local server to receive callback.
 
         Args:
@@ -232,11 +260,16 @@ class OAuthManager:
         # Generate state for CSRF protection
         state = secrets.token_urlsafe(32)
 
-        # Get authorization URL
+        # Generate PKCE pair for authorization code interception protection (RFC 7636)
+        code_verifier, code_challenge = self._generate_pkce_pair()
+
+        # Get authorization URL with PKCE challenge (S256 method)
         auth_url, _ = flow.authorization_url(
             access_type="offline",
             prompt="consent",
             state=state,
+            code_challenge=code_challenge,
+            code_challenge_method="S256",
         )
 
         # Parse redirect URI to get host, port, and path
@@ -323,8 +356,8 @@ class OAuthManager:
         if not auth_code[0]:
             raise Exception("No authorization code received from Google")
 
-        # Exchange code for tokens
-        flow.fetch_token(code=auth_code[0])
+        # Exchange code for tokens, supplying PKCE verifier to complete the challenge
+        flow.fetch_token(code=auth_code[0], code_verifier=code_verifier)
 
         return flow.credentials
 
