@@ -49,7 +49,7 @@ import json
 import os
 import re
 import shutil
-import subprocess
+import subprocess  # nosec B404
 import sys
 from dataclasses import dataclass
 from datetime import datetime
@@ -286,7 +286,7 @@ class HomebrewFormulaUpdater:
             # Pull latest changes
             try:
                 self.log("Pulling latest changes...", "info")
-                result = subprocess.run(  # nosec B607
+                result = subprocess.run(  # nosec B603 B607
                     ["git", "-C", str(self.tap_repo_path), "pull"],
                     capture_output=True,
                     text=True,
@@ -311,7 +311,7 @@ class HomebrewFormulaUpdater:
             try:
                 self.tap_repo_path.parent.mkdir(parents=True, exist_ok=True)
 
-                result = subprocess.run(  # nosec B607
+                result = subprocess.run(  # nosec B603 B607
                     ["git", "clone", self.tap_repo_url, str(self.tap_repo_path)],
                     capture_output=True,
                     text=True,
@@ -458,7 +458,7 @@ class HomebrewFormulaUpdater:
 
         # Check if ruby is available
         try:
-            result = subprocess.run(  # nosec B607
+            result = subprocess.run(  # nosec B603 B607
                 ["ruby", "-c", str(formula_path)],
                 capture_output=True,
                 text=True,
@@ -503,9 +503,11 @@ class HomebrewFormulaUpdater:
                 repo_match = re.search(r"github\.com[:/](.+?)(?:\.git)?$", self.tap_repo_url)
                 if repo_match:
                     repo_path = repo_match.group(1)
-                    authenticated_url = f"https://{self.github_token}@github.com/{repo_path}.git"
+                    authenticated_url = (
+                        f"https://x-access-token:{self.github_token}@github.com/{repo_path}.git"
+                    )
 
-                    subprocess.run(  # nosec B607
+                    subprocess.run(  # nosec B603 B607
                         [
                             "git",
                             "-C",
@@ -521,7 +523,7 @@ class HomebrewFormulaUpdater:
                     self.log("Configured git authentication", "debug")
 
             # Stage changes
-            subprocess.run(  # nosec B607
+            subprocess.run(  # nosec B603 B607
                 [
                     "git",
                     "-C",
@@ -537,7 +539,7 @@ class HomebrewFormulaUpdater:
             # Try old location too if it exists
             old_formula = self.tap_repo_path / self.formula_name
             if old_formula.exists():
-                subprocess.run(  # nosec B607
+                subprocess.run(  # nosec B603 B607
                     ["git", "-C", str(self.tap_repo_path), "add", self.formula_name],
                     capture_output=True,
                     text=True,
@@ -547,7 +549,7 @@ class HomebrewFormulaUpdater:
             # Commit
             commit_message = f"chore: update formula to {package_info.version}\n\nUpdated gworkspace-mcp to version {package_info.version}\n- Version: {package_info.version}\n- SHA256: {package_info.sha256}"
 
-            subprocess.run(  # nosec B607
+            subprocess.run(  # nosec B603 B607
                 ["git", "-C", str(self.tap_repo_path), "commit", "-m", commit_message],
                 capture_output=True,
                 text=True,
@@ -556,13 +558,22 @@ class HomebrewFormulaUpdater:
             self.created_commit = True
             self.log("Changes committed", "success")
 
-            # Push
+            # Push (disable credential helper so token-in-URL is used directly)
             self.log("Pushing to remote repository...", "info")
-            subprocess.run(  # nosec B607
-                ["git", "-C", str(self.tap_repo_path), "push"],
+            push_env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+            subprocess.run(  # nosec B603 B607
+                [
+                    "git",
+                    "-c",
+                    "credential.helper=",
+                    "-C",
+                    str(self.tap_repo_path),
+                    "push",
+                ],
                 capture_output=True,
                 text=True,
                 check=True,
+                env=push_env,
             )
             self.log("Changes pushed successfully", "success")
 
@@ -595,7 +606,7 @@ class HomebrewFormulaUpdater:
         # Reset git if commit was created
         if self.created_commit:
             try:
-                subprocess.run(  # nosec B607
+                subprocess.run(  # nosec B603 B607
                     ["git", "-C", str(self.tap_repo_path), "reset", "--hard", "HEAD~1"],
                     capture_output=True,
                     check=True,
