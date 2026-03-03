@@ -9,13 +9,13 @@ Connect Claude to Google Workspace APIs through the Model Context Protocol (MCP)
 
 ## Features
 
-**114 MCP tools** across 7 Google Workspace APIs:
+**115 MCP tools** across 7 Google Workspace APIs:
 
 | Service | Tools | Capabilities |
 |---------|-------|--------------|
-| **Gmail** | 26 | Search, send, reply, drafts, labels, filters, formatting, batch operations |
+| **Gmail** | 27 | Search, send, reply, drafts, labels, filters, formatting, batch operations, **attachments** |
 | **Calendar** | 8 | List calendars, create/update/delete events, manage attendees, free/busy |
-| **Drive** | 17 | Search, upload, download, folders, permissions, sync (rclone integration) |
+| **Drive** | 17 | Search, upload/download **binary files**, folders, permissions, sync (rclone integration) |
 | **Docs** | 17 | Create, edit, format text/paragraphs, tables, lists, tabs, comments |
 | **Sheets** | 12 | Create, read, write, format cells, charts, merge, conditional formatting |
 | **Slides** | 21 | Create presentations, slides, format text, backgrounds, layouts |
@@ -23,7 +23,8 @@ Connect Claude to Google Workspace APIs through the Model Context Protocol (MCP)
 
 ### Highlights
 
-- **Full Gmail Management**: Search with advanced queries, send/reply, organize with labels, filters, rich HTML formatting, batch operations
+- **Full Gmail Management**: Search with advanced queries, send/reply with file attachments, organize with labels, filters, rich HTML formatting, batch operations
+- **Binary File Transfer**: Upload any file type to Drive via local path; download Drive files and Gmail attachments to disk
 - **Calendar Integration**: Create events with attendees, manage multiple calendars, handle timezones, check availability
 - **Drive Operations**: Search files, manage folders, permissions, upload/download with optional rclone sync
 - **Google Docs**: Create and edit documents, rich text formatting, tables, lists, tabs, comments, Mermaid diagrams
@@ -31,7 +32,29 @@ Connect Claude to Google Workspace APIs through the Model Context Protocol (MCP)
 - **Google Slides**: Create presentations, format text, add images/text boxes, backgrounds, layouts, bullet lists
 - **Tasks API**: Full task management with lists, subtasks, due dates, and cross-list search
 
-### New Formatting Capabilities
+### Binary File Transfer (v0.3.0)
+
+Work with any file type — not just text:
+
+```
+# Upload a JPEG to Drive
+upload_drive_file(local_path="/path/to/photo.jpg", parent_id="<folder-id>")
+
+# Download a Drive file to disk (PDF, image, etc.)
+get_drive_file_content(file_id="<id>", save_path="/tmp/report.pdf")
+
+# Send an email with attachments
+send_email(to="...", subject="...", body="...", attachments=["/path/to/file.pdf"])
+
+# List attachments in a received email
+get_gmail_message_content(message_id="<id>")
+# → response includes: attachments: [{filename, mimeType, size, attachmentId}, ...]
+
+# Download a Gmail attachment
+download_gmail_attachment(message_id="<id>", attachment_id="<att-id>", save_path="/tmp/file.pdf")
+```
+
+### Formatting Capabilities
 
 - **Rich Text Formatting**: Apply bold, italic, underline, colors, fonts across Docs, Slides, and Gmail
 - **Advanced Cell Formatting**: Background colors, borders, number formats, conditional formatting in Sheets
