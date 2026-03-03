@@ -223,7 +223,7 @@ class GoogleWorkspaceServer:
                 ),
                 Tool(
                     name="get_gmail_message_content",
-                    description="Get the full content of a Gmail message by ID",
+                    description="Get the full content of a Gmail message by ID, including any attachments metadata",
                     inputSchema={
                         "type": "object",
                         "properties": {
@@ -233,6 +233,28 @@ class GoogleWorkspaceServer:
                             },
                         },
                         "required": ["message_id"],
+                    },
+                ),
+                Tool(
+                    name="download_gmail_attachment",
+                    description="Download a Gmail message attachment to a local file path",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "message_id": {
+                                "type": "string",
+                                "description": "Gmail message ID containing the attachment",
+                            },
+                            "attachment_id": {
+                                "type": "string",
+                                "description": "Attachment ID from get_gmail_message_content response",
+                            },
+                            "save_path": {
+                                "type": "string",
+                                "description": "Absolute local path to save the attachment",
+                            },
+                        },
+                        "required": ["message_id", "attachment_id", "save_path"],
                     },
                 ),
                 Tool(
@@ -256,13 +278,17 @@ class GoogleWorkspaceServer:
                 ),
                 Tool(
                     name="get_drive_file_content",
-                    description="Get the content of a Google Drive file by ID (text files only)",
+                    description="Get the content of a Google Drive file by ID. Text files are returned inline; binary files require save_path.",
                     inputSchema={
                         "type": "object",
                         "properties": {
                             "file_id": {
                                 "type": "string",
                                 "description": "Google Drive file ID",
+                            },
+                            "save_path": {
+                                "type": "string",
+                                "description": "Absolute local path to save the file. Required for binary files; optional for text files (returns content inline if omitted).",
                             },
                         },
                         "required": ["file_id"],
@@ -472,7 +498,10 @@ class GoogleWorkspaceServer:
                                 "type": "object",
                                 "description": "Border configuration",
                                 "properties": {
-                                    "style": {"type": "string", "enum": ["SOLID", "DASHED", "DOTTED"]},
+                                    "style": {
+                                        "type": "string",
+                                        "enum": ["SOLID", "DASHED", "DOTTED"],
+                                    },
                                     "width": {"type": "integer", "minimum": 1, "maximum": 3},
                                     "color": {
                                         "type": "object",
@@ -509,7 +538,14 @@ class GoogleWorkspaceServer:
                             "format_type": {
                                 "type": "string",
                                 "description": "Type of number format",
-                                "enum": ["CURRENCY", "PERCENTAGE", "DATE", "TIME", "NUMBER", "TEXT"],
+                                "enum": [
+                                    "CURRENCY",
+                                    "PERCENTAGE",
+                                    "DATE",
+                                    "TIME",
+                                    "NUMBER",
+                                    "TEXT",
+                                ],
                             },
                             "pattern": {
                                 "type": "string",
@@ -583,7 +619,12 @@ class GoogleWorkspaceServer:
                                 "default": False,
                             },
                         },
-                        "required": ["spreadsheet_id", "sheet_name", "start_column_index", "end_column_index"],
+                        "required": [
+                            "spreadsheet_id",
+                            "sheet_name",
+                            "start_column_index",
+                            "end_column_index",
+                        ],
                     },
                 ),
                 Tool(
@@ -624,7 +665,13 @@ class GoogleWorkspaceServer:
                                 "default": 0,
                             },
                         },
-                        "required": ["spreadsheet_id", "sheet_name", "chart_type", "data_range", "title"],
+                        "required": [
+                            "spreadsheet_id",
+                            "sheet_name",
+                            "chart_type",
+                            "data_range",
+                            "title",
+                        ],
                     },
                 ),
                 Tool(
@@ -843,7 +890,7 @@ class GoogleWorkspaceServer:
                 # Gmail Write Operations
                 Tool(
                     name="send_email",
-                    description="Send an email message",
+                    description="Send an email message, optionally with file attachments",
                     inputSchema={
                         "type": "object",
                         "properties": {
@@ -866,6 +913,11 @@ class GoogleWorkspaceServer:
                             "bcc": {
                                 "type": "string",
                                 "description": "BCC recipients, comma-separated",
+                            },
+                            "attachments": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of absolute local file paths to attach to the email",
                             },
                         },
                         "required": ["to", "subject", "body"],
@@ -873,7 +925,7 @@ class GoogleWorkspaceServer:
                 ),
                 Tool(
                     name="create_draft",
-                    description="Create an email draft",
+                    description="Create an email draft, optionally with file attachments",
                     inputSchema={
                         "type": "object",
                         "properties": {
@@ -897,13 +949,18 @@ class GoogleWorkspaceServer:
                                 "type": "string",
                                 "description": "BCC recipients, comma-separated",
                             },
+                            "attachments": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of absolute local file paths to attach to the draft",
+                            },
                         },
                         "required": ["to", "subject", "body"],
                     },
                 ),
                 Tool(
                     name="reply_to_email",
-                    description="Reply to an existing email thread",
+                    description="Reply to an existing email thread, optionally with file attachments",
                     inputSchema={
                         "type": "object",
                         "properties": {
@@ -914,6 +971,11 @@ class GoogleWorkspaceServer:
                             "body": {
                                 "type": "string",
                                 "description": "Reply body (plain text)",
+                            },
+                            "attachments": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of absolute local file paths to attach to the reply",
                             },
                         },
                         "required": ["message_id", "body"],
@@ -1425,21 +1487,25 @@ class GoogleWorkspaceServer:
                 ),
                 Tool(
                     name="upload_drive_file",
-                    description="Upload a text file to Google Drive",
+                    description="Upload a file to Google Drive. Supports binary files via local_path or text content via content parameter.",
                     inputSchema={
                         "type": "object",
                         "properties": {
                             "name": {
                                 "type": "string",
-                                "description": "File name",
+                                "description": "File name in Drive. If omitted when using local_path, the local filename is used.",
+                            },
+                            "local_path": {
+                                "type": "string",
+                                "description": "Absolute path to a local file to upload (binary or text). If provided, content parameter is ignored.",
                             },
                             "content": {
                                 "type": "string",
-                                "description": "File content (text)",
+                                "description": "Text content to upload. Use local_path instead for binary files.",
                             },
                             "mime_type": {
                                 "type": "string",
-                                "description": "MIME type (default: 'text/plain')",
+                                "description": "MIME type (default: 'text/plain', or auto-detected from local_path)",
                                 "default": "text/plain",
                             },
                             "parent_id": {
@@ -1447,7 +1513,7 @@ class GoogleWorkspaceServer:
                                 "description": "Parent folder ID (optional)",
                             },
                         },
-                        "required": ["name", "content"],
+                        "required": [],
                     },
                 ),
                 Tool(
@@ -2079,10 +2145,7 @@ class GoogleWorkspaceServer:
                             "data": {
                                 "type": "array",
                                 "description": "Table data as array of arrays (optional)",
-                                "items": {
-                                    "type": "array",
-                                    "items": {"type": "string"}
-                                },
+                                "items": {"type": "array", "items": {"type": "string"}},
                             },
                             "header_row": {
                                 "type": "boolean",
@@ -2114,7 +2177,17 @@ class GoogleWorkspaceServer:
                             "heading_style": {
                                 "type": "string",
                                 "description": "Heading style to apply",
-                                "enum": ["NORMAL_TEXT", "TITLE", "SUBTITLE", "HEADING_1", "HEADING_2", "HEADING_3", "HEADING_4", "HEADING_5", "HEADING_6"],
+                                "enum": [
+                                    "NORMAL_TEXT",
+                                    "TITLE",
+                                    "SUBTITLE",
+                                    "HEADING_1",
+                                    "HEADING_2",
+                                    "HEADING_3",
+                                    "HEADING_4",
+                                    "HEADING_5",
+                                    "HEADING_6",
+                                ],
                             },
                         },
                         "required": ["document_id", "start_index", "end_index", "heading_style"],
@@ -2844,7 +2917,13 @@ class GoogleWorkspaceServer:
                                 },
                             },
                         },
-                        "required": ["presentation_id", "slide_id", "shape_id", "start_index", "end_index"],
+                        "required": [
+                            "presentation_id",
+                            "slide_id",
+                            "shape_id",
+                            "start_index",
+                            "end_index",
+                        ],
                     },
                 ),
                 Tool(
@@ -3003,7 +3082,19 @@ class GoogleWorkspaceServer:
                             "layout_type": {
                                 "type": "string",
                                 "description": "Type of layout to apply",
-                                "enum": ["BLANK", "CAPTION_ONLY", "TITLE", "TITLE_AND_BODY", "TITLE_AND_TWO_COLUMNS", "TITLE_ONLY", "SECTION_HEADER", "SECTION_TITLE_AND_DESCRIPTION", "ONE_COLUMN_TEXT", "MAIN_POINT", "BIG_NUMBER"],
+                                "enum": [
+                                    "BLANK",
+                                    "CAPTION_ONLY",
+                                    "TITLE",
+                                    "TITLE_AND_BODY",
+                                    "TITLE_AND_TWO_COLUMNS",
+                                    "TITLE_ONLY",
+                                    "SECTION_HEADER",
+                                    "SECTION_TITLE_AND_DESCRIPTION",
+                                    "ONE_COLUMN_TEXT",
+                                    "MAIN_POINT",
+                                    "BIG_NUMBER",
+                                ],
                             },
                         },
                         "required": ["presentation_id", "slide_id", "layout_type"],
@@ -3187,6 +3278,7 @@ class GoogleWorkspaceServer:
             "get_events": self._get_events,
             "search_gmail_messages": self._search_gmail_messages,
             "get_gmail_message_content": self._get_gmail_message_content,
+            "download_gmail_attachment": self._download_gmail_attachment,
             "search_drive_files": self._search_drive_files,
             "get_drive_file_content": self._get_drive_file_content,
             # Sheets multi-tab operations
@@ -3560,7 +3652,7 @@ class GoogleWorkspaceServer:
             arguments: Tool arguments with message_id.
 
         Returns:
-            Message content including headers and body.
+            Message content including headers, body, and attachments list.
         """
         message_id = arguments["message_id"]
 
@@ -3570,7 +3662,11 @@ class GoogleWorkspaceServer:
         headers = {h["name"]: h["value"] for h in response.get("payload", {}).get("headers", [])}
 
         # Extract body content
-        body = self._extract_message_body(response.get("payload", {}))
+        payload = response.get("payload", {})
+        body = self._extract_message_body(payload)
+
+        # Extract attachment metadata from all parts
+        attachments = self._extract_attachments(payload)
 
         return {
             "id": response.get("id"),
@@ -3582,6 +3678,7 @@ class GoogleWorkspaceServer:
             "date": headers.get("Date"),
             "body": body,
             "labels": response.get("labelIds", []),
+            "attachments": attachments,
         }
 
     def _extract_message_body(self, payload: dict[str, Any]) -> str:
@@ -3624,6 +3721,63 @@ class GoogleWorkspaceServer:
                     return base64.urlsafe_b64decode(data).decode("utf-8", errors="replace")
 
         return ""
+
+    def _extract_attachments(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        """Extract attachment metadata from Gmail message payload.
+
+        Recursively walks multipart payloads to find all attachment parts.
+
+        Args:
+            payload: Gmail message payload.
+
+        Returns:
+            List of dicts with filename, mimeType, size, and attachmentId.
+        """
+        attachments: list[dict[str, Any]] = []
+        body_data = payload.get("body", {})
+        if body_data.get("attachmentId"):
+            # This part is itself an attachment
+            attachments.append(
+                {
+                    "filename": payload.get("filename", "attachment"),
+                    "mimeType": payload.get("mimeType", "application/octet-stream"),
+                    "size": body_data.get("size", 0),
+                    "attachmentId": body_data["attachmentId"],
+                }
+            )
+        for part in payload.get("parts", []):
+            attachments.extend(self._extract_attachments(part))
+        return attachments
+
+    async def _download_gmail_attachment(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Download a Gmail message attachment to a local file.
+
+        Args:
+            arguments: Tool arguments with message_id, attachment_id, and save_path.
+
+        Returns:
+            Dict with saved_to path and size in bytes.
+        """
+        import base64
+        import os
+
+        message_id = arguments["message_id"]
+        attachment_id = arguments["attachment_id"]
+        save_path = arguments["save_path"]
+
+        url = f"{GMAIL_API_BASE}/users/me/messages/{message_id}/attachments/{attachment_id}"
+        response = await self._make_request("GET", url)
+
+        # Gmail API returns base64url-encoded data; pad and decode
+        raw_data = response.get("data", "")
+        # Add padding if needed
+        data = base64.urlsafe_b64decode(raw_data + "==")
+
+        os.makedirs(os.path.dirname(os.path.abspath(save_path)), exist_ok=True)
+        with open(save_path, "wb") as f:
+            f.write(data)
+
+        return {"saved_to": save_path, "size": len(data)}
 
     def _normalize_drive_query(self, query: str) -> str:
         """Normalize a search query for Google Drive API.
@@ -3693,12 +3847,15 @@ class GoogleWorkspaceServer:
         """Get content of a Google Drive file.
 
         Args:
-            arguments: Tool arguments with file_id.
+            arguments: Tool arguments with file_id and optional save_path.
 
         Returns:
-            File metadata and content (for exportable types).
+            File metadata and either inline content or saved_to path.
         """
+        import os
+
         file_id = arguments["file_id"]
+        save_path = arguments.get("save_path")
 
         # First get file metadata
         meta_url = f"{DRIVE_API_BASE}/files/{file_id}"
@@ -3723,6 +3880,17 @@ class GoogleWorkspaceServer:
                 export_url,
                 params={"mimeType": export_map[mime_type]},
             )
+            if save_path:
+                os.makedirs(os.path.dirname(os.path.abspath(save_path)), exist_ok=True)
+                with open(save_path, "wb") as f:
+                    f.write(response.content)
+                return {
+                    "id": metadata.get("id"),
+                    "name": metadata.get("name"),
+                    "mimeType": mime_type,
+                    "saved_to": save_path,
+                    "size": len(response.content),
+                }
             content = response.text
         else:
             # Download regular files
@@ -3732,11 +3900,24 @@ class GoogleWorkspaceServer:
                 download_url,
                 params={"alt": "media"},
             )
-            # Try to decode as text, otherwise indicate binary
+            if save_path:
+                os.makedirs(os.path.dirname(os.path.abspath(save_path)), exist_ok=True)
+                with open(save_path, "wb") as f:
+                    f.write(response.content)
+                return {
+                    "id": metadata.get("id"),
+                    "name": metadata.get("name"),
+                    "mimeType": mime_type,
+                    "saved_to": save_path,
+                    "size": len(response.content),
+                }
+            # Try to decode as text for inline return, otherwise indicate binary
             try:
-                content = response.text
+                content = response.content.decode("utf-8")
             except UnicodeDecodeError:
-                content = f"[Binary file: {metadata.get('size', 'unknown')} bytes]"
+                content = (
+                    f"[Binary file: {len(response.content)} bytes. Use save_path to download.]"
+                )
 
         return {
             "id": metadata.get("id"),
@@ -4373,6 +4554,7 @@ class GoogleWorkspaceServer:
         thread_id: str | None = None,
         in_reply_to: str | None = None,
         references: str | None = None,
+        attachments: list[str] | None = None,
     ) -> str:
         """Build RFC 2822 email message and return base64url encoded.
 
@@ -4385,14 +4567,39 @@ class GoogleWorkspaceServer:
             thread_id: Optional thread ID for replies.
             in_reply_to: Optional Message-ID for reply threading.
             references: Optional References header for reply threading.
+            attachments: Optional list of absolute local file paths to attach.
 
         Returns:
             Base64url encoded email message.
         """
         import base64
+        import mimetypes
+        import os
+        from email import encoders as email_encoders
+        from email.mime.base import MIMEBase
+        from email.mime.multipart import MIMEMultipart
         from email.mime.text import MIMEText
 
-        message = MIMEText(body)
+        if attachments:
+            message: MIMEMultipart | MIMEText = MIMEMultipart("mixed")
+            message.attach(MIMEText(body))
+            for path in attachments:
+                detected_mime, _ = mimetypes.guess_type(path)
+                main_type, sub_type = (detected_mime or "application/octet-stream").split("/", 1)
+                with open(path, "rb") as f:
+                    file_data = f.read()
+                part = MIMEBase(main_type, sub_type)
+                part.set_payload(file_data)
+                email_encoders.encode_base64(part)
+                part.add_header(
+                    "Content-Disposition",
+                    "attachment",
+                    filename=os.path.basename(path),
+                )
+                message.attach(part)  # type: ignore[union-attr]
+        else:
+            message = MIMEText(body)
+
         message["to"] = to
         message["subject"] = subject
 
@@ -4411,7 +4618,7 @@ class GoogleWorkspaceServer:
         """Send an email message.
 
         Args:
-            arguments: Tool arguments with to, subject, body, cc, bcc.
+            arguments: Tool arguments with to, subject, body, cc, bcc, attachments.
 
         Returns:
             Sent message details.
@@ -4421,8 +4628,9 @@ class GoogleWorkspaceServer:
         body = arguments["body"]
         cc = arguments.get("cc")
         bcc = arguments.get("bcc")
+        attachments = arguments.get("attachments")
 
-        raw_message = self._build_email_message(to, subject, body, cc, bcc)
+        raw_message = self._build_email_message(to, subject, body, cc, bcc, attachments=attachments)
 
         url = f"{GMAIL_API_BASE}/users/me/messages/send"
         response = await self._make_request("POST", url, json_data={"raw": raw_message})
@@ -4438,7 +4646,7 @@ class GoogleWorkspaceServer:
         """Create an email draft.
 
         Args:
-            arguments: Tool arguments with to, subject, body, cc, bcc.
+            arguments: Tool arguments with to, subject, body, cc, bcc, attachments.
 
         Returns:
             Created draft details.
@@ -4448,8 +4656,9 @@ class GoogleWorkspaceServer:
         body = arguments["body"]
         cc = arguments.get("cc")
         bcc = arguments.get("bcc")
+        attachments = arguments.get("attachments")
 
-        raw_message = self._build_email_message(to, subject, body, cc, bcc)
+        raw_message = self._build_email_message(to, subject, body, cc, bcc, attachments=attachments)
 
         url = f"{GMAIL_API_BASE}/users/me/drafts"
         response = await self._make_request(
@@ -4467,13 +4676,14 @@ class GoogleWorkspaceServer:
         """Reply to an existing email thread.
 
         Args:
-            arguments: Tool arguments with message_id and body.
+            arguments: Tool arguments with message_id, body, and optional attachments.
 
         Returns:
             Sent reply details.
         """
         message_id = arguments["message_id"]
         body = arguments["body"]
+        attachments = arguments.get("attachments")
 
         # Get original message to extract thread info and headers
         orig_url = f"{GMAIL_API_BASE}/users/me/messages/{message_id}"
@@ -4499,6 +4709,7 @@ class GoogleWorkspaceServer:
             body=body,
             in_reply_to=message_id_header,
             references=message_id_header,
+            attachments=attachments,
         )
 
         url = f"{GMAIL_API_BASE}/users/me/messages/send"
@@ -5229,47 +5440,67 @@ class GoogleWorkspaceServer:
         }
 
     async def _upload_drive_file(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Upload a text file to Google Drive.
+        """Upload a file to Google Drive (text or binary).
 
         Args:
-            arguments: Tool arguments with name, content, mime_type, parent_id.
+            arguments: Tool arguments with local_path or content, plus optional name,
+                       mime_type, and parent_id.
 
         Returns:
             Uploaded file details.
         """
-        name = arguments["name"]
-        content = arguments["content"]
+        import mimetypes
+        import os
+
+        local_path = arguments.get("local_path")
         mime_type = arguments.get("mime_type", "text/plain")
         parent_id = arguments.get("parent_id")
+
+        if local_path:
+            # Binary-safe upload from local file
+            with open(local_path, "rb") as f:
+                file_bytes = f.read()
+            # Auto-detect MIME type if not explicitly provided or is the default
+            if not arguments.get("mime_type"):
+                detected, _ = mimetypes.guess_type(local_path)
+                mime_type = detected or "application/octet-stream"
+            name = arguments.get("name") or os.path.basename(local_path)
+        else:
+            # Text content path
+            content = arguments.get("content")
+            if content is None:
+                raise ValueError("Either 'local_path' or 'content' must be provided")
+            name = arguments.get("name", "untitled")
+            file_bytes = content.encode("utf-8")
 
         # Build metadata
         metadata: dict[str, Any] = {"name": name, "mimeType": mime_type}
         if parent_id:
             metadata["parents"] = [parent_id]
 
+        # Build multipart body (bytes-safe)
+        boundary = b"foo_bar_baz"
+        metadata_part = (
+            b"--" + boundary + b"\r\n"
+            b"Content-Type: application/json; charset=UTF-8\r\n\r\n"
+            + json.dumps(metadata).encode("utf-8")
+            + b"\r\n"
+        )
+        file_part = (
+            b"--" + boundary + b"\r\n"
+            b"Content-Type: " + mime_type.encode("utf-8") + b"\r\n\r\n" + file_bytes + b"\r\n"
+        )
+        closing = b"--" + boundary + b"--"
+        body = metadata_part + file_part + closing
+
         # Use multipart upload
         upload_url = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart"
-
-        # Build multipart body
-        boundary = "foo_bar_baz"
-        body_parts = [
-            f"--{boundary}",
-            "Content-Type: application/json; charset=UTF-8",
-            "",
-            json.dumps(metadata),
-            f"--{boundary}",
-            f"Content-Type: {mime_type}",
-            "",
-            content,
-            f"--{boundary}--",
-        ]
-        body = "\r\n".join(body_parts)
 
         response = await self._make_raw_request(
             "POST",
             upload_url,
-            content=body.encode("utf-8"),
-            headers={"Content-Type": f"multipart/related; boundary={boundary}"},
+            content=body,
+            headers={"Content-Type": f"multipart/related; boundary={boundary.decode()}"},
             timeout=60.0,
         )
         result = response.json()
@@ -6656,7 +6887,7 @@ class GoogleWorkspaceServer:
             metadata["parents"] = [folder_id]
 
         upload_url = (
-            "https://www.googleapis.com/upload/drive/v3/files" "?uploadType=multipart&convert=true"
+            "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&convert=true"
         )
 
         import base64
@@ -6692,8 +6923,7 @@ class GoogleWorkspaceServer:
             for diagram_num, source_code in mermaid_sources:
                 try:
                     comment_content = (
-                        f"[Mermaid Source - Diagram {diagram_num}]\n"
-                        f"```mermaid\n{source_code}\n```"
+                        f"[Mermaid Source - Diagram {diagram_num}]\n```mermaid\n{source_code}\n```"
                     )
                     comment_url = f"{DRIVE_API_BASE}/files/{document_id}/comments"
                     comment_body = {"content": comment_content}
@@ -7805,18 +8035,18 @@ class GoogleWorkspaceServer:
             text_style["weightedFontFamily"] = {"fontFamily": arguments["font_family"]}
         if "text_color" in arguments:
             color = arguments["text_color"]
-            text_style["foregroundColor"] = {
-                "color": {"rgbColor": color}
-            }
+            text_style["foregroundColor"] = {"color": {"rgbColor": color}}
 
         if text_style:
-            requests.append({
-                "updateTextStyle": {
-                    "range": {"startIndex": start_index, "endIndex": end_index},
-                    "textStyle": text_style,
-                    "fields": ",".join(text_style.keys()),
+            requests.append(
+                {
+                    "updateTextStyle": {
+                        "range": {"startIndex": start_index, "endIndex": end_index},
+                        "textStyle": text_style,
+                        "fields": ",".join(text_style.keys()),
+                    }
                 }
-            })
+            )
 
         if not requests:
             return {"status": "no_formatting_applied"}
@@ -7845,7 +8075,10 @@ class GoogleWorkspaceServer:
         if "line_spacing" in arguments:
             paragraph_style["lineSpacing"] = arguments["line_spacing"]
         if "indent_first_line" in arguments:
-            paragraph_style["indentFirstLine"] = {"magnitude": arguments["indent_first_line"], "unit": "PT"}
+            paragraph_style["indentFirstLine"] = {
+                "magnitude": arguments["indent_first_line"],
+                "unit": "PT",
+            }
         if "indent_start" in arguments:
             paragraph_style["indentStart"] = {"magnitude": arguments["indent_start"], "unit": "PT"}
         if "indent_end" in arguments:
@@ -7855,13 +8088,15 @@ class GoogleWorkspaceServer:
             return {"status": "no_formatting_applied"}
 
         request_body = {
-            "requests": [{
-                "updateParagraphStyle": {
-                    "range": {"startIndex": start_index, "endIndex": end_index},
-                    "paragraphStyle": paragraph_style,
-                    "fields": ",".join(paragraph_style.keys()),
+            "requests": [
+                {
+                    "updateParagraphStyle": {
+                        "range": {"startIndex": start_index, "endIndex": end_index},
+                        "paragraphStyle": paragraph_style,
+                        "fields": ",".join(paragraph_style.keys()),
+                    }
                 }
-            }]
+            ]
         }
 
         await self._make_request("POST", url, json_data=request_body)
@@ -7897,18 +8132,23 @@ class GoogleWorkspaceServer:
         ]
 
         # Apply list formatting
-        if list_type == "BULLETED":
-            glyph_type = "GLYPH_TYPE_UNSPECIFIED"
-        else:  # NUMBERED
-            glyph_type = "DECIMAL"
+        # TODO: Future feature - custom glyph types
+        # if list_type == "BULLETED":
+        #     glyph_type = "GLYPH_TYPE_UNSPECIFIED"
+        # else:  # NUMBERED
+        #     glyph_type = "DECIMAL"
 
         end_index = insert_index + len(list_text)
-        requests.append({
-            "createParagraphBullets": {
-                "range": {"startIndex": insert_index, "endIndex": end_index},
-                "bulletPreset": "BULLET_DISC_CIRCLE_SQUARE" if list_type == "BULLETED" else "NUMBERED_DECIMAL_ALPHA_ROMAN",
+        requests.append(
+            {
+                "createParagraphBullets": {
+                    "range": {"startIndex": insert_index, "endIndex": end_index},
+                    "bulletPreset": "BULLET_DISC_CIRCLE_SQUARE"
+                    if list_type == "BULLETED"
+                    else "NUMBERED_DECIMAL_ALPHA_ROMAN",
+                }
             }
-        })
+        )
 
         request_body = {"requests": requests}
         await self._make_request("POST", url, json_data=request_body)
@@ -7933,22 +8173,27 @@ class GoogleWorkspaceServer:
         url = f"{DOCS_API_BASE}/documents/{document_id}:batchUpdate"
 
         request_body = {
-            "requests": [{
-                "insertTable": {
-                    "location": {"index": insert_index},
-                    "rows": rows,
-                    "columns": columns,
+            "requests": [
+                {
+                    "insertTable": {
+                        "location": {"index": insert_index},
+                        "rows": rows,
+                        "columns": columns,
+                    }
                 }
-            }]
+            ]
         }
 
         await self._make_request("POST", url, json_data=request_body)
 
         # If data is provided, populate the table
         if data:
-            # Get document to find table cells
-            doc_response = await self._make_request("GET", f"{DOCS_API_BASE}/documents/{document_id}")
+            # TODO: Future feature - populate table with data
+            # doc_response = await self._make_request(
+            #     "GET", f"{DOCS_API_BASE}/documents/{document_id}"
+            # )
             # Find the table and populate - simplified implementation
+            pass
 
         return {
             "status": "inserted",
@@ -7968,13 +8213,15 @@ class GoogleWorkspaceServer:
         url = f"{DOCS_API_BASE}/documents/{document_id}:batchUpdate"
 
         request_body = {
-            "requests": [{
-                "updateParagraphStyle": {
-                    "range": {"startIndex": start_index, "endIndex": end_index},
-                    "paragraphStyle": {"namedStyleType": heading_style},
-                    "fields": "namedStyleType",
+            "requests": [
+                {
+                    "updateParagraphStyle": {
+                        "range": {"startIndex": start_index, "endIndex": end_index},
+                        "paragraphStyle": {"namedStyleType": heading_style},
+                        "fields": "namedStyleType",
+                    }
                 }
-            }]
+            ]
         }
 
         await self._make_request("POST", url, json_data=request_body)
@@ -8017,11 +8264,29 @@ class GoogleWorkspaceServer:
 
         for start, end, format_type in all_ranges:
             if format_type == "bold":
-                html_content = html_content[:start] + "<b>" + html_content[start:end] + "</b>" + html_content[end:]
+                html_content = (
+                    html_content[:start]
+                    + "<b>"
+                    + html_content[start:end]
+                    + "</b>"
+                    + html_content[end:]
+                )
             elif format_type == "italic":
-                html_content = html_content[:start] + "<i>" + html_content[start:end] + "</i>" + html_content[end:]
+                html_content = (
+                    html_content[:start]
+                    + "<i>"
+                    + html_content[start:end]
+                    + "</i>"
+                    + html_content[end:]
+                )
             elif format_type == "underline":
-                html_content = html_content[:start] + "<u>" + html_content[start:end] + "</u>" + html_content[end:]
+                html_content = (
+                    html_content[:start]
+                    + "<u>"
+                    + html_content[start:end]
+                    + "</u>"
+                    + html_content[end:]
+                )
 
         return {
             "status": "formatted",
@@ -8040,9 +8305,7 @@ class GoogleWorkspaceServer:
 
         url = f"{GMAIL_API_BASE}/users/me/settings/sendAs/me"
 
-        request_body = {
-            "signature": signature_html
-        }
+        request_body = {"signature": signature_html}
 
         await self._make_request("PATCH", url, json_data=request_body)
 
@@ -8072,9 +8335,9 @@ class GoogleWorkspaceServer:
             message["Bcc"] = bcc
 
         # Create multipart message for HTML
+        import base64
         from email.mime.multipart import MIMEMultipart
         from email.mime.text import MIMEText
-        import base64
 
         msg = MIMEMultipart("alternative")
         msg["To"] = to
@@ -8091,6 +8354,7 @@ class GoogleWorkspaceServer:
         # Encode the message
         raw_message = base64.urlsafe_b64encode(msg.as_bytes()).decode()
 
+        request_body: dict[str, Any]
         if send_immediately:
             url = f"{GMAIL_API_BASE}/users/me/messages/send"
             request_body = {"raw": raw_message}
@@ -8154,13 +8418,15 @@ class GoogleWorkspaceServer:
             }
 
         if cell_format:
-            requests.append({
-                "repeatCell": {
-                    "range": grid_range,
-                    "cell": {"userEnteredFormat": cell_format},
-                    "fields": "userEnteredFormat",
+            requests.append(
+                {
+                    "repeatCell": {
+                        "range": grid_range,
+                        "cell": {"userEnteredFormat": cell_format},
+                        "fields": "userEnteredFormat",
+                    }
                 }
-            })
+            )
 
         if requests:
             request_body = {"requests": requests}
@@ -8203,13 +8469,15 @@ class GoogleWorkspaceServer:
             number_format["pattern"] = "yyyy-mm-dd"
 
         request_body = {
-            "requests": [{
-                "repeatCell": {
-                    "range": grid_range,
-                    "cell": {"userEnteredFormat": {"numberFormat": number_format}},
-                    "fields": "userEnteredFormat.numberFormat",
+            "requests": [
+                {
+                    "repeatCell": {
+                        "range": grid_range,
+                        "cell": {"userEnteredFormat": {"numberFormat": number_format}},
+                        "fields": "userEnteredFormat.numberFormat",
+                    }
                 }
-            }]
+            ]
         }
 
         await self._make_request("POST", url, json_data=request_body)
@@ -8241,21 +8509,17 @@ class GoogleWorkspaceServer:
         url = f"{SHEETS_API_BASE}/spreadsheets/{spreadsheet_id}:batchUpdate"
 
         if unmerge:
-            request_body = {
-                "requests": [{
-                    "unmergeCells": {
-                        "range": grid_range
-                    }
-                }]
-            }
+            request_body = {"requests": [{"unmergeCells": {"range": grid_range}}]}
         else:
             request_body = {
-                "requests": [{
-                    "mergeCells": {
-                        "range": grid_range,
-                        "mergeType": merge_type,
+                "requests": [
+                    {
+                        "mergeCells": {
+                            "range": grid_range,
+                            "mergeType": merge_type,
+                        }
                     }
-                }]
+                ]
             }
 
         await self._make_request("POST", url, json_data=request_body)
@@ -8283,36 +8547,41 @@ class GoogleWorkspaceServer:
 
         url = f"{SHEETS_API_BASE}/spreadsheets/{spreadsheet_id}:batchUpdate"
 
+        request_body: dict[str, Any]
         if auto_resize:
             request_body = {
-                "requests": [{
-                    "autoResizeDimensions": {
-                        "dimensions": {
-                            "sheetId": sheet_id,
-                            "dimension": "COLUMNS",
-                            "startIndex": start_column_index,
-                            "endIndex": end_column_index,
+                "requests": [
+                    {
+                        "autoResizeDimensions": {
+                            "dimensions": {
+                                "sheetId": sheet_id,
+                                "dimension": "COLUMNS",
+                                "startIndex": start_column_index,
+                                "endIndex": end_column_index,
+                            }
                         }
                     }
-                }]
+                ]
             }
         else:
             if not width_pixels:
                 raise ValueError("width_pixels is required when auto_resize is False")
 
             request_body = {
-                "requests": [{
-                    "updateDimensionProperties": {
-                        "range": {
-                            "sheetId": sheet_id,
-                            "dimension": "COLUMNS",
-                            "startIndex": start_column_index,
-                            "endIndex": end_column_index,
-                        },
-                        "properties": {"pixelSize": width_pixels},
-                        "fields": "pixelSize",
+                "requests": [
+                    {
+                        "updateDimensionProperties": {
+                            "range": {
+                                "sheetId": sheet_id,
+                                "dimension": "COLUMNS",
+                                "startIndex": start_column_index,
+                                "endIndex": end_column_index,
+                            },
+                            "properties": {"pixelSize": width_pixels},
+                            "fields": "pixelSize",
+                        }
                     }
-                }]
+                ]
             }
 
         await self._make_request("POST", url, json_data=request_body)
@@ -8346,41 +8615,44 @@ class GoogleWorkspaceServer:
         url = f"{SHEETS_API_BASE}/spreadsheets/{spreadsheet_id}:batchUpdate"
 
         import uuid
+
         chart_id = uuid.uuid4().hex[:8]
 
         request_body = {
-            "requests": [{
-                "addChart": {
-                    "chart": {
-                        "chartId": chart_id,
-                        "spec": {
-                            "title": title,
-                            "basicChart": {
-                                "chartType": chart_type,
-                                "axis": [
-                                    {"position": "BOTTOM_AXIS", "title": ""},
-                                    {"position": "LEFT_AXIS", "title": ""},
-                                ],
-                                "domains": [{
-                                    "domain": {"sourceRange": {"sources": [grid_range]}}
-                                }],
-                                "series": [{
-                                    "series": {"sourceRange": {"sources": [grid_range]}}
-                                }],
-                            }
-                        },
-                        "position": {
-                            "overlayPosition": {
-                                "anchorCell": {
-                                    "sheetId": sheet_id,
-                                    "rowIndex": position_row,
-                                    "columnIndex": position_column,
+            "requests": [
+                {
+                    "addChart": {
+                        "chart": {
+                            "chartId": chart_id,
+                            "spec": {
+                                "title": title,
+                                "basicChart": {
+                                    "chartType": chart_type,
+                                    "axis": [
+                                        {"position": "BOTTOM_AXIS", "title": ""},
+                                        {"position": "LEFT_AXIS", "title": ""},
+                                    ],
+                                    "domains": [
+                                        {"domain": {"sourceRange": {"sources": [grid_range]}}}
+                                    ],
+                                    "series": [
+                                        {"series": {"sourceRange": {"sources": [grid_range]}}}
+                                    ],
+                                },
+                            },
+                            "position": {
+                                "overlayPosition": {
+                                    "anchorCell": {
+                                        "sheetId": sheet_id,
+                                        "rowIndex": position_row,
+                                        "columnIndex": position_column,
+                                    }
                                 }
-                            }
+                            },
                         }
                     }
                 }
-            }]
+            ]
         }
 
         await self._make_request("POST", url, json_data=request_body)
@@ -8414,45 +8686,53 @@ class GoogleWorkspaceServer:
 
         # Build text style updates
         if "bold" in arguments:
-            requests.append({
-                "updateTextStyle": {
-                    "objectId": shape_id,
-                    "textRange": {"startIndex": start_index, "endIndex": end_index},
-                    "style": {"bold": arguments["bold"]},
-                    "fields": "bold",
+            requests.append(
+                {
+                    "updateTextStyle": {
+                        "objectId": shape_id,
+                        "textRange": {"startIndex": start_index, "endIndex": end_index},
+                        "style": {"bold": arguments["bold"]},
+                        "fields": "bold",
+                    }
                 }
-            })
+            )
 
         if "italic" in arguments:
-            requests.append({
-                "updateTextStyle": {
-                    "objectId": shape_id,
-                    "textRange": {"startIndex": start_index, "endIndex": end_index},
-                    "style": {"italic": arguments["italic"]},
-                    "fields": "italic",
+            requests.append(
+                {
+                    "updateTextStyle": {
+                        "objectId": shape_id,
+                        "textRange": {"startIndex": start_index, "endIndex": end_index},
+                        "style": {"italic": arguments["italic"]},
+                        "fields": "italic",
+                    }
                 }
-            })
+            )
 
         if "font_size" in arguments:
-            requests.append({
-                "updateTextStyle": {
-                    "objectId": shape_id,
-                    "textRange": {"startIndex": start_index, "endIndex": end_index},
-                    "style": {"fontSize": {"magnitude": arguments["font_size"], "unit": "PT"}},
-                    "fields": "fontSize",
+            requests.append(
+                {
+                    "updateTextStyle": {
+                        "objectId": shape_id,
+                        "textRange": {"startIndex": start_index, "endIndex": end_index},
+                        "style": {"fontSize": {"magnitude": arguments["font_size"], "unit": "PT"}},
+                        "fields": "fontSize",
+                    }
                 }
-            })
+            )
 
         if "font_color" in arguments:
             color = arguments["font_color"]
-            requests.append({
-                "updateTextStyle": {
-                    "objectId": shape_id,
-                    "textRange": {"startIndex": start_index, "endIndex": end_index},
-                    "style": {"foregroundColor": {"opaqueColor": {"rgbColor": color}}},
-                    "fields": "foregroundColor",
+            requests.append(
+                {
+                    "updateTextStyle": {
+                        "objectId": shape_id,
+                        "textRange": {"startIndex": start_index, "endIndex": end_index},
+                        "style": {"foregroundColor": {"opaqueColor": {"rgbColor": color}}},
+                        "fields": "foregroundColor",
+                    }
                 }
-            })
+            )
 
         if requests:
             request_body = {"requests": requests}
@@ -8482,6 +8762,7 @@ class GoogleWorkspaceServer:
         font_color = arguments.get("font_color")
 
         import uuid
+
         text_box_id = f"textbox_{uuid.uuid4().hex[:8]}"
 
         url = f"{SLIDES_API_BASE}/presentations/{presentation_id}:batchUpdate"
@@ -8516,11 +8797,11 @@ class GoogleWorkspaceServer:
                     "text": text,
                     "insertionIndex": 0,
                 }
-            }
+            },
         ]
 
         # Apply formatting
-        text_style = {}
+        text_style: dict[str, Any] = {}
         if bold:
             text_style["bold"] = True
         if italic:
@@ -8531,14 +8812,16 @@ class GoogleWorkspaceServer:
             text_style["foregroundColor"] = {"opaqueColor": {"rgbColor": font_color}}
 
         if text_style:
-            requests.append({
-                "updateTextStyle": {
-                    "objectId": text_box_id,
-                    "textRange": {"startIndex": 0, "endIndex": len(text)},
-                    "style": text_style,
-                    "fields": ",".join(text_style.keys()),
+            requests.append(
+                {
+                    "updateTextStyle": {
+                        "objectId": text_box_id,
+                        "textRange": {"startIndex": 0, "endIndex": len(text)},
+                        "style": text_style,
+                        "fields": ",".join(text_style.keys()),
+                    }
                 }
-            })
+            )
 
         request_body = {"requests": requests}
         await self._make_request("POST", url, json_data=request_body)
@@ -8574,38 +8857,36 @@ class GoogleWorkspaceServer:
                 raise ValueError("color is required for COLOR background type")
 
             request_body = {
-                "requests": [{
-                    "updateSlideProperties": {
-                        "objectId": slide_id,
-                        "slideProperties": {
-                            "pageBackgroundFill": {
-                                "solidFill": {
-                                    "color": {"rgbColor": color}
-                                }
-                            }
-                        },
-                        "fields": "pageBackgroundFill",
+                "requests": [
+                    {
+                        "updateSlideProperties": {
+                            "objectId": slide_id,
+                            "slideProperties": {
+                                "pageBackgroundFill": {"solidFill": {"color": {"rgbColor": color}}}
+                            },
+                            "fields": "pageBackgroundFill",
+                        }
                     }
-                }]
+                ]
             }
         else:  # IMAGE
             if not image_url:
                 raise ValueError("image_url is required for IMAGE background type")
 
             request_body = {
-                "requests": [{
-                    "updateSlideProperties": {
-                        "objectId": slide_id,
-                        "slideProperties": {
-                            "pageBackgroundFill": {
-                                "stretchedPictureFill": {
-                                    "contentUrl": image_url
+                "requests": [
+                    {
+                        "updateSlideProperties": {
+                            "objectId": slide_id,
+                            "slideProperties": {
+                                "pageBackgroundFill": {
+                                    "stretchedPictureFill": {"contentUrl": image_url}
                                 }
-                            }
-                        },
-                        "fields": "pageBackgroundFill",
+                            },
+                            "fields": "pageBackgroundFill",
+                        }
                     }
-                }]
+                ]
             }
 
         await self._make_request("POST", url, json_data=request_body)
@@ -8631,6 +8912,7 @@ class GoogleWorkspaceServer:
         url = f"{SLIDES_API_BASE}/presentations/{presentation_id}:batchUpdate"
 
         import uuid
+
         slide_id = f"slide_{uuid.uuid4().hex[:8]}"
 
         requests = [
@@ -8638,7 +8920,7 @@ class GoogleWorkspaceServer:
                 "createSlide": {
                     "objectId": slide_id,
                     "insertionIndex": slide_index,
-                    "slideLayoutReference": {"predefinedLayout": "TITLE_AND_BODY"}
+                    "slideLayoutReference": {"predefinedLayout": "TITLE_AND_BODY"},
                 }
             }
         ]
@@ -8646,61 +8928,78 @@ class GoogleWorkspaceServer:
         # Add title if provided
         if title:
             title_id = f"title_{uuid.uuid4().hex[:8]}"
-            requests.extend([
-                {
-                    "createShape": {
-                        "objectId": title_id,
-                        "shapeType": "TEXT_BOX",
-                        "elementProperties": {
-                            "pageObjectId": slide_id,
-                            "size": {"width": {"magnitude": 8 * 914400, "unit": "EMU"},
-                                   "height": {"magnitude": 1 * 914400, "unit": "EMU"}},
-                            "transform": {"scaleX": 1, "scaleY": 1,
-                                        "translateX": 0.5 * 914400, "translateY": 0.5 * 914400, "unit": "EMU"},
-                        },
-                    }
-                },
-                {
-                    "insertText": {"objectId": title_id, "text": title, "insertionIndex": 0}
-                },
-                {
-                    "updateTextStyle": {
-                        "objectId": title_id,
-                        "style": {"fontSize": {"magnitude": title_font_size, "unit": "PT"}, "bold": True},
-                        "fields": "fontSize,bold",
-                    }
-                }
-            ])
+            requests.extend(
+                [
+                    {
+                        "createShape": {
+                            "objectId": title_id,
+                            "shapeType": "TEXT_BOX",
+                            "elementProperties": {
+                                "pageObjectId": slide_id,
+                                "size": {
+                                    "width": {"magnitude": 8 * 914400, "unit": "EMU"},
+                                    "height": {"magnitude": 1 * 914400, "unit": "EMU"},
+                                },
+                                "transform": {
+                                    "scaleX": 1,
+                                    "scaleY": 1,
+                                    "translateX": 0.5 * 914400,
+                                    "translateY": 0.5 * 914400,
+                                    "unit": "EMU",
+                                },
+                            },
+                        }
+                    },
+                    {"insertText": {"objectId": title_id, "text": title, "insertionIndex": 0}},
+                    {
+                        "updateTextStyle": {
+                            "objectId": title_id,
+                            "style": {
+                                "fontSize": {"magnitude": title_font_size, "unit": "PT"},
+                                "bold": True,
+                            },
+                            "fields": "fontSize,bold",
+                        }
+                    },
+                ]
+            )
 
         # Add bullet points
         bullet_text = "\n".join(f"• {point}" for point in bullet_points)
         bullet_id = f"bullets_{uuid.uuid4().hex[:8]}"
 
-        requests.extend([
-            {
-                "createShape": {
-                    "objectId": bullet_id,
-                    "shapeType": "TEXT_BOX",
-                    "elementProperties": {
-                        "pageObjectId": slide_id,
-                        "size": {"width": {"magnitude": 8 * 914400, "unit": "EMU"},
-                               "height": {"magnitude": 5 * 914400, "unit": "EMU"}},
-                        "transform": {"scaleX": 1, "scaleY": 1,
-                                    "translateX": 0.5 * 914400, "translateY": 2 * 914400, "unit": "EMU"},
-                    },
-                }
-            },
-            {
-                "insertText": {"objectId": bullet_id, "text": bullet_text, "insertionIndex": 0}
-            },
-            {
-                "updateTextStyle": {
-                    "objectId": bullet_id,
-                    "style": {"fontSize": {"magnitude": bullet_font_size, "unit": "PT"}},
-                    "fields": "fontSize",
-                }
-            }
-        ])
+        requests.extend(
+            [
+                {
+                    "createShape": {
+                        "objectId": bullet_id,
+                        "shapeType": "TEXT_BOX",
+                        "elementProperties": {
+                            "pageObjectId": slide_id,
+                            "size": {
+                                "width": {"magnitude": 8 * 914400, "unit": "EMU"},
+                                "height": {"magnitude": 5 * 914400, "unit": "EMU"},
+                            },
+                            "transform": {
+                                "scaleX": 1,
+                                "scaleY": 1,
+                                "translateX": 0.5 * 914400,
+                                "translateY": 2 * 914400,
+                                "unit": "EMU",
+                            },
+                        },
+                    }
+                },
+                {"insertText": {"objectId": bullet_id, "text": bullet_text, "insertionIndex": 0}},
+                {
+                    "updateTextStyle": {
+                        "objectId": bullet_id,
+                        "style": {"fontSize": {"magnitude": bullet_font_size, "unit": "PT"}},
+                        "fields": "fontSize",
+                    }
+                },
+            ]
+        )
 
         request_body = {"requests": requests}
         await self._make_request("POST", url, json_data=request_body)
@@ -8723,15 +9022,15 @@ class GoogleWorkspaceServer:
         url = f"{SLIDES_API_BASE}/presentations/{presentation_id}:batchUpdate"
 
         request_body = {
-            "requests": [{
-                "updateSlideProperties": {
-                    "objectId": slide_id,
-                    "slideProperties": {
-                        "layoutObjectId": layout_type
-                    },
-                    "fields": "layoutObjectId",
+            "requests": [
+                {
+                    "updateSlideProperties": {
+                        "objectId": slide_id,
+                        "slideProperties": {"layoutObjectId": layout_type},
+                        "fields": "layoutObjectId",
+                    }
                 }
-            }]
+            ]
         }
 
         await self._make_request("POST", url, json_data=request_body)
@@ -8754,10 +9053,7 @@ class GoogleWorkspaceServer:
 
         for sheet in response["sheets"]:
             if sheet["properties"]["title"] == sheet_name:
-                return {
-                    "sheet_id": sheet["properties"]["sheetId"],
-                    "sheet_name": sheet_name
-                }
+                return {"sheet_id": sheet["properties"]["sheetId"], "sheet_name": sheet_name}
 
         raise ValueError(f"Sheet '{sheet_name}' not found")
 
