@@ -462,6 +462,9 @@ publish: ## Bump patch version, build, publish to PyPI, tag, and push
 	if [ -f .env.local ]; then \
 		. .env.local; \
 	fi; \
+	if [ -z "$$HOMEBREW_TAP_TOKEN" ] && [ -f ../claude-mpm/.env.local ]; then \
+		. ../claude-mpm/.env.local; \
+	fi; \
 	if [ -n "$$HOMEBREW_TAP_TOKEN" ]; then \
 		echo "$(BLUE)Updating Homebrew formula (non-blocking)...$(NC)"; \
 		HOMEBREW_TAP_TOKEN="$$HOMEBREW_TAP_TOKEN" ./scripts/wait_and_update_homebrew.sh $$NEW_VERSION || \
@@ -518,6 +521,9 @@ publish-minor: ## Bump minor version, build, publish to PyPI, tag, and push
 	if [ -f .env.local ]; then \
 		. .env.local; \
 	fi; \
+	if [ -z "$$HOMEBREW_TAP_TOKEN" ] && [ -f ../claude-mpm/.env.local ]; then \
+		. ../claude-mpm/.env.local; \
+	fi; \
 	if [ -n "$$HOMEBREW_TAP_TOKEN" ]; then \
 		echo "$(BLUE)Updating Homebrew formula (non-blocking)...$(NC)"; \
 		HOMEBREW_TAP_TOKEN="$$HOMEBREW_TAP_TOKEN" ./scripts/wait_and_update_homebrew.sh $$NEW_VERSION || \
@@ -572,6 +578,9 @@ publish-major: ## Bump major version, build, publish to PyPI, tag, and push
 	fi; \
 	if [ -f .env.local ]; then \
 		. .env.local; \
+	fi; \
+	if [ -z "$$HOMEBREW_TAP_TOKEN" ] && [ -f ../claude-mpm/.env.local ]; then \
+		. ../claude-mpm/.env.local; \
 	fi; \
 	if [ -n "$$HOMEBREW_TAP_TOKEN" ]; then \
 		echo "$(BLUE)Updating Homebrew formula (non-blocking)...$(NC)"; \
@@ -635,9 +644,12 @@ homebrew-update: ## Update Homebrew formula with current version
 	if [ -f .env.local ]; then \
 		. .env.local; \
 	fi; \
+	if [ -z "$$HOMEBREW_TAP_TOKEN" ] && [ -f ../claude-mpm/.env.local ]; then \
+		. ../claude-mpm/.env.local; \
+	fi; \
 	if [ -z "$$HOMEBREW_TAP_TOKEN" ]; then \
 		echo "$(RED)✗ HOMEBREW_TAP_TOKEN not set$(NC)"; \
-		echo "$(YELLOW)  Set in .env.local or export HOMEBREW_TAP_TOKEN=<token>$(NC)"; \
+		echo "$(YELLOW)  Set in .env.local or ../claude-mpm/.env.local$(NC)"; \
 		exit 1; \
 	fi; \
 	HOMEBREW_TAP_TOKEN="$$HOMEBREW_TAP_TOKEN" python3 scripts/update_homebrew.py --version $$VERSION --verbose
