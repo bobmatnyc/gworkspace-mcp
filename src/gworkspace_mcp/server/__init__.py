@@ -36,10 +36,11 @@ Docs Tools (16):
 - NEW: Lists and tables insertion
 - NEW: Heading styles application
 
-Sheets Tools (11):
+Sheets Tools (12):
 - List and manage spreadsheets
 - Read and write cell data
 - Multi-sheet operations
+- Add new sheets/tabs to existing spreadsheets
 - NEW: Cell formatting (colors, fonts, borders)
 - NEW: Number formatting (currency, percentage, dates)
 - NEW: Cell merging and column width

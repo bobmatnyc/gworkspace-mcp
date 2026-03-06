@@ -27,11 +27,12 @@
   - Added Google Slides API (21 tools)
   - Rich formatting capabilities across all services
   - Expanded from 65 → 114 tools
+  - Added `add_sheet` tool (Sheets) → 115 tools total
 
 ### Current Phase 🔄
 - **Phase 6**: Documentation + PyPI publish (IN PROGRESS)
   - Comprehensive README and docs update
-  - API reference for all 114 tools
+  - API reference for all 115 tools
   - Publishing setup for PyPI
   - Claude Desktop integration guide
 
@@ -118,9 +119,10 @@ src/google_workspace_mcp/
   - apply_heading_style, set_document_margins
   - create_list_in_document, insert_table_in_document
 
-### Sheets (12 tools) - NEW SERVICE
+### Sheets (13 tools) - NEW SERVICE
 - create_spreadsheet, get_spreadsheet_data, list_spreadsheet_sheets
 - get_sheet_values, update_sheet_values, append_sheet_values, clear_sheet_values
+- **Tab management**: add_sheet (insert new sheet/tab with optional position and color)
 - **Formatting**: format_cells, set_number_format, merge_cells, set_column_width
 - **Charts**: create_chart (bar, line, pie)
 
@@ -143,13 +145,13 @@ src/google_workspace_mcp/
 **Work Completed**:
 - Extracted gworkspace-mcp from claude-mpm monorepo
 - Phases 1-5 complete (scaffolding, OAuth, MCP server, testing, feature expansion)
-- 114 tools functional across 7 Google Workspace services
+- 115 tools functional across 7 Google Workspace services
 - Added Google Sheets and Slides APIs with rich formatting
 - Complete testing infrastructure and CI/CD
 
 **Current Work** (Phase 6):
 1. Update documentation for new services and formatting capabilities
-2. API reference for all 114 tools
+2. API reference for all 115 tools
 3. Prepare for version 0.2.0 release with new features
 4. Update Claude Desktop integration examples
 

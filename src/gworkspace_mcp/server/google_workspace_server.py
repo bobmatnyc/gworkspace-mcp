@@ -675,6 +675,37 @@ class GoogleWorkspaceServer:
                     },
                 ),
                 Tool(
+                    name="add_sheet",
+                    description="Add a new sheet/tab to an existing Google Spreadsheet. Returns the new sheet's ID, title, and index.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "spreadsheet_id": {
+                                "type": "string",
+                                "description": "Google Spreadsheet ID (from the URL)",
+                            },
+                            "title": {
+                                "type": "string",
+                                "description": "Name for the new sheet/tab",
+                            },
+                            "index": {
+                                "type": "integer",
+                                "description": "0-based position to insert the sheet (default: append at end)",
+                            },
+                            "tab_color": {
+                                "type": "object",
+                                "description": "RGB tab color (each component 0.0–1.0)",
+                                "properties": {
+                                    "red": {"type": "number", "minimum": 0, "maximum": 1},
+                                    "green": {"type": "number", "minimum": 0, "maximum": 1},
+                                    "blue": {"type": "number", "minimum": 0, "maximum": 1},
+                                },
+                            },
+                        },
+                        "required": ["spreadsheet_id", "title"],
+                    },
+                ),
+                Tool(
                     name="list_document_comments",
                     description="List all comments on a Google Docs, Sheets, or Slides file. Returns comment content, author, timestamps, resolved status, and replies.",
                     inputSchema={
@@ -3296,6 +3327,7 @@ class GoogleWorkspaceServer:
             "merge_cells": self._merge_cells,
             "set_column_width": self._set_column_width,
             "create_chart": self._create_chart,
+            "add_sheet": self._add_sheet,
             "list_document_comments": self._list_document_comments,
             "add_document_comment": self._add_document_comment,
             "reply_to_comment": self._reply_to_comment,
@@ -8666,6 +8698,54 @@ class GoogleWorkspaceServer:
             "title": title,
             "data_range": data_range,
             "position": {"row": position_row, "column": position_column},
+        }
+
+    async def _add_sheet(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Add a new sheet/tab to an existing Google Spreadsheet.
+
+        Args:
+            arguments: Tool arguments with spreadsheet_id, title, optional index,
+                       and optional tab_color.
+
+        Returns:
+            Dict with sheet_id, title, and index of the newly created sheet.
+        """
+        spreadsheet_id = arguments["spreadsheet_id"]
+        title = arguments["title"]
+
+        # Build the addSheet request properties
+        sheet_properties: dict[str, Any] = {"title": title}
+
+        if "index" in arguments:
+            sheet_properties["index"] = arguments["index"]
+
+        if "tab_color" in arguments:
+            sheet_properties["tabColor"] = arguments["tab_color"]
+
+        request_body = {
+            "requests": [
+                {
+                    "addSheet": {
+                        "properties": sheet_properties,
+                    }
+                }
+            ]
+        }
+
+        url = f"{SHEETS_API_BASE}/spreadsheets/{spreadsheet_id}:batchUpdate"
+        response = await self._make_request("POST", url, json_data=request_body)
+
+        # Extract the created sheet properties from the response
+        replies = response.get("replies", [])
+        added_sheet_props: dict[str, Any] = {}
+        if replies and "addSheet" in replies[0]:
+            added_sheet_props = replies[0]["addSheet"].get("properties", {})
+
+        return {
+            "spreadsheet_id": spreadsheet_id,
+            "sheet_id": added_sheet_props.get("sheetId"),
+            "title": added_sheet_props.get("title", title),
+            "index": added_sheet_props.get("index"),
         }
 
     # =========================================================================
