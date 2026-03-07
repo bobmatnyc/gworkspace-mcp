@@ -31,6 +31,13 @@ from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
 from gworkspace_mcp.auth import OAuthManager, TokenStatus, TokenStorage
+from gworkspace_mcp.conversion.pandoc_service import (
+    GDRIVE_EXPORT_MIME,
+    PANDOC_INPUT_FORMATS,
+    SPREADSHEET_FORMATS,
+    ConversionError,
+    PandocService,
+)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -278,7 +285,13 @@ class GoogleWorkspaceServer:
                 ),
                 Tool(
                     name="get_drive_file_content",
-                    description="Get the content of a Google Drive file by ID. Text files are returned inline; binary files require save_path.",
+                    description=(
+                        "Get the content of a Google Drive file by ID. "
+                        "Text files are returned inline; binary files require save_path. "
+                        "Use output_format='auto' (default) to automatically convert Google Docs to "
+                        "markdown, Sheets to CSV, and local docx/pdf/pptx files to markdown. "
+                        "Use output_format='raw' to skip conversion and return the original bytes."
+                    ),
                     inputSchema={
                         "type": "object",
                         "properties": {
@@ -290,8 +303,64 @@ class GoogleWorkspaceServer:
                                 "type": "string",
                                 "description": "Absolute local path to save the file. Required for binary files; optional for text files (returns content inline if omitted).",
                             },
+                            "output_format": {
+                                "type": "string",
+                                "enum": ["auto", "md", "markdown", "csv", "json", "raw"],
+                                "description": (
+                                    "Output format. 'auto' converts based on file type "
+                                    "(Google Docs/docx/pdf/pptx -> markdown, Google Sheets/xls/xlsx -> csv). "
+                                    "'raw' returns original bytes/text without conversion. "
+                                    "Defaults to 'auto'."
+                                ),
+                                "default": "auto",
+                            },
                         },
                         "required": ["file_id"],
+                    },
+                ),
+                Tool(
+                    name="convert_document",
+                    description=(
+                        "Convert a document between formats using pandoc. "
+                        "Supports docx<->md, pdf->md, xls/xlsx<->csv/json, pptx->md, html<->md, and more. "
+                        "Pandoc must be installed on the system."
+                    ),
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "input_path": {
+                                "type": "string",
+                                "description": "Absolute local file path to convert.",
+                            },
+                            "output_path": {
+                                "type": "string",
+                                "description": (
+                                    "Absolute output file path. "
+                                    "Extension determines output format if to_format is not specified."
+                                ),
+                            },
+                            "from_format": {
+                                "type": "string",
+                                "description": "Input format (auto-detected from extension if omitted).",
+                            },
+                            "to_format": {
+                                "type": "string",
+                                "enum": [
+                                    "md",
+                                    "markdown",
+                                    "html",
+                                    "rst",
+                                    "docx",
+                                    "odt",
+                                    "pdf",
+                                    "csv",
+                                    "json",
+                                    "txt",
+                                ],
+                                "description": "Output format.",
+                            },
+                        },
+                        "required": ["input_path"],
                     },
                 ),
                 # Google Sheets multi-tab tools
@@ -3312,6 +3381,7 @@ class GoogleWorkspaceServer:
             "download_gmail_attachment": self._download_gmail_attachment,
             "search_drive_files": self._search_drive_files,
             "get_drive_file_content": self._get_drive_file_content,
+            "convert_document": self._convert_document,
             # Sheets multi-tab operations
             "list_spreadsheet_sheets": self._list_spreadsheet_sheets,
             "get_sheet_values": self._get_sheet_values,
@@ -3878,8 +3948,16 @@ class GoogleWorkspaceServer:
     async def _get_drive_file_content(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Get content of a Google Drive file.
 
+        Supports automatic format conversion via PandocService:
+        - Google Docs / .docx / .pdf / .pptx  -> markdown  (output_format='auto'|'md')
+        - Google Sheets / .xls / .xlsx         -> CSV       (output_format='auto'|'csv')
+        - Google Sheets / .xls / .xlsx         -> JSON      (output_format='json')
+        - output_format='raw'                  -> original bytes (legacy behaviour)
+
         Args:
-            arguments: Tool arguments with file_id and optional save_path.
+            arguments: Tool arguments with file_id, optional save_path, and
+                       optional output_format ('auto', 'md', 'markdown', 'csv',
+                       'json', 'raw').  Defaults to 'auto'.
 
         Returns:
             File metadata and either inline content or saved_to path.
@@ -3888,6 +3966,7 @@ class GoogleWorkspaceServer:
 
         file_id = arguments["file_id"]
         save_path = arguments.get("save_path")
+        output_format = arguments.get("output_format", "auto").lower()
 
         # First get file metadata
         meta_url = f"{DRIVE_API_BASE}/files/{file_id}"
@@ -3896,66 +3975,238 @@ class GoogleWorkspaceServer:
         )
 
         mime_type = metadata.get("mimeType", "")
+        file_name = metadata.get("name", "")
 
-        # Google Docs types need export
-        export_map = {
+        pandoc = PandocService()
+
+        # ------------------------------------------------------------------
+        # Determine export strategy
+        # ------------------------------------------------------------------
+        is_gdrive_native = mime_type in GDRIVE_EXPORT_MIME
+        is_spreadsheet_gdrive = mime_type == "application/vnd.google-apps.spreadsheet"
+
+        # Plain-text fallback export map (raw / legacy behaviour)
+        plain_export_map = {
             "application/vnd.google-apps.document": "text/plain",
             "application/vnd.google-apps.spreadsheet": "text/csv",
             "application/vnd.google-apps.presentation": "text/plain",
         }
 
-        if mime_type in export_map:
-            # Export Google Workspace files
+        if output_format == "raw":
+            # Legacy behaviour: plain text export for Google Workspace types,
+            # direct download for everything else.
+            if mime_type in plain_export_map:
+                export_url = f"{DRIVE_API_BASE}/files/{file_id}/export"
+                response = await self._make_raw_request(
+                    "GET", export_url, params={"mimeType": plain_export_map[mime_type]}
+                )
+            else:
+                response = await self._make_raw_request(
+                    "GET", f"{DRIVE_API_BASE}/files/{file_id}", params={"alt": "media"}
+                )
+            raw_bytes = response.content
+            if save_path:
+                os.makedirs(os.path.dirname(os.path.abspath(save_path)), exist_ok=True)
+                with open(save_path, "wb") as f:
+                    f.write(raw_bytes)
+                return {
+                    "id": metadata.get("id"),
+                    "name": file_name,
+                    "mimeType": mime_type,
+                    "saved_to": save_path,
+                    "size": len(raw_bytes),
+                }
+            try:
+                content = raw_bytes.decode("utf-8")
+            except UnicodeDecodeError:
+                content = f"[Binary file: {len(raw_bytes)} bytes. Use save_path to download.]"
+            return {
+                "id": metadata.get("id"),
+                "name": file_name,
+                "mimeType": mime_type,
+                "content": content,
+            }
+
+        # ------------------------------------------------------------------
+        # Auto / explicit format conversion
+        # ------------------------------------------------------------------
+
+        # Resolve whether the caller wants CSV/JSON (spreadsheet path) or MD (document path)
+        want_json = output_format == "json"
+        want_md = output_format in ("md", "markdown") or (
+            output_format == "auto" and not is_spreadsheet_gdrive
+        )
+
+        # Download the file bytes (rich export for Google Workspace types)
+        if is_gdrive_native:
+            rich_mime = GDRIVE_EXPORT_MIME[mime_type]
             export_url = f"{DRIVE_API_BASE}/files/{file_id}/export"
             response = await self._make_raw_request(
-                "GET",
-                export_url,
-                params={"mimeType": export_map[mime_type]},
+                "GET", export_url, params={"mimeType": rich_mime}
             )
-            if save_path:
-                os.makedirs(os.path.dirname(os.path.abspath(save_path)), exist_ok=True)
-                with open(save_path, "wb") as f:
-                    f.write(response.content)
-                return {
-                    "id": metadata.get("id"),
-                    "name": metadata.get("name"),
-                    "mimeType": mime_type,
-                    "saved_to": save_path,
-                    "size": len(response.content),
-                }
-            content = response.text
+            downloaded_bytes = response.content
+            # Determine extension for the downloaded bytes
+            ext_map = {
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
+            }
+            downloaded_ext = ext_map.get(rich_mime, ".bin")
         else:
-            # Download regular files
-            download_url = f"{DRIVE_API_BASE}/files/{file_id}"
             response = await self._make_raw_request(
-                "GET",
-                download_url,
-                params={"alt": "media"},
+                "GET", f"{DRIVE_API_BASE}/files/{file_id}", params={"alt": "media"}
             )
-            if save_path:
-                os.makedirs(os.path.dirname(os.path.abspath(save_path)), exist_ok=True)
-                with open(save_path, "wb") as f:
-                    f.write(response.content)
-                return {
-                    "id": metadata.get("id"),
-                    "name": metadata.get("name"),
-                    "mimeType": mime_type,
-                    "saved_to": save_path,
-                    "size": len(response.content),
-                }
-            # Try to decode as text for inline return, otherwise indicate binary
+            downloaded_bytes = response.content
+            downloaded_ext = Path(file_name).suffix.lower() if file_name else ".bin"
+
+        # ------------------------------------------------------------------
+        # Spreadsheet conversion (openpyxl)
+        # ------------------------------------------------------------------
+        if downloaded_ext in SPREADSHEET_FORMATS or (
+            is_spreadsheet_gdrive and downloaded_ext == ".xlsx"
+        ):
+            if want_json:
+                try:
+                    from_fmt = "xlsx"
+                    converted_bytes = pandoc.convert_bytes(
+                        downloaded_bytes, from_fmt, "json", filename_hint=file_name or "sheet"
+                    )
+                    content = converted_bytes.decode("utf-8")
+                    output_ext = ".json"
+                except ConversionError as exc:
+                    content = f"[Conversion error: {exc}]"
+                    output_ext = ".txt"
+            else:
+                # Default: CSV
+                try:
+                    from_fmt = "xlsx"
+                    converted_bytes = pandoc.convert_bytes(
+                        downloaded_bytes, from_fmt, "csv", filename_hint=file_name or "sheet"
+                    )
+                    content = converted_bytes.decode("utf-8")
+                    output_ext = ".csv"
+                except ConversionError as exc:
+                    content = f"[Conversion error: {exc}]"
+                    output_ext = ".txt"
+
+        # ------------------------------------------------------------------
+        # Document conversion (pandoc)
+        # ------------------------------------------------------------------
+        elif want_md and pandoc.is_available():
+            # Determine pandoc from-format
+            from_fmt = PANDOC_INPUT_FORMATS.get(downloaded_ext, "docx")
             try:
-                content = response.content.decode("utf-8")
+                converted_bytes = pandoc.convert_bytes(
+                    downloaded_bytes, from_fmt, "markdown", filename_hint=file_name or "doc"
+                )
+                content = converted_bytes.decode("utf-8")
+                output_ext = ".md"
+            except ConversionError as exc:
+                logger.warning("Pandoc conversion failed, falling back to raw text: %s", exc)
+                try:
+                    content = downloaded_bytes.decode("utf-8")
+                except UnicodeDecodeError:
+                    content = (
+                        f"[Binary file: {len(downloaded_bytes)} bytes. Use save_path to download.]"
+                    )
+                output_ext = ".txt"
+
+        else:
+            # Pandoc not available or unknown format: best-effort text decode
+            try:
+                content = downloaded_bytes.decode("utf-8")
             except UnicodeDecodeError:
                 content = (
-                    f"[Binary file: {len(response.content)} bytes. Use save_path to download.]"
+                    f"[Binary file: {len(downloaded_bytes)} bytes. Use save_path to download.]"
                 )
+            output_ext = ".txt"
+
+        # ------------------------------------------------------------------
+        # Write to save_path if requested
+        # ------------------------------------------------------------------
+        if save_path:
+            # If save_path has no extension, append the inferred one
+            sp = Path(save_path)
+            if not sp.suffix:
+                sp = sp.with_suffix(output_ext)
+            os.makedirs(str(sp.parent), exist_ok=True)
+            sp.write_text(content, encoding="utf-8")
+            return {
+                "id": metadata.get("id"),
+                "name": file_name,
+                "mimeType": mime_type,
+                "saved_to": str(sp),
+                "size": len(content.encode("utf-8")),
+                "output_format": output_ext.lstrip("."),
+            }
 
         return {
             "id": metadata.get("id"),
-            "name": metadata.get("name"),
+            "name": file_name,
             "mimeType": mime_type,
             "content": content,
+            "output_format": output_ext.lstrip("."),
+        }
+
+    async def _convert_document(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Convert a local document between formats using pandoc or openpyxl.
+
+        Supported conversions (non-exhaustive):
+        - docx / odt / html / rst / pptx -> markdown
+        - markdown -> docx / html / odt / rst / pdf
+        - xls / xlsx -> csv / json
+        - csv -> xlsx
+
+        Args:
+            arguments: Tool arguments with input_path, optional output_path,
+                       optional from_format, and optional to_format.
+
+        Returns:
+            Conversion result with output_path, from_format, to_format, size.
+
+        Raises:
+            ConversionError: If pandoc or openpyxl is unavailable or conversion fails.
+        """
+        import os
+
+        input_path_str = arguments["input_path"]
+        to_format = arguments.get("to_format", "md")
+        from_format = arguments.get("from_format")
+
+        input_path = Path(input_path_str)
+        if not input_path.exists():
+            return {"error": f"Input file not found: {input_path_str}"}
+
+        # Determine output path
+        output_path_str = arguments.get("output_path")
+        if output_path_str:
+            output_path = Path(output_path_str)
+        else:
+            from gworkspace_mcp.conversion.pandoc_service import _pandoc_format_to_ext
+
+            out_ext = _pandoc_format_to_ext(to_format)
+            output_path = input_path.with_suffix(out_ext)
+
+        os.makedirs(str(output_path.parent), exist_ok=True)
+
+        pandoc = PandocService()
+        try:
+            result_path = pandoc.convert(
+                input_path,
+                output_path,
+                from_format=from_format,
+                to_format=to_format,
+            )
+        except ConversionError as exc:
+            return {"error": str(exc)}
+
+        size = result_path.stat().st_size
+        return {
+            "input_path": str(input_path),
+            "output_path": str(result_path),
+            "from_format": from_format or pandoc.detect_format(input_path) or "auto",
+            "to_format": to_format,
+            "size_bytes": size,
         }
 
     async def _list_spreadsheet_sheets(self, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -6345,20 +6596,12 @@ class GoogleWorkspaceServer:
         render_mermaid = arguments.get("render_mermaid", False)
         mermaid_theme = arguments.get("mermaid_theme", "default")
 
-        # Check if pandoc is available
+        # Delegate pandoc availability check to PandocService
+        pandoc = PandocService()
         try:
-            subprocess.run(  # nosec B603 B607 - pandoc is trusted with fixed args
-                ["pandoc", "--version"],
-                capture_output=True,
-                check=True,
-            )
-        except FileNotFoundError as err:
-            raise RuntimeError(
-                "pandoc is not installed. Install it with:\n"
-                "  macOS: brew install pandoc\n"
-                "  Ubuntu: sudo apt-get install pandoc\n"
-                "  Windows: choco install pandoc"
-            ) from err
+            pandoc._require_pandoc()
+        except ConversionError as err:
+            raise RuntimeError(str(err)) from err
 
         with tempfile.TemporaryDirectory() as tmpdir:
             tmpdir_path = Path(tmpdir)
@@ -6447,23 +6690,11 @@ class GoogleWorkspaceServer:
             # Write processed markdown to temp file
             input_path.write_text(processed_content, encoding="utf-8")
 
-            # Convert markdown to docx using pandoc
+            # Convert markdown to docx via PandocService (delegates to pandoc subprocess)
             try:
-                subprocess.run(  # nosec B603 B607 - pandoc with controlled paths
-                    [
-                        "pandoc",
-                        str(input_path),
-                        "-o",
-                        str(output_path),
-                        "--from=markdown",
-                        "--to=docx",
-                    ],
-                    capture_output=True,
-                    check=True,
-                    text=True,
-                )
-            except subprocess.CalledProcessError as e:
-                raise RuntimeError(f"pandoc conversion failed: {e.stderr}") from e
+                pandoc.markdown_to_docx(input_path, output_path)
+            except ConversionError as e:
+                raise RuntimeError(f"pandoc conversion failed: {e}") from e
 
             # Clean DOCX for better Google Docs compatibility (Arial font, no bookmarks)
             self._clean_docx_for_gdocs(output_path)
@@ -6785,20 +7016,12 @@ class GoogleWorkspaceServer:
         mermaid_background = arguments.get("mermaid_background", "transparent")
         preserve_mermaid_source = arguments.get("preserve_mermaid_source", True)
 
-        # Check if pandoc is available
+        # Delegate pandoc availability check to PandocService
+        _pandoc_svc = PandocService()
         try:
-            subprocess.run(  # nosec B603 B607 - pandoc is trusted
-                ["pandoc", "--version"],
-                capture_output=True,
-                check=True,
-            )
-        except FileNotFoundError as err:
-            raise RuntimeError(
-                "pandoc is not installed. Install it with:\n"
-                "  macOS: brew install pandoc\n"
-                "  Ubuntu: sudo apt-get install pandoc\n"
-                "  Windows: choco install pandoc"
-            ) from err
+            _pandoc_svc._require_pandoc()
+        except ConversionError as err:
+            raise RuntimeError(str(err)) from err
 
         # Track mermaid blocks and their sources for comment preservation
         mermaid_sources: list[tuple[int, str]] = []  # (diagram_index, source_code)
@@ -6886,23 +7109,11 @@ class GoogleWorkspaceServer:
             # Write processed markdown to temp file
             input_path.write_text(processed_content, encoding="utf-8")
 
-            # Convert markdown to docx using pandoc
+            # Convert markdown to docx via PandocService (delegates to pandoc subprocess)
             try:
-                subprocess.run(  # nosec B603 B607 - controlled paths
-                    [
-                        "pandoc",
-                        str(input_path),
-                        "-o",
-                        str(output_path),
-                        "--from=markdown",
-                        "--to=docx",
-                    ],
-                    capture_output=True,
-                    check=True,
-                    text=True,
-                )
-            except subprocess.CalledProcessError as e:
-                raise RuntimeError(f"pandoc conversion failed: {e.stderr}") from e
+                _pandoc_svc.markdown_to_docx(input_path, output_path)
+            except ConversionError as e:
+                raise RuntimeError(f"pandoc conversion failed: {e}") from e
 
             # Clean DOCX for better Google Docs compatibility (Arial font, no bookmarks)
             self._clean_docx_for_gdocs(output_path)
