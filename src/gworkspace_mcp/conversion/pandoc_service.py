@@ -2,11 +2,12 @@
 
 Provides format detection and conversion between:
 - Documents: docx, pdf, html, odt, rst <-> markdown
-- Spreadsheets: xls, xlsx <-> csv, json  (via openpyxl, NOT pandoc)
+- Spreadsheets: xls, xlsx <-> csv, json  (via openpyxl)
 - Presentations: pptx -> markdown (via pandoc)
 
-Pandoc is invoked as an external subprocess (not via pypandoc) to keep the
-dependency surface small and avoid version pinning issues.
+Pandoc is invoked via the ``pypandoc`` Python binding (a required dependency),
+which handles binary discovery and subprocess management.  openpyxl is used
+for spreadsheet <-> CSV/JSON conversions.
 """
 
 from __future__ import annotations
@@ -14,7 +15,6 @@ from __future__ import annotations
 import csv
 import io
 import json
-import subprocess  # nosec B404
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -96,11 +96,11 @@ class ConversionError(Exception):
 
 
 class PandocService:
-    """First-class document conversion service using pandoc + openpyxl.
+    """First-class document conversion service using pypandoc + openpyxl.
 
-    Pandoc is invoked as a subprocess (never via pypandoc).  openpyxl is used
-    for spreadsheet <-> CSV/JSON conversions so that Excel files are handled
-    without requiring LibreOffice or pandoc.
+    ``pypandoc`` is a required dependency that wraps the pandoc binary and
+    handles binary discovery automatically.  openpyxl is used for spreadsheet
+    <-> CSV/JSON conversions so that Excel files are handled without pandoc.
 
     All public methods raise ``ConversionError`` on failure so callers can
     catch a single exception type regardless of the underlying tool.
@@ -111,32 +111,22 @@ class PandocService:
     # ------------------------------------------------------------------
 
     def is_available(self) -> bool:
-        """Return True if the pandoc binary is on PATH."""
+        """Return True if pypandoc can locate a pandoc binary."""
         try:
-            subprocess.run(  # nosec B603 B607
-                ["pandoc", "--version"],
-                capture_output=True,
-                check=True,
-                timeout=10,
-            )
+            import pypandoc  # type: ignore[import-untyped]
+
+            pypandoc.get_pandoc_version()
             return True
-        except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        except Exception:
             return False
 
     def get_version(self) -> str | None:
-        """Return the pandoc version string, or None if pandoc is not available."""
+        """Return the pandoc version string, or None if unavailable."""
         try:
-            result = subprocess.run(  # nosec B603 B607
-                ["pandoc", "--version"],
-                capture_output=True,
-                check=True,
-                text=True,
-                timeout=10,
-            )
-            # First line is e.g. "pandoc 3.1.2"
-            first_line = result.stdout.splitlines()[0] if result.stdout else ""
-            return first_line.strip() or None
-        except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+            import pypandoc  # type: ignore[import-untyped]
+
+            return pypandoc.get_pandoc_version()
+        except Exception:
             return None
 
     # ------------------------------------------------------------------
@@ -214,36 +204,35 @@ class PandocService:
             csv_text = input_path.read_text(encoding="utf-8")
             return self.csv_to_spreadsheet(csv_text, output_path)
 
-        # --- Pandoc branch -------------------------------------------------
+        # --- Pandoc branch (via pypandoc) ----------------------------------
         self._require_pandoc()
+
+        try:
+            import pypandoc  # type: ignore[import-untyped]
+        except ImportError as exc:
+            raise ConversionError(
+                "pypandoc is required. Install it with: pip install pypandoc"
+            ) from exc
 
         resolved_from = from_format or self.detect_format(input_path)
         resolved_to_raw = to_format or PANDOC_INPUT_FORMATS.get(out_ext, "markdown")
         # Normalise user-friendly names to pandoc format names
         resolved_to = PANDOC_OUTPUT_FORMATS.get(resolved_to_raw, resolved_to_raw)
 
-        cmd: list[str] = ["pandoc", str(input_path), "-o", str(output_path)]
-        if resolved_from:
-            cmd += [f"--from={resolved_from}"]
-        if resolved_to:
-            cmd += [f"--to={resolved_to}"]
-        if extra_args:
-            cmd.extend(extra_args)
+        extra = list(extra_args) if extra_args else []
 
         try:
-            subprocess.run(  # nosec B603 B607
-                cmd,
-                capture_output=True,
-                check=True,
-                text=True,
-                timeout=120,
+            pypandoc.convert_file(
+                str(input_path),
+                resolved_to,
+                format=resolved_from,
+                outputfile=str(output_path),
+                extra_args=extra,
             )
-        except subprocess.CalledProcessError as exc:
+        except Exception as exc:
             raise ConversionError(
-                f"pandoc conversion failed ({input_path.name} -> {output_path.name}): {exc.stderr}"
+                f"pandoc conversion failed ({input_path.name} -> {output_path.name}): {exc}"
             ) from exc
-        except subprocess.TimeoutExpired as exc:
-            raise ConversionError(f"pandoc timed out converting {input_path.name}") from exc
 
         return output_path.resolve()
 
@@ -418,10 +407,11 @@ class PandocService:
         """Raise ConversionError with install instructions if pandoc is absent."""
         if not self.is_available():
             raise ConversionError(
-                "pandoc is not installed. Install it with:\n"
+                "pandoc binary not found. pypandoc can download it automatically:\n"
+                '  python -c "import pypandoc; pypandoc.download_pandoc()"\n'
+                "Or install manually:\n"
                 "  macOS:   brew install pandoc\n"
                 "  Ubuntu:  sudo apt-get install pandoc\n"
-                "  Windows: choco install pandoc\n"
                 "  or see:  https://pandoc.org/installing.html"
             )
 
