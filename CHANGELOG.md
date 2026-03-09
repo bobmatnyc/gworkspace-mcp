@@ -5,110 +5,6 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-## [0.3.0] - 2026-03-03
-
-### Added
-- **Binary file transfer for Drive** — `upload_drive_file` now accepts a `local_path` parameter for uploading any binary or text file from disk; MIME type is auto-detected; `name` defaults to the local filename
-- **Drive download to disk** — `get_drive_file_content` now accepts a `save_path` parameter; binary files are saved locally instead of returning an unreadable byte string
-- **Gmail email attachments** — `send_email`, `create_draft`, and `reply_to_email` now accept an `attachments` list of local file paths, encoded with MIME multipart
-- **Gmail attachment metadata** — `get_gmail_message_content` now returns an `attachments` list containing `{filename, mimeType, size, attachmentId}` for every attachment in the message
-- **`download_gmail_attachment`** — New tool (#115) to download a specific Gmail attachment by ID to a local `save_path`
-- PKCE (RFC 7636) support in the OAuth authorization flow for enhanced security
-
-### Changed
-- `get_drive_file_content` returns a helpful message for binary files when no `save_path` is provided: `[Binary file: N bytes. Use save_path to download.]`
-- `upload_drive_file` multipart request body is now built as bytes (binary-safe); `content` parameter still works for text
-
-### Fixed
-- 4 pre-existing mypy type annotation errors in Slides and Sheets formatting tools
-
-## [0.2.0] - 2026-02-27
-
-### Added
-- **Google Sheets API** (12 new tools): `create_spreadsheet`, `get_spreadsheet_data`, `list_spreadsheet_sheets`, `get_sheet_values`, `update_sheet_values`, `append_sheet_values`, `clear_sheet_values`, `format_cells`, `set_number_format`, `merge_cells`, `set_column_width`, `create_chart`
-- **Google Slides API** (21 new tools): `create_presentation`, `get_presentation`, `list_presentations`, `get_presentation_text`, `get_slide`, `add_slide`, `delete_slide`, `update_slide_text`, `add_text_box`, `add_formatted_text_box`, `add_image`, `format_text_in_slide`, `set_slide_background`, `apply_slide_layout`, `create_bulleted_list_slide`
-- **Rich Docs formatting** (6 new tools): `format_text_in_document`, `format_paragraph_in_document`, `apply_heading_style`, `set_document_margins`, `create_list_in_document`, `insert_table_in_document`
-- **Gmail rich formatting** (3 new tools): `format_email_content`, `create_formatted_email`, `set_email_signature`
-- **Gmail vacation responder**: `get_vacation_settings`, `set_vacation_settings`
-- **Gmail filters**: `list_gmail_filters`, `create_gmail_filter`, `delete_gmail_filter`
-- **Document tabs**: `list_document_tabs`, `get_tab_content`, `create_document_tab`, `update_tab_properties`, `move_tab`
-- **Mermaid diagrams**: `render_mermaid_to_doc`
-- Drive permissions: `list_file_permissions`, `share_file`, `update_file_permission`, `remove_file_permission`, `transfer_file_ownership`
-- Drive: `copy_drive_file`, `rename_drive_file`
-- Calendar: `query_free_busy`
-- Total tool count expanded from 65 → 114
-
-## [0.1.9] - 2026-02-14
-
-### Changed
-- Simplify OAuth environment variables to use only GOOGLE_OAUTH_REDIRECT_URI
-- Port is now automatically parsed from the redirect URI
-- Removed GOOGLE_OAUTH_PORT environment variable (redundant)
-- Removed GOOGLE_REDIRECT_URI alias (use GOOGLE_OAUTH_REDIRECT_URI instead)
-
-## [0.1.8] - 2026-02-14
-
-### Fixed
-- Improve env var loading and OAuth configuration
-- Remove 'workspace' CLI alias
-- Support GOOGLE_REDIRECT_URI env var
-- Parse host/port from redirect URI automatically
-
-## [0.1.7] - 2026-02-14
-
-### Added
-- Make OAuth port and redirect URI configurable via environment variables
-  - `GWORKSPACE_OAUTH_PORT`: Set specific port for OAuth callback server
-  - `GWORKSPACE_OAUTH_REDIRECT_URI`: Override the default redirect URI
-
-## [0.1.6] - 2026-02-14
-
-### Fixed
-- Use dynamic port for OAuth redirect URI (works with http://localhost/ registered in GCP)
-
-## [0.1.5] - 2026-02-14
-
-### Fixed
-- Update MCP server name to gworkspace-mcp for consistency
-
-## [0.1.4] - 2026-02-14
-
-### Changed
-- **BREAKING**: Renamed internal module from `google_workspace_mcp` to `gworkspace_mcp`
-  - Import paths changed from `from google_workspace_mcp import ...` to `from gworkspace_mcp import ...`
-
-### Added
-- Support for `.env.local` file for OAuth credentials configuration
-
-## [0.1.3] - 2026-02-13
-
-### Added
-- Declarative YAML-based migration system for configuration updates
-
-### Changed
-- **BREAKING**: Standardized naming to gworkspace-mcp throughout the codebase
-  - Credentials directory changed from `~/.google-workspace-mcp/` to `~/.gworkspace-mcp/`
-  - Run migration to update existing installations
-
-### Fixed
-- Token storage path references in documentation
-
-## [0.1.2] - 2026-02-12
-
-### Added
-- Comprehensive documentation structure (22 files, ~5,700 lines)
-- API reference for all 66 tools (Gmail, Calendar, Drive, Docs, Tasks)
-- Getting started guides (installation, authentication, quickstart)
-- Claude Desktop integration guide
-- CLI usage reference
-- Development guides (contributing, testing, releasing)
-- 93 tests (75 unit + 18 integration)
-- GitHub Actions CI/CD pipeline
-- PyPI publishing infrastructure with semantic versioning
-
-## [0.1.0] - 2026-02-10
 
 ### Added
 
@@ -177,3 +73,171 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [0.1.3]: https://github.com/masapasa/gworkspace-mcp/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/masapasa/gworkspace-mcp/compare/v0.1.0...v0.1.2
 [0.1.0]: https://github.com/masapasa/gworkspace-mcp/releases/tag/v0.1.0
+
+## v0.3.3 (2026-03-09)
+
+### Feat
+
+- add Claude skill auto-install on workspace setup
+- use pypandoc as first-class dependency for pandoc conversion
+- add pandoc conversion service for automatic document format conversion
+
+## v0.3.2 (2026-03-06)
+
+### Feat
+
+- add add_sheet tool for inserting new sheets into existing spreadsheets
+
+### Fix
+
+- fall back to ../claude-mpm/.env.local for HOMEBREW_TAP_TOKEN
+- use x-access-token format and GIT_TERMINAL_PROMPT=0 for Homebrew push
+
+## v0.3.0 (2026-03-03)
+
+### Feat
+
+- add binary file transfer capability (Drive + Gmail)
+
+## v0.2.1 (2026-03-01)
+
+### Feat
+
+- add PKCE (RFC 7636) to OAuth authorization flow
+
+## v0.2.0 (2026-02-27)
+
+## v0.1.29 (2026-02-26)
+
+### Fix
+
+- pass client_id and client_secret to Google Credentials for token refresh
+
+## v0.1.28 (2026-02-25)
+
+### Feat
+
+- Configure for shared bobmatnyc/homebrew-tools tap
+
+## v0.1.27 (2026-02-24)
+
+### Feat
+
+- Add unified publishing system for PyPI, GitHub, and Homebrew
+
+### Fix
+
+- Update Makefile to use uv run python for tests
+
+## v0.1.25 (2026-02-24)
+
+## v0.1.24 (2026-02-17)
+
+### Fix
+
+- Use Arial font and remove heading bookmarks in Google Docs
+
+## v0.1.23 (2026-02-17)
+
+### Fix
+
+- Use PNG instead of SVG for mermaid diagrams in Google Docs
+
+## v0.1.22 (2026-02-17)
+
+## v0.1.21 (2026-02-17)
+
+### Feat
+
+- Enhanced markdown-to-GDocs with mermaid diagram support
+- Web Application OAuth with custom redirect URI support
+- Add Google Slides API support with 10 new tools
+- Add Sheets write tools and no-browser OAuth flow
+- Add Google Sheets multi-tab support with 3 new tools
+- Project-level token storage and .gitignore auto-add
+- project-level only token storage
+- support project-level token storage
+
+### Fix
+
+- Auto-open browser for OAuth flow
+- add missing from_version field to migration 0002
+- rename service key from 'google-workspace' to 'gworkspace-mcp'
+- OAuth redirect URI handling and CI test failures
+
+## v0.1.9 (2026-02-14)
+
+### Refactor
+
+- simplify OAuth env vars to GOOGLE_OAUTH_REDIRECT_URI only
+
+## v0.1.8 (2026-02-14)
+
+### Fix
+
+- improve env var loading and OAuth configuration
+
+## v0.1.7 (2026-02-14)
+
+### Feat
+
+- make OAuth port and redirect URI configurable
+
+## v0.1.6 (2026-02-14)
+
+### Fix
+
+- use dynamic port for OAuth redirect URI
+
+## v0.1.5 (2026-02-14)
+
+### Fix
+
+- update MCP server name to gworkspace-mcp
+
+## v0.1.4 (2026-02-14)
+
+### BREAKING CHANGE
+
+- Python module renamed for consistency with package name.
+
+### Refactor
+
+- rename module google_workspace_mcp -> gworkspace_mcp
+
+## v0.1.3 (2026-02-13)
+
+### BREAKING CHANGE
+
+- Credentials directory changed from
+~/.google-workspace-mcp/ to ~/.gworkspace-mcp/
+
+### Feat
+
+- add declarative YAML-based migration system
+
+### Refactor
+
+- standardize naming to gworkspace-mcp
+
+## v0.1.1 (2026-02-10)
+
+### Feat
+
+- Comprehensive code review fixes and feature additions
+
+## v0.1.0 (2026-02-10)
+
+### Feat
+
+- Extract Google Workspace MCP server from claude-mpm
+- Add OAuth infrastructure for Google Workspace authentication
+
+### Fix
+
+- Update publish script for gworkspace-mcp package name
+- Resolve lint errors and update mypy config
+
+### Refactor
+
+- **package**: Rename PyPI package from google-workspace-mcp to gworkspace-mcp
