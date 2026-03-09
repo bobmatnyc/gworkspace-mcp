@@ -40,6 +40,35 @@ def main() -> None:
     pass
 
 
+def _install_skill() -> bool:
+    """Install the gworkspace-mcp Claude skill into the current project.
+
+    Copies SKILL.md and metadata.json from the package's bundled skills
+    into .claude/skills/gworkspace-mcp/ in the current working directory.
+
+    Returns:
+        True if skill was installed or updated, False if already up to date.
+    """
+    import shutil
+
+    skill_dest = Path(".claude") / "skills" / "gworkspace-mcp"
+    skill_dest.mkdir(parents=True, exist_ok=True)
+
+    skill_src = Path(__file__).parent.parent / "skills" / "gworkspace-mcp"
+
+    installed = False
+    for filename in ("SKILL.md", "metadata.json"):
+        src = skill_src / filename
+        dst = skill_dest / filename
+        if not src.exists():
+            continue
+        if not dst.exists() or src.read_text() != dst.read_text():
+            shutil.copy2(src, dst)
+            installed = True
+
+    return installed
+
+
 def _add_to_gitignore(entry: str) -> bool:
     """Add an entry to .gitignore if not already present.
 
@@ -135,6 +164,10 @@ def setup(client_id: str | None, client_secret: str | None) -> None:
         # Add .gworkspace-mcp/ to .gitignore
         if _add_to_gitignore(".gworkspace-mcp/"):
             click.echo("✓ Added .gworkspace-mcp/ to .gitignore")
+
+        # Install Claude skill into project
+        if _install_skill():
+            click.echo("✓ Installed Claude skill at .claude/skills/gworkspace-mcp/")
 
         click.echo("")
         click.echo("Run 'gworkspace-mcp doctor' to verify setup.")

@@ -131,6 +131,7 @@ include = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/gworkspace_mcp"]
+include = ["src/gworkspace_mcp/skills/**"]
 
 [dependency-groups]
 dev = [
