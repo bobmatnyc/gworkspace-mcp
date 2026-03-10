@@ -3,14 +3,14 @@
 This module provides basic JSON-based token persistence without
 encryption. For production use, consider adding encryption.
 
-Storage Location: ./.gworkspace-mcp/tokens.json (PROJECT-LEVEL ONLY)
+Storage Location: ~/.gworkspace-mcp/tokens.json (USER HOME DIRECTORY)
 
-Tokens are stored at project level since OAuth credentials (.env)
-are also project-specific. This allows different projects to connect
-to different Google accounts.
+Tokens are stored in the user's home directory so that Claude Desktop
+and other MCP hosts (which start with cwd=/root or similar read-only
+paths on macOS Catalina+) can always write credentials.
 
-IMPORTANT: Each project requires its own authentication.
-Run `gworkspace-mcp setup` from the project directory to authenticate.
+IMPORTANT: Each machine requires its own authentication.
+Run `gworkspace-mcp setup` to authenticate.
 """
 
 import json
@@ -26,8 +26,9 @@ from gworkspace_mcp.auth.models import (
 
 logger = logging.getLogger(__name__)
 
-# Project-level credentials directory (ONLY supported location)
-CREDENTIALS_DIR = Path.cwd() / ".gworkspace-mcp"
+# User home credentials directory — Path.home() is always writable,
+# unlike Path.cwd() which resolves to "/" when Claude Desktop launches MCP servers.
+CREDENTIALS_DIR = Path.home() / ".gworkspace-mcp"
 TOKEN_FILE = CREDENTIALS_DIR / "tokens.json"
 
 
@@ -43,10 +44,10 @@ def get_token_path() -> Path:
 class TokenStorage:
     """Simple JSON-based storage for OAuth tokens.
 
-    Tokens are stored at project level: ./.gworkspace-mcp/tokens.json
+    Tokens are stored in the user home directory: ~/.gworkspace-mcp/tokens.json
 
-    This matches the project-level .env files that contain OAuth credentials,
-    allowing different projects to connect to different Google accounts.
+    Using Path.home() ensures the credentials directory is always writable,
+    even when the MCP server is launched by Claude Desktop with cwd="/".
 
     For production, consider adding encryption (Fernet + keyring).
 
@@ -78,8 +79,7 @@ class TokenStorage:
 
         Args:
             token_path: Custom path for tokens.json.
-                If not provided, uses project-level (./.gworkspace-mcp/tokens.json).
-                User-level storage is NOT supported - each project must authenticate separately.
+                If not provided, uses home-level (~/.gworkspace-mcp/tokens.json).
         """
         self.token_path = token_path or get_token_path()
         self.credentials_dir = self.token_path.parent
