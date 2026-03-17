@@ -104,13 +104,22 @@ def _add_to_gitignore(entry: str) -> bool:
 @click.option(
     "--client-secret", envvar="GOOGLE_OAUTH_CLIENT_SECRET", help="Google OAuth client secret"
 )
-def setup(client_id: str | None, client_secret: str | None) -> None:
+@click.option(
+    "--user",
+    "user_level",
+    is_flag=True,
+    default=False,
+    help="Store tokens at user-level (~/.gworkspace-mcp/) instead of project-level.",
+)
+def setup(client_id: str | None, client_secret: str | None, user_level: bool) -> None:
     """Set up Google Workspace OAuth authentication.
 
     This will:
     1. Open browser for OAuth2 consent flow
-    2. Store refresh tokens at ./.gworkspace-mcp/tokens.json (PROJECT-LEVEL)
+    2. Store refresh tokens at ./.gworkspace-mcp/tokens.json (PROJECT-LEVEL, default)
     3. Validate API access
+
+    Use --user to store tokens at ~/.gworkspace-mcp/ (user-level) instead.
 
     Note: Run this command from your project directory. Each project needs
     its own authentication for isolation.
@@ -120,8 +129,14 @@ def setup(client_id: str | None, client_secret: str | None) -> None:
     - GOOGLE_OAUTH_CLIENT_SECRET environment variable or --client-secret option
     """
     from gworkspace_mcp.auth import OAuthManager
+    from gworkspace_mcp.auth.token_storage import CREDENTIALS_DIR, TokenStorage
 
-    manager = OAuthManager()
+    if user_level:
+        user_token_path = CREDENTIALS_DIR / "tokens.json"
+        storage = TokenStorage(token_path=user_token_path)
+        manager = OAuthManager(storage=storage)
+    else:
+        manager = OAuthManager()
 
     # Check if already authenticated
     if manager.has_valid_tokens():
@@ -306,12 +321,13 @@ def doctor() -> None:
     2. OAuth credentials configured
     3. Token validity
 
-    Note: Authentication is PROJECT-LEVEL. Each project directory requires
-    its own 'gworkspace-mcp setup' to authenticate.
+    Shows both project-level and user-level token paths and which one
+    is active (being used for authentication).
     """
     from pathlib import Path
 
     from gworkspace_mcp.auth import OAuthManager, TokenStatus
+    from gworkspace_mcp.auth.token_storage import CREDENTIALS_DIR, PROJECT_TOKEN_FILE
 
     click.echo("Google Workspace MCP Status:")
     click.echo("")
@@ -335,18 +351,34 @@ def doctor() -> None:
 
     click.echo("")
 
-    # Check authentication
+    # Show both token paths and their status
+    project_path = PROJECT_TOKEN_FILE
+    user_path = CREDENTIALS_DIR / "tokens.json"
+
+    click.echo("Token Paths:")
+    project_exists = project_path.exists()
+    user_exists = user_path.exists()
+    click.echo(f"  Project: {project_path}")
+    click.echo(f"           {'exists' if project_exists else 'missing'}")
+    click.echo(f"  User:    {user_path}")
+    click.echo(f"           {'exists' if user_exists else 'missing'}")
+
+    # Check authentication (uses two-tier lookup)
     manager = OAuthManager()
     status, stored = manager.get_status()
 
+    active_path = manager.token_path
+    click.echo(f"  Active:  {active_path}")
+    click.echo("")
+
     click.echo("Authentication:")
-    click.echo(f"  Token file: {manager.token_path}")
 
     if status == TokenStatus.MISSING:
         click.echo("  ❌ Not authenticated")
         click.echo("")
         click.echo("Run 'gworkspace-mcp setup' FROM THIS DIRECTORY to authenticate.")
-        click.echo("(Authentication is project-specific)")
+        click.echo("  (default: stores tokens in ./.gworkspace-mcp/)")
+        click.echo("  (use --user flag to store in ~/.gworkspace-mcp/ instead)")
         sys.exit(1)
     elif status == TokenStatus.INVALID:
         click.echo("  ❌ Token file corrupted")

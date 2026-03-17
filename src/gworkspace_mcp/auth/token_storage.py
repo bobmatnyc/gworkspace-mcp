@@ -3,11 +3,18 @@
 This module provides basic JSON-based token persistence without
 encryption. For production use, consider adding encryption.
 
-Storage Location: ~/.gworkspace-mcp/tokens.json (USER HOME DIRECTORY)
+Token Storage (default, project-level):
+  - Tokens are written to .gworkspace-mcp/tokens.json relative to cwd.
+  - The directory is created automatically if it does not exist.
+  - Use ``workspace setup --user`` to store at the user-level path instead.
 
-Tokens are stored in the user's home directory so that Claude Desktop
-and other MCP hosts (which start with cwd=/root or similar read-only
-paths on macOS Catalina+) can always write credentials.
+Token Lookup Order (for retrieval):
+  1. Project-level: .gworkspace-mcp/tokens.json  (relative to cwd)
+  2. User-level:    ~/.gworkspace-mcp/tokens.json (home directory)
+
+The user-level path uses Path.home() so that Claude Desktop and other
+MCP hosts (which may start with cwd=/ or similar read-only paths on
+macOS Catalina+) can always read credentials stored there.
 
 IMPORTANT: Each machine requires its own authentication.
 Run `gworkspace-mcp setup` to authenticate.
@@ -26,39 +33,49 @@ from gworkspace_mcp.auth.models import (
 
 logger = logging.getLogger(__name__)
 
-# User home credentials directory — Path.home() is always writable,
+# User home credentials directory -- Path.home() is always writable,
 # unlike Path.cwd() which resolves to "/" when Claude Desktop launches MCP servers.
 CREDENTIALS_DIR = Path.home() / ".gworkspace-mcp"
 TOKEN_FILE = CREDENTIALS_DIR / "tokens.json"
 
+# Project-level credentials directory -- checked first during retrieval.
+PROJECT_TOKEN_FILE = Path.cwd() / ".gworkspace-mcp" / "tokens.json"
+
 
 def get_token_path() -> Path:
-    """Get the project-level token storage path.
+    """Get the default (project-level) token storage path.
+
+    Returns the project-level path (``.gworkspace-mcp/tokens.json``
+    relative to cwd) which is the default write target for
+    ``workspace setup``.
 
     Returns:
-        Path to tokens.json file in ./.gworkspace-mcp/
+        Path to ./.gworkspace-mcp/tokens.json (project-level)
     """
-    return TOKEN_FILE
+    return PROJECT_TOKEN_FILE
 
 
 class TokenStorage:
     """Simple JSON-based storage for OAuth tokens.
 
-    Tokens are stored in the user home directory: ~/.gworkspace-mcp/tokens.json
+    Supports a two-tier lookup: project-level tokens are checked first,
+    then user-level tokens.  Writes always go to the project-level
+    directory by default (creating it if necessary).
 
-    Using Path.home() ensures the credentials directory is always writable,
-    even when the MCP server is launched by Claude Desktop with cwd="/".
-
-    For production, consider adding encryption (Fernet + keyring).
+    When a custom ``token_path`` is passed to the constructor, only that
+    single path is used (no two-tier lookup).
 
     Attributes:
-        token_path: Path to the tokens.json file.
+        token_path: Primary token path used for writes.  Defaults to
+            the project-level path (``.gworkspace-mcp/tokens.json``
+            relative to cwd).
+        user_token_path: Always points to ~/.gworkspace-mcp/tokens.json.
 
     Example:
         ```python
         storage = TokenStorage()
 
-        # Store a token
+        # Store a token (writes to ./.gworkspace-mcp/tokens.json)
         token = OAuthToken(
             access_token="abc123",
             expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
@@ -67,7 +84,7 @@ class TokenStorage:
         metadata = TokenMetadata(service_name="gworkspace-mcp", provider="google")
         storage.store("gworkspace-mcp", token, metadata)
 
-        # Retrieve the token
+        # Retrieve the token (checks project-level, then user-level)
         stored = storage.retrieve("gworkspace-mcp")
         if stored:
             print(f"Token expires at: {stored.token.expires_at}")
@@ -79,19 +96,44 @@ class TokenStorage:
 
         Args:
             token_path: Custom path for tokens.json.
-                If not provided, uses home-level (~/.gworkspace-mcp/tokens.json).
+                When provided, *only* this path is used (no project /
+                user-level fallback).  When omitted, the two-tier
+                lookup is enabled with the project-level path as the
+                default write target.
         """
-        self.token_path = token_path or get_token_path()
-        self.credentials_dir = self.token_path.parent
+        # Always record the user-level path for fallback / merging.
+        self.user_token_path: Path = TOKEN_FILE
+
+        if token_path is not None:
+            # Explicit path -- single-path mode, no fallback.
+            self._project_token_path: Path | None = None
+            self.token_path: Path = token_path
+        else:
+            # Two-tier mode: project-level is *always* the write target.
+            # The directory is created automatically by _ensure_credentials_dir.
+            self._project_token_path = PROJECT_TOKEN_FILE
+            self.token_path = PROJECT_TOKEN_FILE
+
+        self.credentials_dir: Path = self.token_path.parent
+
         # Run pending migrations automatically before any other operations
         self._run_migrations()
         self._ensure_credentials_dir()
 
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    @property
+    def _has_fallback(self) -> bool:
+        """Return True when two-tier lookup is active."""
+        return self._project_token_path is not None
+
     def _run_migrations(self) -> None:
         """Run pending migrations automatically.
 
-        This ensures the credentials directory is migrated from old locations
-        before any token operations are attempted.
+        This ensures the credentials directory is migrated from old
+        locations before any token operations are attempted.
         """
         try:
             from gworkspace_mcp.migrations import MigrationRunner
@@ -114,20 +156,32 @@ class TokenStorage:
             # Ensure directory has correct permissions
             creds_dir.chmod(0o700)
 
-    def _load_tokens(self) -> dict[str, dict]:
-        """Load all tokens from JSON file.
+    @staticmethod
+    def _load_tokens_from(path: Path) -> dict[str, dict]:
+        """Load all tokens from a specific JSON file.
+
+        Args:
+            path: Path to a tokens.json file.
 
         Returns:
             Dictionary mapping service names to token data.
         """
-        if not self.token_path.exists():
+        if not path.exists():
             return {}
 
         try:
-            with open(self.token_path) as f:
+            with open(path) as f:
                 return json.load(f)
         except (OSError, json.JSONDecodeError):
             return {}
+
+    def _load_tokens(self) -> dict[str, dict]:
+        """Load tokens from the primary path.
+
+        Returns:
+            Dictionary mapping service names to token data.
+        """
+        return self._load_tokens_from(self.token_path)
 
     def _save_tokens(self, tokens: dict[str, dict]) -> None:
         """Save all tokens to JSON file.
@@ -145,6 +199,10 @@ class TokenStorage:
         # Set file permissions to owner read/write only (600)
         self.token_path.chmod(0o600)
 
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
     def store(
         self,
         service_name: str,
@@ -152,6 +210,11 @@ class TokenStorage:
         metadata: TokenMetadata,
     ) -> None:
         """Store an OAuth token.
+
+        Tokens are written to ``self.token_path`` which defaults to the
+        project-level path (``.gworkspace-mcp/tokens.json`` relative to
+        cwd).  The directory is created automatically if it does not
+        exist.
 
         Args:
             service_name: Unique identifier for the service.
@@ -164,7 +227,7 @@ class TokenStorage:
             token=token,
         )
 
-        # Load existing tokens
+        # Load existing tokens from the *write target*
         tokens = self._load_tokens()
 
         # Add/update this token
@@ -176,21 +239,37 @@ class TokenStorage:
     def retrieve(self, service_name: str) -> StoredToken | None:
         """Retrieve a stored OAuth token.
 
+        In two-tier mode the project-level file is checked first.  If
+        the service is not found (or is invalid) there, the user-level
+        file is consulted as a fallback.
+
         Args:
             service_name: Unique identifier for the service.
 
         Returns:
             StoredToken if found and valid, None otherwise.
         """
-        tokens = self._load_tokens()
+        # Try primary path first
+        result = self._retrieve_from(self.token_path, service_name)
+        if result is not None:
+            return result
 
+        # Fallback to user-level when two-tier mode is active and the
+        # primary path is the project-level one.
+        if self._has_fallback and self.token_path != self.user_token_path:
+            return self._retrieve_from(self.user_token_path, service_name)
+
+        return None
+
+    @staticmethod
+    def _retrieve_from(path: Path, service_name: str) -> StoredToken | None:
+        """Try to retrieve a token for *service_name* from *path*."""
+        tokens = TokenStorage._load_tokens_from(path)
         if service_name not in tokens:
             return None
-
         try:
             return StoredToken.model_validate(tokens[service_name])
         except (ValueError, KeyError):
-            # Token is corrupted or invalid
             return None
 
     def delete(self, service_name: str) -> bool:
@@ -214,14 +293,29 @@ class TokenStorage:
     def list_services(self) -> list[str]:
         """List all services with stored tokens.
 
+        In two-tier mode the results are merged from both project-level
+        and user-level files.  Project-level entries take precedence for
+        duplicates (they appear first in the lookup order).
+
         Returns:
-            List of service names that have stored tokens.
+            Sorted list of service names that have stored tokens.
         """
-        tokens = self._load_tokens()
-        return sorted(tokens.keys())
+        # Start with user-level tokens as the base
+        if self._has_fallback and self.token_path != self.user_token_path:
+            merged = self._load_tokens_from(self.user_token_path)
+            # Project-level tokens override user-level on key collision
+            merged.update(self._load_tokens_from(self.token_path))
+        else:
+            merged = self._load_tokens()
+
+        return sorted(merged.keys())
 
     def get_status(self, service_name: str) -> TokenStatus:
         """Get the status of a stored token.
+
+        In two-tier mode this reflects the merged view: if the
+        project-level file has a valid token the status is VALID even
+        when the user-level file is missing or expired.
 
         Args:
             service_name: Unique identifier for the service.
@@ -232,9 +326,13 @@ class TokenStorage:
         stored = self.retrieve(service_name)
 
         if stored is None:
+            # Check whether raw data exists but could not be parsed
             tokens = self._load_tokens()
+            if self._has_fallback and self.token_path != self.user_token_path:
+                user_tokens = self._load_tokens_from(self.user_token_path)
+                tokens = {**user_tokens, **tokens}
+
             if service_name in tokens:
-                # File exists but couldn't be parsed
                 return TokenStatus.INVALID
             return TokenStatus.MISSING
 

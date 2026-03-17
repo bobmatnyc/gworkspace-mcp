@@ -444,6 +444,7 @@ class TestDriveTools:
             if "/export" in url:
                 mock_resp = MagicMock()
                 mock_resp.text = export_content
+                mock_resp.content = export_content.encode()
                 mock_resp.raise_for_status = MagicMock()
                 return mock_resp
             return create_mock_response(metadata_response)
