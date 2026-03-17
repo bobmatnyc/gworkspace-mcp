@@ -450,6 +450,9 @@ publish: ## Bump patch version, build, publish to PyPI, tag, and push
 		echo "$(RED)✗ .env.local not found - set PYPI_TOKEN$(NC)"; \
 		exit 1; \
 	fi; \
+	uv tool install --force --from "dist/gworkspace_mcp-$$NEW_VERSION-py3-none-any.whl" gworkspace-mcp 2>/dev/null && \
+		echo "$(GREEN)✓ Local installation updated$(NC)" || \
+		echo "$(YELLOW)⚠ Local install update failed (non-blocking)$(NC)"; \
 	if command -v gh >/dev/null 2>&1; then \
 		gh release create "v$$NEW_VERSION" \
 			--title "v$$NEW_VERSION" \
@@ -509,6 +512,9 @@ publish-minor: ## Bump minor version, build, publish to PyPI, tag, and push
 		echo "$(RED)✗ .env.local not found - set PYPI_TOKEN$(NC)"; \
 		exit 1; \
 	fi; \
+	uv tool install --force --from "dist/gworkspace_mcp-$$NEW_VERSION-py3-none-any.whl" gworkspace-mcp 2>/dev/null && \
+		echo "$(GREEN)✓ Local installation updated$(NC)" || \
+		echo "$(YELLOW)⚠ Local install update failed (non-blocking)$(NC)"; \
 	if command -v gh >/dev/null 2>&1; then \
 		gh release create "v$$NEW_VERSION" \
 			--title "v$$NEW_VERSION" \
@@ -567,6 +573,9 @@ publish-major: ## Bump major version, build, publish to PyPI, tag, and push
 		echo "$(RED)✗ .env.local not found - set PYPI_TOKEN$(NC)"; \
 		exit 1; \
 	fi; \
+	uv tool install --force --from "dist/gworkspace_mcp-$$NEW_VERSION-py3-none-any.whl" gworkspace-mcp 2>/dev/null && \
+		echo "$(GREEN)✓ Local installation updated$(NC)" || \
+		echo "$(YELLOW)⚠ Local install update failed (non-blocking)$(NC)"; \
 	if command -v gh >/dev/null 2>&1; then \
 		gh release create "v$$NEW_VERSION" \
 			--title "v$$NEW_VERSION" \
@@ -606,6 +615,10 @@ publish-only: ## Publish current version to PyPI (no version bump)
 		echo "$(RED)✗ .env.local not found - set PYPI_TOKEN$(NC)"; \
 		exit 1; \
 	fi
+	@VERSION=$$(cat VERSION); \
+	uv tool install --force --from "dist/gworkspace_mcp-$$VERSION-py3-none-any.whl" gworkspace-mcp 2>/dev/null && \
+		echo "$(GREEN)✓ Local installation updated$(NC)" || \
+		echo "$(YELLOW)⚠ Local install update failed (non-blocking)$(NC)"
 
 pre-publish: lint test ## Run quality checks before publishing
 	@echo "$(BLUE)============================================$(NC)"
