@@ -138,6 +138,18 @@ if $PUBLISH_CMD "$WHEEL_FILE" "$TAR_FILE"; then
     print_message "$GREEN" "Package available at:"
     print_message "$BLUE" "  https://pypi.org/project/gworkspace-mcp/$VERSION/"
     echo ""
+
+    # 8. Update local installation from built wheel
+    print_message "$YELLOW" "Updating local installation from built wheel..."
+    if uv tool install --force --from "$WHEEL_FILE" gworkspace-mcp 2>&1; then
+        print_message "$GREEN" "Local installation updated to $VERSION"
+        print_message "$BLUE" "  Verify with: gworkspace-mcp --version"
+    else
+        print_message "$YELLOW" "Warning: Could not update local installation automatically"
+        print_message "$YELLOW" "  Run manually: uv tool install --force --from $WHEEL_FILE gworkspace-mcp"
+    fi
+    echo ""
+
     print_message "$YELLOW" "Test installation with:"
     print_message "$BLUE" "  pip install gworkspace-mcp"
     print_message "$BLUE" "  pip install gworkspace-mcp==$VERSION"
