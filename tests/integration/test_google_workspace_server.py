@@ -212,6 +212,137 @@ class TestGmailTools:
             assert result["thread_id"] == "new_thread_001"
 
     @pytest.mark.asyncio
+    async def test_create_draft_basic_success(self, server):
+        """Test creating a basic email draft returns draft details."""
+        # Arrange
+        draft_response = {
+            "id": "draft_001",
+            "message": {"id": "msg_draft_001", "threadId": "thread_draft_001"},
+        }
+
+        async def mock_request(method, url, **kwargs):
+            return create_mock_response(draft_response)
+
+        with patch("httpx.AsyncClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client.request = mock_request
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client_class.return_value = mock_client
+
+            # Act
+            result = await server._create_draft(
+                {
+                    "to": "recipient@example.com",
+                    "subject": "Draft Subject",
+                    "body": "This is a draft body.",
+                }
+            )
+
+            # Assert
+            assert result["draft_id"] == "draft_001"
+            assert result["message_id"] == "msg_draft_001"
+            assert result["thread_id"] == "thread_draft_001"
+
+    @pytest.mark.asyncio
+    async def test_create_draft_with_thread_and_html(self, server):
+        """Test creating a draft reply in a thread with HTML body."""
+        # Arrange
+        draft_response = {
+            "id": "draft_002",
+            "message": {"id": "msg_draft_002", "threadId": "thread_existing_001"},
+        }
+
+        captured_requests: list[dict] = []
+
+        async def mock_request(method, url, **kwargs):
+            captured_requests.append({"method": method, "url": url, "kwargs": kwargs})
+            return create_mock_response(draft_response)
+
+        with patch("httpx.AsyncClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client.request = mock_request
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client_class.return_value = mock_client
+
+            # Act
+            result = await server._create_draft(
+                {
+                    "to": "reply@example.com",
+                    "subject": "Re: Original Subject",
+                    "body": "<p>This is an <b>HTML</b> reply.</p>",
+                    "in_reply_to": "<original-msg-id@example.com>",
+                    "thread_id": "thread_existing_001",
+                    "html": True,
+                }
+            )
+
+            # Assert
+            assert result["draft_id"] == "draft_002"
+            assert result["thread_id"] == "thread_existing_001"
+            # Verify thread_id was passed in the request body
+            assert len(captured_requests) == 1
+            json_body = captured_requests[0]["kwargs"].get("json", {})
+            assert json_body.get("message", {}).get("threadId") == "thread_existing_001"
+
+    @pytest.mark.asyncio
+    async def test_send_draft_success(self, server):
+        """Test sending an existing draft returns sent message details."""
+        # Arrange
+        send_response = {
+            "id": "sent_from_draft_001",
+            "threadId": "thread_draft_001",
+            "labelIds": ["SENT"],
+        }
+
+        async def mock_request(method, url, **kwargs):
+            return create_mock_response(send_response)
+
+        with patch("httpx.AsyncClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client.request = mock_request
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client_class.return_value = mock_client
+
+            # Act
+            result = await server._send_draft({"draft_id": "draft_001"})
+
+            # Assert
+            assert result["message_id"] == "sent_from_draft_001"
+            assert result["thread_id"] == "thread_draft_001"
+            assert result["status"] == "sent"
+
+    @pytest.mark.asyncio
+    async def test_send_draft_calls_correct_endpoint(self, server):
+        """Test send_draft posts to the drafts/send endpoint with the draft ID."""
+        # Arrange
+        send_response = {"id": "sent_msg_002", "threadId": "thread_002"}
+        captured_requests: list[dict] = []
+
+        async def mock_request(method, url, **kwargs):
+            captured_requests.append({"method": method, "url": url, "kwargs": kwargs})
+            return create_mock_response(send_response)
+
+        with patch("httpx.AsyncClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client.request = mock_request
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client_class.return_value = mock_client
+
+            # Act
+            await server._send_draft({"draft_id": "draft_xyz"})
+
+            # Assert: correct URL and body
+            assert len(captured_requests) == 1
+            req = captured_requests[0]
+            assert "drafts/send" in req["url"]
+            assert req["method"] == "POST"
+            assert req["kwargs"].get("json", {}).get("id") == "draft_xyz"
+
+    @pytest.mark.asyncio
     async def test_search_gmail_messages_empty_results(self, server):
         """Test searching Gmail with no matches returns empty list."""
         list_response = {"messages": []}

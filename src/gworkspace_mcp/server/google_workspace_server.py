@@ -1025,7 +1025,7 @@ class GoogleWorkspaceServer:
                 ),
                 Tool(
                     name="create_draft",
-                    description="Create an email draft, optionally with file attachments",
+                    description="Create an email draft without sending it, optionally as a reply on an existing thread",
                     inputSchema={
                         "type": "object",
                         "properties": {
@@ -1039,7 +1039,7 @@ class GoogleWorkspaceServer:
                             },
                             "body": {
                                 "type": "string",
-                                "description": "Email body (plain text)",
+                                "description": "Email body (plain text or HTML)",
                             },
                             "cc": {
                                 "type": "string",
@@ -1049,6 +1049,18 @@ class GoogleWorkspaceServer:
                                 "type": "string",
                                 "description": "BCC recipients, comma-separated",
                             },
+                            "in_reply_to": {
+                                "type": "string",
+                                "description": "Message-ID header of the message to reply to (for threading)",
+                            },
+                            "thread_id": {
+                                "type": "string",
+                                "description": "Gmail thread ID to associate the draft with",
+                            },
+                            "html": {
+                                "type": "boolean",
+                                "description": "If true, body is treated as HTML content (default false)",
+                            },
                             "attachments": {
                                 "type": "array",
                                 "items": {"type": "string"},
@@ -1056,6 +1068,20 @@ class GoogleWorkspaceServer:
                             },
                         },
                         "required": ["to", "subject", "body"],
+                    },
+                ),
+                Tool(
+                    name="send_draft",
+                    description="Send an existing Gmail draft by its draft ID",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "draft_id": {
+                                "type": "string",
+                                "description": "The Gmail draft ID to send",
+                            },
+                        },
+                        "required": ["draft_id"],
                     },
                 ),
                 Tool(
@@ -3409,6 +3435,7 @@ class GoogleWorkspaceServer:
             # Gmail write operations
             "send_email": self._send_email,
             "create_draft": self._create_draft,
+            "send_draft": self._send_draft,
             "reply_to_email": self._reply_to_email,
             # Gmail label management
             "list_gmail_labels": self._list_gmail_labels,
@@ -3925,6 +3952,8 @@ class GoogleWorkspaceServer:
             "q": normalized_query,
             "pageSize": max_results,
             "fields": "files(id,name,mimeType,modifiedTime,size,webViewLink,owners)",
+            "includeItemsFromAllDrives": "true",
+            "supportsAllDrives": "true",
         }
 
         response = await self._make_request("GET", url, params=params)
@@ -3971,7 +4000,7 @@ class GoogleWorkspaceServer:
         # First get file metadata
         meta_url = f"{DRIVE_API_BASE}/files/{file_id}"
         metadata = await self._make_request(
-            "GET", meta_url, params={"fields": "id,name,mimeType,size"}
+            "GET", meta_url, params={"fields": "id,name,mimeType,size", "supportsAllDrives": "true"}
         )
 
         mime_type = metadata.get("mimeType", "")
@@ -3998,11 +4027,15 @@ class GoogleWorkspaceServer:
             if mime_type in plain_export_map:
                 export_url = f"{DRIVE_API_BASE}/files/{file_id}/export"
                 response = await self._make_raw_request(
-                    "GET", export_url, params={"mimeType": plain_export_map[mime_type]}
+                    "GET",
+                    export_url,
+                    params={"mimeType": plain_export_map[mime_type], "supportsAllDrives": "true"},
                 )
             else:
                 response = await self._make_raw_request(
-                    "GET", f"{DRIVE_API_BASE}/files/{file_id}", params={"alt": "media"}
+                    "GET",
+                    f"{DRIVE_API_BASE}/files/{file_id}",
+                    params={"alt": "media", "supportsAllDrives": "true"},
                 )
             raw_bytes = response.content
             if save_path:
@@ -4042,7 +4075,7 @@ class GoogleWorkspaceServer:
             rich_mime = GDRIVE_EXPORT_MIME[mime_type]
             export_url = f"{DRIVE_API_BASE}/files/{file_id}/export"
             response = await self._make_raw_request(
-                "GET", export_url, params={"mimeType": rich_mime}
+                "GET", export_url, params={"mimeType": rich_mime, "supportsAllDrives": "true"}
             )
             downloaded_bytes = response.content
             # Determine extension for the downloaded bytes
@@ -4054,7 +4087,9 @@ class GoogleWorkspaceServer:
             downloaded_ext = ext_map.get(rich_mime, ".bin")
         else:
             response = await self._make_raw_request(
-                "GET", f"{DRIVE_API_BASE}/files/{file_id}", params={"alt": "media"}
+                "GET",
+                f"{DRIVE_API_BASE}/files/{file_id}",
+                params={"alt": "media", "supportsAllDrives": "true"},
             )
             downloaded_bytes = response.content
             downloaded_ext = Path(file_name).suffix.lower() if file_name else ".bin"
@@ -4838,6 +4873,7 @@ class GoogleWorkspaceServer:
         in_reply_to: str | None = None,
         references: str | None = None,
         attachments: list[str] | None = None,
+        html: bool = False,
     ) -> str:
         """Build RFC 2822 email message and return base64url encoded.
 
@@ -4851,6 +4887,7 @@ class GoogleWorkspaceServer:
             in_reply_to: Optional Message-ID for reply threading.
             references: Optional References header for reply threading.
             attachments: Optional list of absolute local file paths to attach.
+            html: If True, body is treated as HTML content.
 
         Returns:
             Base64url encoded email message.
@@ -4863,9 +4900,11 @@ class GoogleWorkspaceServer:
         from email.mime.multipart import MIMEMultipart
         from email.mime.text import MIMEText
 
+        content_subtype = "html" if html else "plain"
+
         if attachments:
             message: MIMEMultipart | MIMEText = MIMEMultipart("mixed")
-            message.attach(MIMEText(body))
+            message.attach(MIMEText(body, content_subtype))
             for path in attachments:
                 detected_mime, _ = mimetypes.guess_type(path)
                 main_type, sub_type = (detected_mime or "application/octet-stream").split("/", 1)
@@ -4881,7 +4920,7 @@ class GoogleWorkspaceServer:
                 )
                 message.attach(part)  # type: ignore[union-attr]
         else:
-            message = MIMEText(body)
+            message = MIMEText(body, content_subtype)
 
         message["to"] = to
         message["subject"] = subject
@@ -4926,33 +4965,67 @@ class GoogleWorkspaceServer:
         }
 
     async def _create_draft(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Create an email draft.
+        """Create an email draft without sending it.
 
         Args:
-            arguments: Tool arguments with to, subject, body, cc, bcc, attachments.
+            arguments: Tool arguments with to, subject, body, cc, bcc,
+                in_reply_to, thread_id, html, attachments.
 
         Returns:
-            Created draft details.
+            Created draft details with draft_id, message_id, thread_id.
         """
         to = arguments["to"]
         subject = arguments["subject"]
         body = arguments["body"]
         cc = arguments.get("cc")
         bcc = arguments.get("bcc")
+        in_reply_to = arguments.get("in_reply_to")
+        thread_id = arguments.get("thread_id")
+        html = bool(arguments.get("html", False))
         attachments = arguments.get("attachments")
 
-        raw_message = self._build_email_message(to, subject, body, cc, bcc, attachments=attachments)
-
-        url = f"{GMAIL_API_BASE}/users/me/drafts"
-        response = await self._make_request(
-            "POST", url, json_data={"message": {"raw": raw_message}}
+        raw_message = self._build_email_message(
+            to,
+            subject,
+            body,
+            cc,
+            bcc,
+            in_reply_to=in_reply_to,
+            attachments=attachments,
+            html=html,
         )
 
+        message_body: dict[str, Any] = {"raw": raw_message}
+        if thread_id:
+            message_body["threadId"] = thread_id
+
+        url = f"{GMAIL_API_BASE}/users/me/drafts"
+        response = await self._make_request("POST", url, json_data={"message": message_body})
+
         return {
-            "status": "draft_created",
-            "id": response.get("id"),
+            "draft_id": response.get("id"),
             "message_id": response.get("message", {}).get("id"),
             "thread_id": response.get("message", {}).get("threadId"),
+        }
+
+    async def _send_draft(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Send an existing Gmail draft.
+
+        Args:
+            arguments: Tool arguments with draft_id.
+
+        Returns:
+            Sent message details with message_id, thread_id, status.
+        """
+        draft_id = arguments["draft_id"]
+
+        url = f"{GMAIL_API_BASE}/users/me/drafts/send"
+        response = await self._make_request("POST", url, json_data={"id": draft_id})
+
+        return {
+            "message_id": response.get("id"),
+            "thread_id": response.get("threadId"),
+            "status": "sent",
         }
 
     async def _reply_to_email(self, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -5713,7 +5786,9 @@ class GoogleWorkspaceServer:
         if parent_id:
             metadata["parents"] = [parent_id]
 
-        response = await self._make_request("POST", url, json_data=metadata)
+        response = await self._make_request(
+            "POST", url, params={"supportsAllDrives": "true"}, json_data=metadata
+        )
 
         return {
             "status": "folder_created",
@@ -5777,7 +5852,7 @@ class GoogleWorkspaceServer:
         body = metadata_part + file_part + closing
 
         # Use multipart upload
-        upload_url = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart"
+        upload_url = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true"
 
         response = await self._make_raw_request(
             "POST",
@@ -5806,7 +5881,7 @@ class GoogleWorkspaceServer:
         """
         file_id = arguments["file_id"]
 
-        url = f"{DRIVE_API_BASE}/files/{file_id}"
+        url = f"{DRIVE_API_BASE}/files/{file_id}?supportsAllDrives=true"
         await self._make_delete_request(url)
 
         return {"status": "deleted", "file_id": file_id}
@@ -5824,7 +5899,7 @@ class GoogleWorkspaceServer:
         new_parent_id = arguments["new_parent_id"]
 
         # First get current parents
-        get_url = f"{DRIVE_API_BASE}/files/{file_id}?fields=parents"
+        get_url = f"{DRIVE_API_BASE}/files/{file_id}?fields=parents&supportsAllDrives=true"
         file_info = await self._make_request("GET", get_url)
         current_parents = file_info.get("parents", [])
 
@@ -5834,6 +5909,7 @@ class GoogleWorkspaceServer:
             "addParents": new_parent_id,
             "removeParents": ",".join(current_parents),
             "fields": "id,name,parents",
+            "supportsAllDrives": "true",
         }
 
         response = await self._make_raw_request("PATCH", update_url, params=params)
@@ -5867,7 +5943,7 @@ class GoogleWorkspaceServer:
         if parent_id:
             copy_body["parents"] = [parent_id]
 
-        params = {"fields": "id,name,mimeType,parents"}
+        params = {"fields": "id,name,mimeType,parents", "supportsAllDrives": "true"}
         response = await self._make_request(
             "POST", url, params=params, json_data=copy_body if copy_body else None
         )
@@ -5893,7 +5969,7 @@ class GoogleWorkspaceServer:
         new_name = arguments["new_name"]
 
         url = f"{DRIVE_API_BASE}/files/{file_id}"
-        params = {"fields": "id,name,mimeType"}
+        params = {"fields": "id,name,mimeType", "supportsAllDrives": "true"}
 
         response = await self._make_request(
             "PATCH", url, params=params, json_data={"name": new_name}
@@ -6712,9 +6788,7 @@ class GoogleWorkspaceServer:
                 metadata["parents"] = [parent_id]
 
             # Use multipart upload with conversion
-            upload_url = (
-                "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&convert=true"
-            )
+            upload_url = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&convert=true&supportsAllDrives=true"
 
             boundary = "foo_bar_baz_docx"
             import base64
@@ -6758,7 +6832,7 @@ class GoogleWorkspaceServer:
         if parent_id:
             metadata["parents"] = [parent_id]
 
-        upload_url = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart"
+        upload_url = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true"
 
         boundary = "foo_bar_baz_docx"
 
@@ -6901,7 +6975,7 @@ class GoogleWorkspaceServer:
         }
 
         # Use multipart upload for the image
-        upload_url = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart"
+        upload_url = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true"
 
         boundary = "mermaid_diagram_boundary"
 
@@ -7129,9 +7203,7 @@ class GoogleWorkspaceServer:
         if folder_id:
             metadata["parents"] = [folder_id]
 
-        upload_url = (
-            "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&convert=true"
-        )
+        upload_url = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&convert=true&supportsAllDrives=true"
 
         import base64
 
@@ -7745,6 +7817,8 @@ class GoogleWorkspaceServer:
             "pageSize": max_results,
             "fields": "files(id,name,mimeType,modifiedTime,owners,webViewLink)",
             "orderBy": "modifiedTime desc",
+            "includeItemsFromAllDrives": "true",
+            "supportsAllDrives": "true",
         }
 
         response = await self._make_request("GET", url, params=params)
