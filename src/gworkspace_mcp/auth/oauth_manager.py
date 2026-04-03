@@ -194,9 +194,8 @@ class OAuthManager:
         }
 
         # Run OAuth flow in executor (it's blocking)
-        loop = asyncio.get_event_loop()
-        credentials = await loop.run_in_executor(
-            None, self._run_oauth_flow, client_config, scopes, redirect_uri
+        credentials = await asyncio.to_thread(
+            self._run_oauth_flow, client_config, scopes, redirect_uri
         )
 
         # Convert to our token model
@@ -397,8 +396,7 @@ class OAuthManager:
         credentials = self._token_to_credentials(stored.token)
 
         # Run refresh in executor (blocking)
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, credentials.refresh, Request())
+        await asyncio.to_thread(credentials.refresh, Request())
 
         # Convert back to our token model
         new_token = self._credentials_to_token(credentials, stored.token.scopes)

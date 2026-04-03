@@ -11,6 +11,7 @@ using the OAuthManager for seamless re-authentication.
 import asyncio
 import json
 import logging
+import secrets
 import subprocess  # nosec B404
 import tempfile
 from pathlib import Path
@@ -52,6 +53,10 @@ DOCS_API_BASE = "https://docs.googleapis.com/v1"
 TASKS_API_BASE = "https://tasks.googleapis.com/tasks/v1"
 SHEETS_API_BASE = "https://sheets.googleapis.com/v4"
 SLIDES_API_BASE = "https://slides.googleapis.com/v1"
+
+# Mermaid rendering constants (single source of truth)
+MERMAID_CLI_VERSION = "@mermaid-js/mermaid-cli@11.12.0"
+MERMAID_TIMEOUT = 30
 
 
 class GoogleWorkspaceServer:
@@ -3241,6 +3246,93 @@ class GoogleWorkspaceServer:
                     )
                 ]
 
+    async def _render_mermaid_image(
+        self,
+        mermaid_code: str,
+        output_format: str = "png",
+        theme: str = "default",
+        background: str = "white",
+    ) -> bytes:
+        """Render a single Mermaid diagram to image bytes using mermaid-cli.
+
+        Args:
+            mermaid_code: The Mermaid diagram source code.
+            output_format: Output format ('svg' or 'png').
+            theme: Mermaid theme ('default', 'dark', 'forest', 'neutral').
+            background: Background color (e.g. 'white', 'transparent').
+
+        Returns:
+            Rendered image as bytes.
+
+        Raises:
+            RuntimeError: If npx is unavailable, rendering fails, or times out.
+        """
+        import re as _re  # noqa: F401 - already imported at module level
+
+        # Verify npx is available
+        try:
+            subprocess.run(  # nosec B603 B607 - npx is a trusted executable
+                ["npx", "--version"],
+                capture_output=True,
+                check=True,
+            )
+        except FileNotFoundError as err:
+            raise RuntimeError(
+                "npx is not installed. Install Node.js for mermaid support:\n"
+                "  https://nodejs.org/"
+            ) from err
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir_path = Path(tmpdir)
+            input_path = tmpdir_path / "diagram.mmd"
+            output_path = tmpdir_path / f"diagram.{output_format}"
+            config_path = tmpdir_path / "mermaid-config.json"
+
+            input_path.write_text(mermaid_code.strip(), encoding="utf-8")
+
+            mermaid_config: dict[str, Any] = {"theme": theme}
+            mermaid_config["backgroundColor"] = (
+                "transparent" if background == "transparent" else background
+            )
+            config_path.write_text(json.dumps(mermaid_config), encoding="utf-8")
+
+            try:
+                result = subprocess.run(  # nosec B603 B607 - controlled paths
+                    [
+                        "npx",
+                        "-y",
+                        MERMAID_CLI_VERSION,
+                        "-i",
+                        str(input_path),
+                        "-o",
+                        str(output_path),
+                        "-c",
+                        str(config_path),
+                    ],
+                    capture_output=True,
+                    check=True,
+                    text=True,
+                    timeout=MERMAID_TIMEOUT,
+                )
+                logger.info("Mermaid rendering output: %s", result.stdout)
+            except subprocess.CalledProcessError as e:
+                raise RuntimeError(
+                    f"Mermaid rendering failed: {e.stderr}\n"
+                    "Check syntax at https://mermaid.js.org/intro/"
+                ) from e
+            except subprocess.TimeoutExpired as e:
+                raise RuntimeError(
+                    f"Mermaid rendering timed out (>{MERMAID_TIMEOUT}s). "
+                    "Simplify the diagram or try again."
+                ) from e
+
+            if not output_path.exists():
+                raise RuntimeError(f"Mermaid-cli failed to create output file: {output_path}")
+
+            image_bytes = output_path.read_bytes()
+            logger.info("Rendered Mermaid diagram: %d bytes (%s)", len(image_bytes), output_format)
+            return image_bytes
+
     async def _get_access_token(self) -> str:
         """Get a valid access token, refreshing if necessary.
 
@@ -3892,6 +3984,14 @@ class GoogleWorkspaceServer:
         attachment_id = arguments["attachment_id"]
         save_path = arguments["save_path"]
 
+        # Validate save_path is within home directory to prevent path traversal
+        _resolved_save = Path(save_path).expanduser().resolve()
+        _home = Path.home().resolve()
+        if not str(_resolved_save).startswith(str(_home)):
+            return {
+                "error": f"save_path must be within home directory ({_home}). Got: {_resolved_save}"
+            }
+
         url = f"{GMAIL_API_BASE}/users/me/messages/{message_id}/attachments/{attachment_id}"
         response = await self._make_request("GET", url)
 
@@ -4037,6 +4137,13 @@ class GoogleWorkspaceServer:
                 )
             raw_bytes = response.content
             if save_path:
+                # Validate save_path is within home directory to prevent path traversal
+                _resolved_save = Path(save_path).expanduser().resolve()
+                _home = Path.home().resolve()
+                if not str(_resolved_save).startswith(str(_home)):
+                    return {
+                        "error": f"save_path must be within home directory ({_home}). Got: {_resolved_save}"
+                    }
                 os.makedirs(os.path.dirname(os.path.abspath(save_path)), exist_ok=True)
                 with open(save_path, "wb") as f:
                     f.write(raw_bytes)
@@ -5835,7 +5942,7 @@ class GoogleWorkspaceServer:
             metadata["parents"] = [parent_id]
 
         # Build multipart body (bytes-safe)
-        boundary = b"foo_bar_baz"
+        boundary = secrets.token_hex(16).encode()
         metadata_part = (
             b"--" + boundary + b"\r\n"
             b"Content-Type: application/json; charset=UTF-8\r\n\r\n"
@@ -6659,7 +6766,6 @@ class GoogleWorkspaceServer:
             RuntimeError: If pandoc is not installed or conversion fails.
         """
         import re
-        import subprocess  # nosec B404 - pandoc is trusted executable
         import tempfile
         from pathlib import Path
 
@@ -6687,79 +6793,30 @@ class GoogleWorkspaceServer:
             mermaid_count = 0
 
             if render_mermaid:
-                # Check if npx is available for mermaid rendering
-                try:
-                    subprocess.run(  # nosec B603 B607 - npx is trusted
-                        ["npx", "--version"],
-                        capture_output=True,
-                        check=True,
-                    )
-                except FileNotFoundError as err:
-                    raise RuntimeError(
-                        "npx is not installed. Install Node.js for mermaid support:\n"
-                        "  https://nodejs.org/"
-                    ) from err
-
                 # Pattern to match mermaid code blocks
                 mermaid_pattern = r"```mermaid\s*\n([\s\S]*?)\n```"
                 mermaid_blocks = re.findall(mermaid_pattern, markdown_content)
 
-                # Create mermaid config for theme
-                mermaid_config: dict[str, Any] = {
-                    "theme": mermaid_theme,
-                    "backgroundColor": "white",
-                }
-                config_path = tmpdir_path / "mermaid-config.json"
-                config_path.write_text(json.dumps(mermaid_config), encoding="utf-8")
-
-                # Render each mermaid block
+                # Render each mermaid block using shared helper
                 for i, mermaid_code in enumerate(mermaid_blocks):
-                    mermaid_input = tmpdir_path / f"mermaid_{i}.mmd"
                     mermaid_output = tmpdir_path / f"mermaid_{i}.png"
-
-                    mermaid_input.write_text(mermaid_code.strip(), encoding="utf-8")
-
                     try:
-                        subprocess.run(  # nosec B603 B607 - controlled paths
-                            [
-                                "npx",
-                                "-y",
-                                "@mermaid-js/mermaid-cli@11.12.0",
-                                "-i",
-                                str(mermaid_input),
-                                "-o",
-                                str(mermaid_output),
-                                "-c",
-                                str(config_path),
-                            ],
-                            capture_output=True,
-                            check=True,
-                            text=True,
-                            timeout=30,
+                        image_bytes = await self._render_mermaid_image(
+                            mermaid_code,
+                            output_format="png",
+                            theme=mermaid_theme,
+                            background="white",
                         )
-
-                        if mermaid_output.exists():
-                            # Replace mermaid block with image reference
-                            original_block = f"```mermaid\n{mermaid_code}\n```"
-                            image_ref = f"![Diagram {i + 1}]({mermaid_output})"
-                            processed_content = processed_content.replace(
-                                original_block, image_ref, 1
-                            )
-                            mermaid_count += 1
-                            logger.info(
-                                "Rendered mermaid diagram %d: %s",
-                                i + 1,
-                                mermaid_output,
-                            )
-                    except subprocess.CalledProcessError as e:
-                        logger.warning(
-                            "Failed to render mermaid diagram %d: %s",
-                            i + 1,
-                            e.stderr,
-                        )
+                        mermaid_output.write_bytes(image_bytes)
+                        # Replace mermaid block with image reference
+                        original_block = f"```mermaid\n{mermaid_code}\n```"
+                        image_ref = f"![Diagram {i + 1}]({mermaid_output})"
+                        processed_content = processed_content.replace(original_block, image_ref, 1)
+                        mermaid_count += 1
+                        logger.info("Rendered mermaid diagram %d: %s", i + 1, mermaid_output)
+                    except RuntimeError as e:
+                        logger.warning("Failed to render mermaid diagram %d: %s", i + 1, e)
                         # Keep original mermaid block if rendering fails
-                    except subprocess.TimeoutExpired:
-                        logger.warning("Mermaid diagram %d timed out, keeping original", i + 1)
 
             # Write processed markdown to temp file
             input_path.write_text(processed_content, encoding="utf-8")
@@ -6788,7 +6845,7 @@ class GoogleWorkspaceServer:
             # Use multipart upload with conversion
             upload_url = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&convert=true&supportsAllDrives=true"
 
-            boundary = "foo_bar_baz_docx"
+            boundary = secrets.token_hex(16)
             import base64
 
             docx_base64 = base64.b64encode(docx_content).decode("ascii")
@@ -6832,7 +6889,7 @@ class GoogleWorkspaceServer:
 
         upload_url = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true"
 
-        boundary = "foo_bar_baz_docx"
+        boundary = secrets.token_hex(16)
 
         # Build multipart body
         body_start = (
@@ -6893,75 +6950,10 @@ class GoogleWorkspaceServer:
         theme = arguments.get("theme", "default")
         background = arguments.get("background", "white")
 
-        # Check if npx is available
-        try:
-            subprocess.run(  # nosec B603 B607 - npx is trusted
-                ["npx", "--version"],
-                capture_output=True,
-                check=True,
-            )
-        except FileNotFoundError as err:
-            raise RuntimeError(
-                "npx is not installed. Install Node.js and npm from:\n  https://nodejs.org/"
-            ) from err
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            input_path = Path(tmpdir) / "diagram.mmd"
-            output_path = Path(tmpdir) / f"diagram.{image_format}"
-            config_path = Path(tmpdir) / "mermaid-config.json"
-
-            # Write Mermaid code to temp file
-            input_path.write_text(mermaid_code, encoding="utf-8")
-
-            # Create Mermaid config for theme and background
-            mermaid_config: dict[str, Any] = {"theme": theme}
-            if background == "transparent":
-                mermaid_config["backgroundColor"] = "transparent"
-            else:
-                mermaid_config["backgroundColor"] = background
-            config_path.write_text(json.dumps(mermaid_config), encoding="utf-8")
-
-            # Render Mermaid diagram using mermaid-cli
-            try:
-                result = subprocess.run(  # nosec B603 B607 - controlled paths
-                    [
-                        "npx",
-                        "-y",
-                        "@mermaid-js/mermaid-cli@11.12.0",
-                        "-i",
-                        str(input_path),
-                        "-o",
-                        str(output_path),
-                        "-c",
-                        str(config_path),
-                    ],
-                    capture_output=True,
-                    check=True,
-                    text=True,
-                    timeout=30,
-                )
-                logger.info("Mermaid rendering output: %s", result.stdout)
-            except subprocess.CalledProcessError as e:
-                raise RuntimeError(
-                    f"Mermaid rendering failed: {e.stderr}\n"
-                    f"Check syntax at https://mermaid.js.org/intro/"
-                ) from e
-            except subprocess.TimeoutExpired as e:
-                raise RuntimeError(
-                    "Mermaid rendering timed out (>30s). Simplify the diagram or try again."
-                ) from e
-
-            # Verify output file was created
-            if not output_path.exists():
-                raise RuntimeError(f"Mermaid-cli failed to create output file: {output_path}")
-
-            # Read the rendered image
-            image_content = output_path.read_bytes()
-            logger.info(
-                "Rendered Mermaid diagram: %d bytes (%s)",
-                len(image_content),
-                image_format,
-            )
+        # Render using shared helper (handles npx check, temp files, subprocess)
+        image_content = await self._render_mermaid_image(
+            mermaid_code, output_format=image_format, theme=theme, background=background
+        )
 
         # Upload image to Google Drive
         # Create a temp folder in Drive for Mermaid diagrams
@@ -6975,7 +6967,7 @@ class GoogleWorkspaceServer:
         # Use multipart upload for the image
         upload_url = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true"
 
-        boundary = "mermaid_diagram_boundary"
+        boundary = secrets.token_hex(16)
 
         # Build multipart body
         body_start = (
@@ -7076,7 +7068,6 @@ class GoogleWorkspaceServer:
             RuntimeError: If pandoc or npx (for mermaid) is not installed.
         """
         import re
-        import subprocess  # nosec B404 - pandoc/npx are trusted executables
         import tempfile
         from pathlib import Path
 
@@ -7107,76 +7098,33 @@ class GoogleWorkspaceServer:
 
             # Process mermaid blocks if enabled
             if render_mermaid:
-                # Check if npx is available
-                try:
-                    subprocess.run(  # nosec B603 B607 - npx is trusted
-                        ["npx", "--version"],
-                        capture_output=True,
-                        check=True,
-                    )
-                except FileNotFoundError as err:
-                    raise RuntimeError(
-                        "npx is not installed. Install Node.js for mermaid support:\n"
-                        "  https://nodejs.org/"
-                    ) from err
-
                 # Pattern to match mermaid code blocks
                 mermaid_pattern = r"```mermaid\s*\n([\s\S]*?)\n```"
                 mermaid_blocks = re.findall(mermaid_pattern, markdown_content)
 
-                # Create mermaid config for theme and background
-                mermaid_config: dict[str, Any] = {
-                    "theme": mermaid_theme,
-                    "backgroundColor": mermaid_background
-                    if mermaid_background != "transparent"
-                    else "transparent",
-                }
-                config_path = tmpdir_path / "mermaid-config.json"
-                config_path.write_text(json.dumps(mermaid_config), encoding="utf-8")
-
-                # Render each mermaid block
+                # Render each mermaid block using shared helper
                 for i, mermaid_code in enumerate(mermaid_blocks):
-                    mermaid_input = tmpdir_path / f"mermaid_{i}.mmd"
                     mermaid_output = tmpdir_path / f"mermaid_{i}.png"
-
-                    mermaid_input.write_text(mermaid_code.strip(), encoding="utf-8")
-
                     try:
-                        subprocess.run(  # nosec B603 B607 - controlled paths
-                            [
-                                "npx",
-                                "-y",
-                                "@mermaid-js/mermaid-cli@11.12.0",
-                                "-i",
-                                str(mermaid_input),
-                                "-o",
-                                str(mermaid_output),
-                                "-c",
-                                str(config_path),
-                            ],
-                            capture_output=True,
-                            check=True,
-                            text=True,
-                            timeout=30,
+                        image_bytes = await self._render_mermaid_image(
+                            mermaid_code,
+                            output_format="png",
+                            theme=mermaid_theme,
+                            background=mermaid_background,
                         )
-
-                        if mermaid_output.exists():
-                            # Store source for later comment creation
-                            if preserve_mermaid_source:
-                                mermaid_sources.append((i + 1, mermaid_code.strip()))
-
-                            # Replace mermaid block with image reference
-                            original_block = f"```mermaid\n{mermaid_code}\n```"
-                            image_ref = f"![Diagram {i + 1}]({mermaid_output})"
-                            processed_content = processed_content.replace(
-                                original_block, image_ref, 1
-                            )
-                            mermaid_count += 1
-                            logger.info("Rendered mermaid diagram %d: %s", i + 1, mermaid_output)
-                    except subprocess.CalledProcessError as e:
-                        logger.warning("Failed to render mermaid diagram %d: %s", i + 1, e.stderr)
-                    except subprocess.TimeoutExpired:
-                        logger.warning("Mermaid diagram %d timed out, keeping original", i + 1)
+                        mermaid_output.write_bytes(image_bytes)
+                        # Store source for later comment creation
+                        if preserve_mermaid_source:
+                            mermaid_sources.append((i + 1, mermaid_code.strip()))
+                        # Replace mermaid block with image reference
+                        original_block = f"```mermaid\n{mermaid_code}\n```"
+                        image_ref = f"![Diagram {i + 1}]({mermaid_output})"
+                        processed_content = processed_content.replace(original_block, image_ref, 1)
+                        mermaid_count += 1
+                        logger.info("Rendered mermaid diagram %d: %s", i + 1, mermaid_output)
+                    except RuntimeError as e:
+                        logger.warning("Failed to render mermaid diagram %d: %s", i + 1, e)
+                        # Keep original mermaid block if rendering fails
 
             # Write processed markdown to temp file
             input_path.write_text(processed_content, encoding="utf-8")
@@ -7205,7 +7153,7 @@ class GoogleWorkspaceServer:
 
         import base64
 
-        boundary = "publish_markdown_boundary"
+        boundary = secrets.token_hex(16)
         docx_base64 = base64.b64encode(docx_content).decode("ascii")
 
         body = (
