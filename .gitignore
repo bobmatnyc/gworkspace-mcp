@@ -92,3 +92,5 @@ docs/research/
 .env.local
 .mcp.json
 kuzu-memories/
+.kuzu-memory/
+.kuzu_memory.db
