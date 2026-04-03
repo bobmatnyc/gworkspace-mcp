@@ -1,6 +1,7 @@
 """Command-line interface for gworkspace-mcp."""
 
 import asyncio
+import logging
 import sys
 from pathlib import Path
 
@@ -30,7 +31,7 @@ if _env_local.exists():
 def main() -> None:
     """Google Workspace MCP Server - Connect Claude to Google Workspace APIs.
 
-    This tool provides 66 tools across:
+    This tool provides 118 tools across:
     - Gmail (search, read, send, organize)
     - Calendar (events, availability)
     - Drive (files, folders, search)
@@ -195,7 +196,7 @@ def setup(client_id: str | None, client_secret: str | None, user_level: bool) ->
 def mcp() -> None:
     """Start the MCP server for Claude Desktop integration.
 
-    Starts the stdio MCP server that provides 66 tools across:
+    Starts the stdio MCP server that provides 118 tools across:
     - Gmail (18 tools): Search, send, organize, labels
     - Calendar (10 tools): Events, calendars, availability
     - Drive (17 tools): Files, folders, sharing, search
@@ -207,6 +208,7 @@ def mcp() -> None:
 
     This command is typically invoked by Claude Desktop via the MCP protocol.
     """
+    logging.basicConfig(level=logging.INFO)
     from gworkspace_mcp.auth import OAuthManager, TokenStatus
     from gworkspace_mcp.server import main as server_main
 
@@ -225,7 +227,7 @@ def mcp() -> None:
     # Start the MCP server (runs indefinitely)
     try:
         click.echo("Starting Google Workspace MCP server...", err=True)
-        click.echo("Server provides 66 tools for Claude Desktop", err=True)
+        click.echo("Server provides 118 tools for Claude Desktop", err=True)
         click.echo("", err=True)
         server_main()
     except KeyboardInterrupt:

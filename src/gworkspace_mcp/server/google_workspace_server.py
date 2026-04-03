@@ -39,8 +39,6 @@ from gworkspace_mcp.conversion.pandoc_service import (
     PandocService,
 )
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Service name for token storage - matches gworkspace-mcp convention
@@ -59,7 +57,7 @@ SLIDES_API_BASE = "https://slides.googleapis.com/v1"
 class GoogleWorkspaceServer:
     """MCP server for Google Workspace APIs.
 
-    Provides 84 tools for interacting with Google Workspace services:
+    Provides 118 tools for interacting with Google Workspace services:
     - Gmail: Email management and search
     - Calendar: Event and calendar operations
     - Drive: File and folder management

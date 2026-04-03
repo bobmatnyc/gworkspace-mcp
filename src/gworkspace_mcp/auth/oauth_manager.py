@@ -304,6 +304,19 @@ class OAuthManager:
                 # Parse query parameters
                 query_params = parse_qs(request_parsed.query)
 
+                # Validate CSRF state parameter
+                returned_state = query_params.get("state", [None])[0]
+                if returned_state != state:
+                    error_message[0] = "state_mismatch"
+                    self.send_response(400)
+                    self.send_header("Content-type", "text/html")
+                    self.end_headers()
+                    self.wfile.write(
+                        b"<html><body><h1>Authentication Failed</h1>"
+                        b"<p>Invalid state parameter. Possible CSRF attack.</p></body></html>"
+                    )
+                    return
+
                 # Check for error
                 if "error" in query_params:
                     error_message[0] = query_params["error"][0]
