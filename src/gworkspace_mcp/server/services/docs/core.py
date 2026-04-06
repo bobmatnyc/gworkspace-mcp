@@ -280,13 +280,25 @@ async def _get_document(svc: BaseService, arguments: dict[str, Any]) -> dict[str
     document_id = arguments["document_id"]
     include_tabs_content = arguments.get("include_tabs_content", False)
 
-    url = f"{DOCS_API_BASE}/documents/{document_id}"
-    if include_tabs_content:
-        url += "?includeTabsContent=true"
+    # Always request tab content so modern tabbed documents return non-empty body.
+    url = f"{DOCS_API_BASE}/documents/{document_id}?includeTabsContent=true"
 
     response = await svc._make_request("GET", url)
 
-    text_content = _extract_doc_text(response.get("body", {}))
+    # For documents that use tabs, `body` is empty; content lives inside each
+    # tab's `documentTab.body`.  Fall back to the top-level `body` only when
+    # no tabs are present (classic / single-tab documents).
+    tabs = response.get("tabs", [])
+    if tabs:
+        text_parts: list[str] = []
+        for tab in tabs:
+            tab_body = tab.get("documentTab", {}).get("body", {})
+            tab_text = _extract_doc_text(tab_body)
+            if tab_text:
+                text_parts.append(tab_text)
+        text_content = "\n".join(text_parts)
+    else:
+        text_content = _extract_doc_text(response.get("body", {}))
 
     result: dict[str, Any] = {
         "document_id": response.get("documentId"),
@@ -295,8 +307,8 @@ async def _get_document(svc: BaseService, arguments: dict[str, Any]) -> dict[str
         "text_content": text_content,
     }
 
-    if include_tabs_content and "tabs" in response:
-        result["tabs"] = _format_tabs(response["tabs"])
+    if include_tabs_content and tabs:
+        result["tabs"] = _format_tabs(tabs)
 
     return result
 
