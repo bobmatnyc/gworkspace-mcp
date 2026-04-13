@@ -14,179 +14,79 @@ if TYPE_CHECKING:
 
 TOOLS: list[Tool] = [
     Tool(
-        name="list_spreadsheet_sheets",
-        description="List all tabs/sheets in a Google Spreadsheet. Returns sheet names with their properties (name, index, sheetId). Use this to discover available sheets before reading data.",
+        name="get_spreadsheet",
+        description=(
+            "Read a Google Spreadsheet. "
+            "action='list_sheets': list all tabs with their properties. "
+            "action='get_sheet': read values from a specific sheet (requires sheet_name; range optional). "
+            "action='get_all': batch-read all sheets and their data (max_rows optional, default 1000)."
+        ),
         inputSchema={
             "type": "object",
             "properties": {
-                "spreadsheet_id": {
+                "action": {
                     "type": "string",
-                    "description": "Google Spreadsheet ID (from the URL)",
+                    "enum": ["list_sheets", "get_sheet", "get_all"],
+                    "description": "Operation to perform",
                 },
-            },
-            "required": ["spreadsheet_id"],
-        },
-    ),
-    Tool(
-        name="get_sheet_values",
-        description="Get values from a specific sheet/tab in a Google Spreadsheet. Returns data as formatted CSV text. Use list_spreadsheet_sheets first to get available sheet names.",
-        inputSchema={
-            "type": "object",
-            "properties": {
                 "spreadsheet_id": {
                     "type": "string",
                     "description": "Google Spreadsheet ID (from the URL)",
                 },
                 "sheet_name": {
                     "type": "string",
-                    "description": "Name of the sheet/tab to read (e.g., 'Sheet1', 'Sales Data')",
+                    "description": "Sheet/tab name — required for get_sheet",
                 },
                 "range": {
                     "type": "string",
-                    "description": "Cell range in A1 notation (e.g., 'A1:Z100', 'A:ZZ'). Default: 'A:ZZ' (all columns)",
+                    "description": "A1 notation range (get_sheet only, default 'A:ZZ')",
                     "default": "A:ZZ",
-                },
-            },
-            "required": ["spreadsheet_id", "sheet_name"],
-        },
-    ),
-    Tool(
-        name="get_spreadsheet_data",
-        description="Get all sheets and their data from a Google Spreadsheet. Returns a dictionary mapping sheet names to their values. Efficient batch operation for multi-tab spreadsheets.",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "spreadsheet_id": {
-                    "type": "string",
-                    "description": "Google Spreadsheet ID (from the URL)",
                 },
                 "max_rows": {
                     "type": "integer",
-                    "description": "Maximum rows to retrieve per sheet (default: 1000)",
+                    "description": "Max rows per sheet (get_all only, default 1000)",
                     "default": 1000,
                 },
             },
-            "required": ["spreadsheet_id"],
+            "required": ["action", "spreadsheet_id"],
         },
     ),
     Tool(
-        name="create_spreadsheet",
-        description="Create a new Google Spreadsheet. Returns the new spreadsheet ID and URL.",
+        name="manage_spreadsheet",
+        description=(
+            "Create or modify a Google Spreadsheet. "
+            "action='create': create a new spreadsheet (title required; sheet_names optional). "
+            "action='add_sheet': add a tab to an existing spreadsheet (spreadsheet_id and title required; "
+            "index and tab_color optional)."
+        ),
         inputSchema={
             "type": "object",
             "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["create", "add_sheet"],
+                    "description": "Operation to perform",
+                },
+                "spreadsheet_id": {
+                    "type": "string",
+                    "description": "Google Spreadsheet ID — required for add_sheet",
+                },
                 "title": {
                     "type": "string",
-                    "description": "Title of the new spreadsheet",
+                    "description": "Spreadsheet title (create) or new sheet/tab name (add_sheet)",
                 },
                 "sheet_names": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Optional list of sheet/tab names to create (default: ['Sheet1'])",
-                },
-            },
-            "required": ["title"],
-        },
-    ),
-    Tool(
-        name="update_sheet_values",
-        description="Update values in a specific range of a Google Spreadsheet. Overwrites existing values in the specified range.",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "spreadsheet_id": {
-                    "type": "string",
-                    "description": "Google Spreadsheet ID (from the URL)",
-                },
-                "sheet_name": {
-                    "type": "string",
-                    "description": "Name of the sheet/tab to update (e.g., 'Sheet1')",
-                },
-                "range": {
-                    "type": "string",
-                    "description": "Cell range in A1 notation (e.g., 'A1:C3', 'A1')",
-                },
-                "values": {
-                    "type": "array",
-                    "items": {
-                        "type": "array",
-                        "items": {},
-                    },
-                    "description": "2D array of values to write (rows of cells)",
-                },
-            },
-            "required": ["spreadsheet_id", "sheet_name", "range", "values"],
-        },
-    ),
-    Tool(
-        name="append_sheet_values",
-        description="Append rows to the end of data in a Google Spreadsheet sheet. Automatically finds the last row with data and appends below it.",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "spreadsheet_id": {
-                    "type": "string",
-                    "description": "Google Spreadsheet ID (from the URL)",
-                },
-                "sheet_name": {
-                    "type": "string",
-                    "description": "Name of the sheet/tab to append to (e.g., 'Sheet1')",
-                },
-                "values": {
-                    "type": "array",
-                    "items": {
-                        "type": "array",
-                        "items": {},
-                    },
-                    "description": "2D array of values to append (rows of cells)",
-                },
-            },
-            "required": ["spreadsheet_id", "sheet_name", "values"],
-        },
-    ),
-    Tool(
-        name="clear_sheet_values",
-        description="Clear values from a specific range in a Google Spreadsheet. Removes cell values but preserves formatting.",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "spreadsheet_id": {
-                    "type": "string",
-                    "description": "Google Spreadsheet ID (from the URL)",
-                },
-                "sheet_name": {
-                    "type": "string",
-                    "description": "Name of the sheet/tab to clear (e.g., 'Sheet1')",
-                },
-                "range": {
-                    "type": "string",
-                    "description": "Cell range in A1 notation to clear (e.g., 'A1:C10', 'A:Z')",
-                },
-            },
-            "required": ["spreadsheet_id", "sheet_name", "range"],
-        },
-    ),
-    Tool(
-        name="add_sheet",
-        description="Add a new sheet/tab to an existing Google Spreadsheet. Returns the new sheet's ID, title, and index.",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "spreadsheet_id": {
-                    "type": "string",
-                    "description": "Google Spreadsheet ID (from the URL)",
-                },
-                "title": {
-                    "type": "string",
-                    "description": "Name for the new sheet/tab",
+                    "description": "Initial tab names (create only, default ['Sheet1'])",
                 },
                 "index": {
                     "type": "integer",
-                    "description": "0-based position to insert the sheet (default: append at end)",
+                    "description": "0-based insertion position (add_sheet only, default: append)",
                 },
                 "tab_color": {
                     "type": "object",
-                    "description": "RGB tab color (each component 0.0–1.0)",
+                    "description": "RGB tab color, each component 0.0–1.0 (add_sheet only)",
                     "properties": {
                         "red": {"type": "number", "minimum": 0, "maximum": 1},
                         "green": {"type": "number", "minimum": 0, "maximum": 1},
@@ -194,7 +94,44 @@ TOOLS: list[Tool] = [
                     },
                 },
             },
-            "required": ["spreadsheet_id", "title"],
+            "required": ["action", "title"],
+        },
+    ),
+    Tool(
+        name="modify_sheet_values",
+        description=(
+            "Write or clear values in a Google Spreadsheet sheet. "
+            "action='update': overwrite a range (range and values required). "
+            "action='append': append rows after the last data row (values required). "
+            "action='clear': clear values from a range, keeping formatting (range required)."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["update", "append", "clear"],
+                    "description": "Operation to perform",
+                },
+                "spreadsheet_id": {
+                    "type": "string",
+                    "description": "Google Spreadsheet ID (from the URL)",
+                },
+                "sheet_name": {
+                    "type": "string",
+                    "description": "Name of the sheet/tab",
+                },
+                "range": {
+                    "type": "string",
+                    "description": "A1 notation range — required for update and clear",
+                },
+                "values": {
+                    "type": "array",
+                    "items": {"type": "array", "items": {}},
+                    "description": "2D array of values (rows of cells) — required for update and append",
+                },
+            },
+            "required": ["action", "spreadsheet_id", "sheet_name"],
         },
     ),
 ]
@@ -245,13 +182,12 @@ async def a1_to_grid_range(range_a1: str, sheet_id: int) -> dict[str, Any]:
 
 
 # =============================================================================
-# Handler functions
+# Private handler implementations
 # =============================================================================
 
 
-async def _list_spreadsheet_sheets(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
+async def _list_spreadsheet_sheets(svc: BaseService, spreadsheet_id: str) -> dict[str, Any]:
     """List all sheets/tabs in a Google Spreadsheet."""
-    spreadsheet_id = arguments["spreadsheet_id"]
     url = f"{SHEETS_API_BASE}/spreadsheets/{spreadsheet_id}"
     params = {"fields": "spreadsheetId,properties.title,sheets.properties"}
     response = await svc._make_request("GET", url, params=params)
@@ -278,12 +214,10 @@ async def _list_spreadsheet_sheets(svc: BaseService, arguments: dict[str, Any]) 
     }
 
 
-async def _get_sheet_values(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
+async def _get_sheet_values(
+    svc: BaseService, spreadsheet_id: str, sheet_name: str, cell_range: str = "A:ZZ"
+) -> dict[str, Any]:
     """Get values from a specific sheet/tab in a Google Spreadsheet."""
-    spreadsheet_id = arguments["spreadsheet_id"]
-    sheet_name = arguments["sheet_name"]
-    cell_range = arguments.get("range", "A:ZZ")
-
     range_notation = f"'{sheet_name}'!{cell_range}"
     url = f"{SHEETS_API_BASE}/spreadsheets/{spreadsheet_id}/values/{range_notation}"
     params = {"valueRenderOption": "FORMATTED_VALUE"}
@@ -320,12 +254,11 @@ async def _get_sheet_values(svc: BaseService, arguments: dict[str, Any]) -> dict
     }
 
 
-async def _get_spreadsheet_data(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
+async def _get_spreadsheet_data(
+    svc: BaseService, spreadsheet_id: str, max_rows: int = 1000
+) -> dict[str, Any]:
     """Get all sheets and their data from a Google Spreadsheet."""
-    spreadsheet_id = arguments["spreadsheet_id"]
-    max_rows = arguments.get("max_rows", 1000)
-
-    sheets_response = await _list_spreadsheet_sheets(svc, {"spreadsheet_id": spreadsheet_id})
+    sheets_response = await _list_spreadsheet_sheets(svc, spreadsheet_id)
     sheet_names = [sheet["name"] for sheet in sheets_response.get("sheets", [])]
 
     if not sheet_names:
@@ -372,10 +305,12 @@ async def _get_spreadsheet_data(svc: BaseService, arguments: dict[str, Any]) -> 
     }
 
 
-async def _create_spreadsheet(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
+async def _create_spreadsheet(
+    svc: BaseService, title: str, sheet_names: list[str] | None = None
+) -> dict[str, Any]:
     """Create a new Google Spreadsheet."""
-    title = arguments["title"]
-    sheet_names = arguments.get("sheet_names", ["Sheet1"])
+    if sheet_names is None:
+        sheet_names = ["Sheet1"]
 
     sheets = [{"properties": {"title": name, "index": i}} for i, name in enumerate(sheet_names)]
     body = {"properties": {"title": title}, "sheets": sheets}
@@ -392,76 +327,19 @@ async def _create_spreadsheet(svc: BaseService, arguments: dict[str, Any]) -> di
     }
 
 
-async def _update_sheet_values(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
-    """Update values in a specific range of a Google Spreadsheet."""
-    spreadsheet_id = arguments["spreadsheet_id"]
-    sheet_name = arguments["sheet_name"]
-    cell_range = arguments["range"]
-    values = arguments["values"]
-
-    range_notation = f"'{sheet_name}'!{cell_range}"
-    url = f"{SHEETS_API_BASE}/spreadsheets/{spreadsheet_id}/values/{range_notation}"
-    params = {"valueInputOption": "USER_ENTERED"}
-    body = {"range": range_notation, "values": values}
-    response = await svc._make_request("PUT", url, params=params, json_data=body)
-
-    return {
-        "spreadsheet_id": spreadsheet_id,
-        "updated_range": response.get("updatedRange", range_notation),
-        "updated_rows": response.get("updatedRows", 0),
-        "updated_columns": response.get("updatedColumns", 0),
-        "updated_cells": response.get("updatedCells", 0),
-    }
-
-
-async def _append_sheet_values(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
-    """Append rows to the end of data in a Google Spreadsheet sheet."""
-    spreadsheet_id = arguments["spreadsheet_id"]
-    sheet_name = arguments["sheet_name"]
-    values = arguments["values"]
-
-    range_notation = f"'{sheet_name}'"
-    url = f"{SHEETS_API_BASE}/spreadsheets/{spreadsheet_id}/values/{range_notation}:append"
-    params = {"valueInputOption": "USER_ENTERED", "insertDataOption": "INSERT_ROWS"}
-    body = {"values": values}
-    response = await svc._make_request("POST", url, params=params, json_data=body)
-
-    updates = response.get("updates", {})
-    return {
-        "spreadsheet_id": spreadsheet_id,
-        "updated_range": updates.get("updatedRange", ""),
-        "updated_rows": updates.get("updatedRows", 0),
-        "updated_columns": updates.get("updatedColumns", 0),
-        "updated_cells": updates.get("updatedCells", 0),
-    }
-
-
-async def _clear_sheet_values(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
-    """Clear values from a specific range in a Google Spreadsheet."""
-    spreadsheet_id = arguments["spreadsheet_id"]
-    sheet_name = arguments["sheet_name"]
-    cell_range = arguments["range"]
-
-    range_notation = f"'{sheet_name}'!{cell_range}"
-    url = f"{SHEETS_API_BASE}/spreadsheets/{spreadsheet_id}/values/{range_notation}:clear"
-    response = await svc._make_request("POST", url)
-
-    return {
-        "spreadsheet_id": spreadsheet_id,
-        "cleared_range": response.get("clearedRange", range_notation),
-    }
-
-
-async def _add_sheet(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
+async def _add_sheet(
+    svc: BaseService,
+    spreadsheet_id: str,
+    title: str,
+    index: int | None = None,
+    tab_color: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Add a new sheet/tab to an existing Google Spreadsheet."""
-    spreadsheet_id = arguments["spreadsheet_id"]
-    title = arguments["title"]
-
     sheet_properties: dict[str, Any] = {"title": title}
-    if "index" in arguments:
-        sheet_properties["index"] = arguments["index"]
-    if "tab_color" in arguments:
-        sheet_properties["tabColor"] = arguments["tab_color"]
+    if index is not None:
+        sheet_properties["index"] = index
+    if tab_color is not None:
+        sheet_properties["tabColor"] = tab_color
 
     request_body = {
         "requests": [
@@ -489,15 +367,147 @@ async def _add_sheet(svc: BaseService, arguments: dict[str, Any]) -> dict[str, A
     }
 
 
+async def _update_sheet_values(
+    svc: BaseService,
+    spreadsheet_id: str,
+    sheet_name: str,
+    cell_range: str,
+    values: list[list[Any]],
+) -> dict[str, Any]:
+    """Update values in a specific range of a Google Spreadsheet."""
+    range_notation = f"'{sheet_name}'!{cell_range}"
+    url = f"{SHEETS_API_BASE}/spreadsheets/{spreadsheet_id}/values/{range_notation}"
+    params = {"valueInputOption": "USER_ENTERED"}
+    body = {"range": range_notation, "values": values}
+    response = await svc._make_request("PUT", url, params=params, json_data=body)
+
+    return {
+        "spreadsheet_id": spreadsheet_id,
+        "updated_range": response.get("updatedRange", range_notation),
+        "updated_rows": response.get("updatedRows", 0),
+        "updated_columns": response.get("updatedColumns", 0),
+        "updated_cells": response.get("updatedCells", 0),
+    }
+
+
+async def _append_sheet_values(
+    svc: BaseService,
+    spreadsheet_id: str,
+    sheet_name: str,
+    values: list[list[Any]],
+) -> dict[str, Any]:
+    """Append rows to the end of data in a Google Spreadsheet sheet."""
+    range_notation = f"'{sheet_name}'"
+    url = f"{SHEETS_API_BASE}/spreadsheets/{spreadsheet_id}/values/{range_notation}:append"
+    params = {"valueInputOption": "USER_ENTERED", "insertDataOption": "INSERT_ROWS"}
+    body = {"values": values}
+    response = await svc._make_request("POST", url, params=params, json_data=body)
+
+    updates = response.get("updates", {})
+    return {
+        "spreadsheet_id": spreadsheet_id,
+        "updated_range": updates.get("updatedRange", ""),
+        "updated_rows": updates.get("updatedRows", 0),
+        "updated_columns": updates.get("updatedColumns", 0),
+        "updated_cells": updates.get("updatedCells", 0),
+    }
+
+
+async def _clear_sheet_values(
+    svc: BaseService, spreadsheet_id: str, sheet_name: str, cell_range: str
+) -> dict[str, Any]:
+    """Clear values from a specific range in a Google Spreadsheet."""
+    range_notation = f"'{sheet_name}'!{cell_range}"
+    url = f"{SHEETS_API_BASE}/spreadsheets/{spreadsheet_id}/values/{range_notation}:clear"
+    response = await svc._make_request("POST", url)
+
+    return {
+        "spreadsheet_id": spreadsheet_id,
+        "cleared_range": response.get("clearedRange", range_notation),
+    }
+
+
+# =============================================================================
+# Consolidated action dispatchers
+# =============================================================================
+
+
+async def _get_spreadsheet(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Dispatch get_spreadsheet actions."""
+    action = arguments["action"]
+    spreadsheet_id = arguments["spreadsheet_id"]
+
+    if action == "list_sheets":
+        return await _list_spreadsheet_sheets(svc, spreadsheet_id)
+
+    if action == "get_sheet":
+        sheet_name = arguments.get("sheet_name")
+        if not sheet_name:
+            raise ValueError("sheet_name is required for action='get_sheet'")
+        cell_range = arguments.get("range", "A:ZZ")
+        return await _get_sheet_values(svc, spreadsheet_id, sheet_name, cell_range)
+
+    if action == "get_all":
+        max_rows = arguments.get("max_rows", 1000)
+        return await _get_spreadsheet_data(svc, spreadsheet_id, max_rows)
+
+    raise ValueError(f"Unknown action: {action!r}")
+
+
+async def _manage_spreadsheet(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Dispatch manage_spreadsheet actions."""
+    action = arguments["action"]
+    title = arguments["title"]
+
+    if action == "create":
+        sheet_names = arguments.get("sheet_names")
+        return await _create_spreadsheet(svc, title, sheet_names)
+
+    if action == "add_sheet":
+        spreadsheet_id = arguments.get("spreadsheet_id")
+        if not spreadsheet_id:
+            raise ValueError("spreadsheet_id is required for action='add_sheet'")
+        index = arguments.get("index")
+        tab_color = arguments.get("tab_color")
+        return await _add_sheet(svc, spreadsheet_id, title, index, tab_color)
+
+    raise ValueError(f"Unknown action: {action!r}")
+
+
+async def _modify_sheet_values(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Dispatch modify_sheet_values actions."""
+    action = arguments["action"]
+    spreadsheet_id = arguments["spreadsheet_id"]
+    sheet_name = arguments["sheet_name"]
+
+    if action == "update":
+        cell_range = arguments.get("range")
+        values = arguments.get("values")
+        if not cell_range:
+            raise ValueError("range is required for action='update'")
+        if values is None:
+            raise ValueError("values is required for action='update'")
+        return await _update_sheet_values(svc, spreadsheet_id, sheet_name, cell_range, values)
+
+    if action == "append":
+        values = arguments.get("values")
+        if values is None:
+            raise ValueError("values is required for action='append'")
+        return await _append_sheet_values(svc, spreadsheet_id, sheet_name, values)
+
+    if action == "clear":
+        cell_range = arguments.get("range")
+        if not cell_range:
+            raise ValueError("range is required for action='clear'")
+        return await _clear_sheet_values(svc, spreadsheet_id, sheet_name, cell_range)
+
+    raise ValueError(f"Unknown action: {action!r}")
+
+
 def get_handlers(svc: BaseService) -> dict[str, Any]:
     """Return name->callable mapping for Sheets core handlers."""
     return {
-        "list_spreadsheet_sheets": lambda args: _list_spreadsheet_sheets(svc, args),
-        "get_sheet_values": lambda args: _get_sheet_values(svc, args),
-        "get_spreadsheet_data": lambda args: _get_spreadsheet_data(svc, args),
-        "create_spreadsheet": lambda args: _create_spreadsheet(svc, args),
-        "update_sheet_values": lambda args: _update_sheet_values(svc, args),
-        "append_sheet_values": lambda args: _append_sheet_values(svc, args),
-        "clear_sheet_values": lambda args: _clear_sheet_values(svc, args),
-        "add_sheet": lambda args: _add_sheet(svc, args),
+        "get_spreadsheet": lambda args: _get_spreadsheet(svc, args),
+        "manage_spreadsheet": lambda args: _manage_spreadsheet(svc, args),
+        "modify_sheet_values": lambda args: _modify_sheet_values(svc, args),
     }

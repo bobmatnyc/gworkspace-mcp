@@ -12,128 +12,104 @@ if TYPE_CHECKING:
     from gworkspace_mcp.server.base import BaseService
 
 TOOLS: list[Tool] = [
-    # Gmail Label Management
     Tool(
-        name="list_gmail_labels",
-        description="List all Gmail labels (system and custom)",
-        inputSchema={
-            "type": "object",
-            "properties": {},
-            "required": [],
-        },
-    ),
-    Tool(
-        name="create_gmail_label",
-        description="Create a custom Gmail label. Use '/' for nesting (e.g., 'Work/Projects')",
+        name="manage_gmail_labels",
+        description=(
+            "Manage Gmail labels. "
+            "Actions: 'list' (list all labels), 'create' (create a new label), 'delete' (delete a label by ID)."
+        ),
         inputSchema={
             "type": "object",
             "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["list", "create", "delete"],
+                    "description": "Operation to perform",
+                },
                 "name": {
                     "type": "string",
-                    "description": "Label name (use '/' for nesting, e.g., 'Work/Projects')",
+                    "description": "Label name for action=create (use '/' for nesting, e.g., 'Work/Projects')",
+                },
+                "label_id": {
+                    "type": "string",
+                    "description": "Label ID for action=delete",
                 },
                 "label_list_visibility": {
                     "type": "string",
                     "enum": ["labelShow", "labelShowIfUnread", "labelHide"],
-                    "description": "Visibility in label list (default: labelShow)",
+                    "description": "Visibility in label list for action=create (default: labelShow)",
                 },
                 "message_list_visibility": {
                     "type": "string",
                     "enum": ["show", "hide"],
-                    "description": "Visibility in message list (default: show)",
+                    "description": "Visibility in message list for action=create (default: show)",
                 },
             },
-            "required": ["name"],
+            "required": ["action"],
         },
     ),
     Tool(
-        name="delete_gmail_label",
-        description="Delete a custom Gmail label (cannot delete system labels)",
+        name="manage_gmail_filters",
+        description=(
+            "Manage Gmail filters (auto-filtering rules). "
+            "Actions: 'list' (list all filters), 'create' (create a new filter), 'delete' (delete a filter by ID)."
+        ),
         inputSchema={
             "type": "object",
             "properties": {
-                "label_id": {
+                "action": {
                     "type": "string",
-                    "description": "Label ID to delete",
+                    "enum": ["list", "create", "delete"],
+                    "description": "Operation to perform",
                 },
-            },
-            "required": ["label_id"],
-        },
-    ),
-    # Gmail Filter Management
-    Tool(
-        name="list_gmail_filters",
-        description="List all Gmail filters (auto-filtering rules)",
-        inputSchema={
-            "type": "object",
-            "properties": {},
-            "required": [],
-        },
-    ),
-    Tool(
-        name="create_gmail_filter",
-        description="Create a Gmail filter to automatically process incoming messages",
-        inputSchema={
-            "type": "object",
-            "properties": {
+                "filter_id": {
+                    "type": "string",
+                    "description": "Filter ID for action=delete",
+                },
                 "from_address": {
                     "type": "string",
-                    "description": "Filter by sender email address",
+                    "description": "Filter by sender email address (for action=create)",
                 },
                 "to_address": {
                     "type": "string",
-                    "description": "Filter by recipient email address",
+                    "description": "Filter by recipient email address (for action=create)",
                 },
                 "subject": {
                     "type": "string",
-                    "description": "Filter by subject contains text",
+                    "description": "Filter by subject contains text (for action=create)",
                 },
                 "query": {
                     "type": "string",
-                    "description": "Gmail search query for advanced filtering (e.g., 'has:attachment larger:5M')",
+                    "description": "Gmail search query for advanced filtering, e.g., 'has:attachment larger:5M' (for action=create)",
                 },
                 "has_attachment": {
                     "type": "boolean",
-                    "description": "Filter messages with attachments",
+                    "description": "Filter messages with attachments (for action=create)",
                 },
                 "add_label_ids": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Label IDs to add to matching messages",
+                    "description": "Label IDs to add to matching messages (for action=create)",
                 },
                 "remove_label_ids": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Label IDs to remove (use 'INBOX' to archive)",
+                    "description": "Label IDs to remove from matching messages, use 'INBOX' to archive (for action=create)",
                 },
                 "mark_as_read": {
                     "type": "boolean",
-                    "description": "Mark matching messages as read",
+                    "description": "Mark matching messages as read (for action=create)",
                 },
                 "star": {
                     "type": "boolean",
-                    "description": "Star matching messages",
+                    "description": "Star matching messages (for action=create)",
                 },
                 "forward_to": {
                     "type": "string",
-                    "description": "Forward matching messages to this email address",
+                    "description": "Forward matching messages to this email address (for action=create)",
                 },
             },
-            "required": [],
-        },
-    ),
-    Tool(
-        name="delete_gmail_filter",
-        description="Delete a Gmail filter by ID",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "filter_id": {
-                    "type": "string",
-                    "description": "Filter ID to delete",
-                },
-            },
-            "required": ["filter_id"],
+            "required": ["action"],
         },
     ),
 ]
@@ -144,182 +120,164 @@ TOOLS: list[Tool] = [
 # =============================================================================
 
 
-async def _list_gmail_labels(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
-    """List all Gmail labels."""
-    url = f"{GMAIL_API_BASE}/users/me/labels"
-    response = await svc._make_request("GET", url)
+async def _manage_gmail_labels(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Manage Gmail labels: list, create, or delete."""
+    action = arguments["action"]
 
-    labels = []
-    for label in response.get("labels", []):
-        labels.append(
-            {
-                "id": label.get("id"),
-                "name": label.get("name"),
-                "type": label.get("type"),
-                "message_list_visibility": label.get("messageListVisibility"),
-                "label_list_visibility": label.get("labelListVisibility"),
-            }
+    if action == "list":
+        url = f"{GMAIL_API_BASE}/users/me/labels"
+        response = await svc._make_request("GET", url)
+
+        labels = []
+        for label in response.get("labels", []):
+            labels.append(
+                {
+                    "id": label.get("id"),
+                    "name": label.get("name"),
+                    "type": label.get("type"),
+                    "message_list_visibility": label.get("messageListVisibility"),
+                    "label_list_visibility": label.get("labelListVisibility"),
+                }
+            )
+
+        system_labels = sorted(
+            [lbl for lbl in labels if lbl["type"] == "system"], key=lambda x: x["name"]
+        )
+        user_labels = sorted(
+            [lbl for lbl in labels if lbl["type"] == "user"], key=lambda x: x["name"]
         )
 
-    system_labels = sorted(
-        [lbl for lbl in labels if lbl["type"] == "system"], key=lambda x: x["name"]
-    )
-    user_labels = sorted([lbl for lbl in labels if lbl["type"] == "user"], key=lambda x: x["name"])
+        return {
+            "total": len(labels),
+            "system_labels": system_labels,
+            "user_labels": user_labels,
+        }
 
-    return {
-        "total": len(labels),
-        "system_labels": system_labels,
-        "user_labels": user_labels,
-    }
+    if action == "create":
+        name = arguments["name"]
+        label_list_visibility = arguments.get("label_list_visibility", "labelShow")
+        message_list_visibility = arguments.get("message_list_visibility", "show")
 
+        url = f"{GMAIL_API_BASE}/users/me/labels"
+        label_body = {
+            "name": name,
+            "labelListVisibility": label_list_visibility,
+            "messageListVisibility": message_list_visibility,
+        }
 
-async def _create_gmail_label(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
-    """Create a custom Gmail label."""
-    name = arguments["name"]
-    label_list_visibility = arguments.get("label_list_visibility", "labelShow")
-    message_list_visibility = arguments.get("message_list_visibility", "show")
+        response = await svc._make_request("POST", url, json_data=label_body)
 
-    url = f"{GMAIL_API_BASE}/users/me/labels"
-    label_body = {
-        "name": name,
-        "labelListVisibility": label_list_visibility,
-        "messageListVisibility": message_list_visibility,
-    }
+        return {
+            "status": "label_created",
+            "id": response.get("id"),
+            "name": response.get("name"),
+            "type": response.get("type"),
+            "label_list_visibility": response.get("labelListVisibility"),
+            "message_list_visibility": response.get("messageListVisibility"),
+        }
 
-    response = await svc._make_request("POST", url, json_data=label_body)
-
-    return {
-        "status": "label_created",
-        "id": response.get("id"),
-        "name": response.get("name"),
-        "type": response.get("type"),
-        "label_list_visibility": response.get("labelListVisibility"),
-        "message_list_visibility": response.get("messageListVisibility"),
-    }
-
-
-async def _delete_gmail_label(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
-    """Delete a custom Gmail label."""
+    # action == "delete"
     label_id = arguments["label_id"]
-
     url = f"{GMAIL_API_BASE}/users/me/labels/{label_id}"
     await svc._make_delete_request(url)
 
-    return {
-        "status": "label_deleted",
-        "label_id": label_id,
-    }
+    return {"status": "label_deleted", "label_id": label_id}
 
 
-async def _list_gmail_filters(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
-    """List all Gmail filters."""
-    url = f"{GMAIL_API_BASE}/users/me/settings/filters"
-    response = await svc._make_request("GET", url)
+async def _manage_gmail_filters(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Manage Gmail filters: list, create, or delete."""
+    action = arguments["action"]
 
-    filters = []
-    for f in response.get("filter", []):
-        criteria = f.get("criteria", {})
-        action = f.get("action", {})
+    if action == "list":
+        url = f"{GMAIL_API_BASE}/users/me/settings/filters"
+        response = await svc._make_request("GET", url)
 
-        filters.append(
-            {
-                "id": f.get("id"),
-                "criteria": {
-                    "from": criteria.get("from"),
-                    "to": criteria.get("to"),
-                    "subject": criteria.get("subject"),
-                    "query": criteria.get("query"),
-                    "has_attachment": criteria.get("hasAttachment"),
-                    "negated_query": criteria.get("negatedQuery"),
-                    "size": criteria.get("size"),
-                    "size_comparison": criteria.get("sizeComparison"),
-                },
-                "action": {
-                    "add_label_ids": action.get("addLabelIds", []),
-                    "remove_label_ids": action.get("removeLabelIds", []),
-                    "forward": action.get("forward"),
-                },
-            }
-        )
+        filters = []
+        for f in response.get("filter", []):
+            criteria = f.get("criteria", {})
+            action_data = f.get("action", {})
 
-    return {
-        "total": len(filters),
-        "filters": filters,
-    }
+            filters.append(
+                {
+                    "id": f.get("id"),
+                    "criteria": {
+                        "from": criteria.get("from"),
+                        "to": criteria.get("to"),
+                        "subject": criteria.get("subject"),
+                        "query": criteria.get("query"),
+                        "has_attachment": criteria.get("hasAttachment"),
+                        "negated_query": criteria.get("negatedQuery"),
+                        "size": criteria.get("size"),
+                        "size_comparison": criteria.get("sizeComparison"),
+                    },
+                    "action": {
+                        "add_label_ids": action_data.get("addLabelIds", []),
+                        "remove_label_ids": action_data.get("removeLabelIds", []),
+                        "forward": action_data.get("forward"),
+                    },
+                }
+            )
 
+        return {"total": len(filters), "filters": filters}
 
-async def _create_gmail_filter(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
-    """Create a Gmail filter."""
-    criteria: dict[str, Any] = {}
-    if from_addr := arguments.get("from_address"):
-        criteria["from"] = from_addr
-    if to_addr := arguments.get("to_address"):
-        criteria["to"] = to_addr
-    if subject := arguments.get("subject"):
-        criteria["subject"] = subject
-    if query := arguments.get("query"):
-        criteria["query"] = query
-    if arguments.get("has_attachment"):
-        criteria["hasAttachment"] = True
+    if action == "create":
+        filter_criteria: dict[str, Any] = {}
+        if from_addr := arguments.get("from_address"):
+            filter_criteria["from"] = from_addr
+        if to_addr := arguments.get("to_address"):
+            filter_criteria["to"] = to_addr
+        if subject := arguments.get("subject"):
+            filter_criteria["subject"] = subject
+        if query := arguments.get("query"):
+            filter_criteria["query"] = query
+        if arguments.get("has_attachment"):
+            filter_criteria["hasAttachment"] = True
 
-    action: dict[str, Any] = {}
-    if add_labels := arguments.get("add_label_ids"):
-        action["addLabelIds"] = add_labels
-    if remove_labels := arguments.get("remove_label_ids"):
-        action["removeLabelIds"] = remove_labels
-    if arguments.get("mark_as_read"):
-        action.setdefault("removeLabelIds", []).append("UNREAD")
-    if arguments.get("star"):
-        action.setdefault("addLabelIds", []).append("STARRED")
-    if forward_to := arguments.get("forward_to"):
-        action["forward"] = forward_to
+        filter_action: dict[str, Any] = {}
+        if add_labels := arguments.get("add_label_ids"):
+            filter_action["addLabelIds"] = add_labels
+        if remove_labels := arguments.get("remove_label_ids"):
+            filter_action["removeLabelIds"] = remove_labels
+        if arguments.get("mark_as_read"):
+            filter_action.setdefault("removeLabelIds", []).append("UNREAD")
+        if arguments.get("star"):
+            filter_action.setdefault("addLabelIds", []).append("STARRED")
+        if forward_to := arguments.get("forward_to"):
+            filter_action["forward"] = forward_to
 
-    filter_body = {
-        "criteria": criteria,
-        "action": action,
-    }
+        filter_body = {"criteria": filter_criteria, "action": filter_action}
 
-    url = f"{GMAIL_API_BASE}/users/me/settings/filters"
-    response = await svc._make_request("POST", url, json_data=filter_body)
+        url = f"{GMAIL_API_BASE}/users/me/settings/filters"
+        response = await svc._make_request("POST", url, json_data=filter_body)
 
-    return {
-        "status": "filter_created",
-        "id": response.get("id"),
-        "criteria": {
-            "from": response.get("criteria", {}).get("from"),
-            "to": response.get("criteria", {}).get("to"),
-            "subject": response.get("criteria", {}).get("subject"),
-            "query": response.get("criteria", {}).get("query"),
-            "has_attachment": response.get("criteria", {}).get("hasAttachment"),
-        },
-        "action": {
-            "add_label_ids": response.get("action", {}).get("addLabelIds", []),
-            "remove_label_ids": response.get("action", {}).get("removeLabelIds", []),
-            "forward": response.get("action", {}).get("forward"),
-        },
-    }
+        return {
+            "status": "filter_created",
+            "id": response.get("id"),
+            "criteria": {
+                "from": response.get("criteria", {}).get("from"),
+                "to": response.get("criteria", {}).get("to"),
+                "subject": response.get("criteria", {}).get("subject"),
+                "query": response.get("criteria", {}).get("query"),
+                "has_attachment": response.get("criteria", {}).get("hasAttachment"),
+            },
+            "action": {
+                "add_label_ids": response.get("action", {}).get("addLabelIds", []),
+                "remove_label_ids": response.get("action", {}).get("removeLabelIds", []),
+                "forward": response.get("action", {}).get("forward"),
+            },
+        }
 
-
-async def _delete_gmail_filter(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
-    """Delete a Gmail filter by ID."""
+    # action == "delete"
     filter_id = arguments["filter_id"]
-
     url = f"{GMAIL_API_BASE}/users/me/settings/filters/{filter_id}"
     await svc._make_delete_request(url)
 
-    return {
-        "status": "filter_deleted",
-        "filter_id": filter_id,
-    }
+    return {"status": "filter_deleted", "filter_id": filter_id}
 
 
 def get_handlers(svc: BaseService) -> dict[str, Any]:
     """Return name->callable mapping for Gmail label and filter handlers."""
     return {
-        "list_gmail_labels": lambda args: _list_gmail_labels(svc, args),
-        "create_gmail_label": lambda args: _create_gmail_label(svc, args),
-        "delete_gmail_label": lambda args: _delete_gmail_label(svc, args),
-        "list_gmail_filters": lambda args: _list_gmail_filters(svc, args),
-        "create_gmail_filter": lambda args: _create_gmail_filter(svc, args),
-        "delete_gmail_filter": lambda args: _delete_gmail_filter(svc, args),
+        "manage_gmail_labels": lambda args: _manage_gmail_labels(svc, args),
+        "manage_gmail_filters": lambda args: _manage_gmail_filters(svc, args),
     }

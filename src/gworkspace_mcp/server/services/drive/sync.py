@@ -48,94 +48,64 @@ TOOLS: list[Tool] = [
         },
     ),
     Tool(
-        name="download_drive_folder",
-        description="Download a folder from Google Drive to local filesystem using rclone. Does not delete local files. Requires rclone to be installed.",
+        name="sync_drive",
+        description=(
+            "Download, upload, or sync files between Google Drive and local filesystem using "
+            "rclone. Use dry_run=true to preview changes before applying them. "
+            "Requires rclone to be installed."
+        ),
         inputSchema={
             "type": "object",
             "properties": {
-                "drive_path": {
+                "action": {
                     "type": "string",
-                    "description": "Path in Google Drive to download (e.g., 'Documents/Reports')",
-                },
-                "local_path": {
-                    "type": "string",
-                    "description": "Local destination directory",
-                },
-                "google_docs_format": {
-                    "type": "string",
-                    "description": "Export format for Google Docs/Sheets/Slides",
-                    "enum": ["docx", "pdf", "odt", "txt", "xlsx", "csv", "pptx"],
-                    "default": "docx",
-                },
-                "exclude": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Patterns to exclude (e.g., ['*.tmp', '.git/**'])",
-                },
-                "dry_run": {
-                    "type": "boolean",
-                    "description": "Preview changes without downloading",
-                    "default": False,
-                },
-            },
-            "required": ["drive_path", "local_path"],
-        },
-    ),
-    Tool(
-        name="upload_to_drive",
-        description="Upload a local folder to Google Drive using rclone. Does not delete files in Drive. Requires rclone to be installed.",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "local_path": {
-                    "type": "string",
-                    "description": "Local folder path to upload",
+                    "enum": ["download", "upload", "sync"],
+                    "description": (
+                        "Operation to perform: download (Drive → local), "
+                        "upload (local → Drive), sync (bidirectional with rclone sync)"
+                    ),
                 },
                 "drive_path": {
                     "type": "string",
-                    "description": "Destination path in Google Drive",
+                    "description": "Path in Google Drive (required for download and upload actions)",
                 },
-                "convert_to_google_docs": {
-                    "type": "boolean",
-                    "description": "Convert Office files to Google Docs format",
-                    "default": False,
+                "local_path": {
+                    "type": "string",
+                    "description": "Local filesystem path (required for download and upload actions)",
                 },
-                "exclude": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Patterns to exclude (e.g., ['node_modules/**', '.git/**'])",
-                },
-                "dry_run": {
-                    "type": "boolean",
-                    "description": "Preview changes without uploading",
-                    "default": False,
-                },
-            },
-            "required": ["local_path", "drive_path"],
-        },
-    ),
-    Tool(
-        name="sync_drive_folder",
-        description="Sync files between local filesystem and Google Drive using rclone. Use dry_run=true to preview changes before syncing. Requires rclone to be installed.",
-        inputSchema={
-            "type": "object",
-            "properties": {
                 "source": {
                     "type": "string",
-                    "description": "Source path. Use 'drive:path' for Drive or '/local/path' for local",
+                    "description": (
+                        "Source path for sync action. Use 'drive:path' for Drive "
+                        "or '/local/path' for local"
+                    ),
                 },
                 "destination": {
                     "type": "string",
-                    "description": "Destination path. Use 'drive:path' for Drive or '/local/path' for local",
+                    "description": (
+                        "Destination path for sync action. Use 'drive:path' for Drive "
+                        "or '/local/path' for local"
+                    ),
+                },
+                "google_docs_format": {
+                    "type": "string",
+                    "enum": ["docx", "pdf", "odt", "txt", "xlsx", "csv", "pptx"],
+                    "description": "Export format for Google Docs/Sheets/Slides (download action only)",
+                    "default": "docx",
+                },
+                "convert_to_google_docs": {
+                    "type": "boolean",
+                    "description": "Convert Office files to Google Docs format (upload action only)",
+                    "default": False,
                 },
                 "dry_run": {
                     "type": "boolean",
-                    "description": "Preview changes without making them (RECOMMENDED: start with true)",
+                    "description": "Preview changes without applying them (RECOMMENDED: start with true)",
                     "default": True,
                 },
                 "delete_extra": {
                     "type": "boolean",
-                    "description": "Delete files in destination that don't exist in source (CAUTION: destructive)",
+                    "description": "Delete files in destination not present in source (sync action only, CAUTION: destructive)",
                     "default": False,
                 },
                 "exclude": {
@@ -146,10 +116,10 @@ TOOLS: list[Tool] = [
                 "include": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Patterns to include (if set, only matching files are synced)",
+                    "description": "Patterns to include — only matching files are synced (sync action only)",
                 },
             },
-            "required": ["source", "destination"],
+            "required": ["action"],
         },
     ),
 ]
@@ -163,15 +133,16 @@ TOOLS: list[Tool] = [
 def _get_rclone_manager(svc: BaseService) -> Any:
     """Get an RcloneManager instance using the service's storage."""
     try:
-        from gworkspace_mcp.rclone_manager import RcloneManager, RcloneNotInstalledError
+        from gworkspace_mcp.rclone_manager import (  # type: ignore[import-not-found]
+            RcloneManager,
+            RcloneNotInstalledError,
+        )
     except ImportError as e:
         raise RuntimeError(
             "rclone features are not available. RcloneManager module not found. "
             "The following Drive tools require rclone:\n"
             "- list_drive_contents\n"
-            "- download_drive_folder\n"
-            "- upload_to_drive\n"
-            "- sync_drive_folder"
+            "- sync_drive"
         ) from e
 
     try:
@@ -219,11 +190,17 @@ async def _list_drive_contents(svc: BaseService, arguments: dict[str, Any]) -> d
 
 async def _download_drive_folder(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
     """Download Drive folder to local filesystem."""
-    drive_path = arguments["drive_path"]
-    local_path = arguments["local_path"]
+    drive_path = arguments.get("drive_path")
+    local_path = arguments.get("local_path")
+
+    if not drive_path:
+        return {"error": "drive_path is required for download action"}
+    if not local_path:
+        return {"error": "local_path is required for download action"}
+
     google_docs_format = arguments.get("google_docs_format", "docx")
     exclude = arguments.get("exclude")
-    dry_run = arguments.get("dry_run", False)
+    dry_run = arguments.get("dry_run", True)
 
     manager = _get_rclone_manager(svc)
     try:
@@ -240,11 +217,17 @@ async def _download_drive_folder(svc: BaseService, arguments: dict[str, Any]) ->
 
 async def _upload_to_drive(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
     """Upload local folder to Google Drive."""
-    local_path = arguments["local_path"]
-    drive_path = arguments["drive_path"]
+    local_path = arguments.get("local_path")
+    drive_path = arguments.get("drive_path")
+
+    if not local_path:
+        return {"error": "local_path is required for upload action"}
+    if not drive_path:
+        return {"error": "drive_path is required for upload action"}
+
     convert_to_google_docs = arguments.get("convert_to_google_docs", False)
     exclude = arguments.get("exclude")
-    dry_run = arguments.get("dry_run", False)
+    dry_run = arguments.get("dry_run", True)
 
     manager = _get_rclone_manager(svc)
     try:
@@ -261,8 +244,14 @@ async def _upload_to_drive(svc: BaseService, arguments: dict[str, Any]) -> dict[
 
 async def _sync_drive_folder(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
     """Sync files between local and Drive."""
-    source = arguments["source"]
-    destination = arguments["destination"]
+    source = arguments.get("source")
+    destination = arguments.get("destination")
+
+    if not source:
+        return {"error": "source is required for sync action"}
+    if not destination:
+        return {"error": "destination is required for sync action"}
+
     dry_run = arguments.get("dry_run", True)
     delete_extra = arguments.get("delete_extra", False)
     exclude = arguments.get("exclude")
@@ -282,11 +271,27 @@ async def _sync_drive_folder(svc: BaseService, arguments: dict[str, Any]) -> dic
         manager.cleanup()
 
 
+# =============================================================================
+# Dispatcher
+# =============================================================================
+
+
+async def _sync_drive(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Dispatch to the appropriate sync handler based on action."""
+    action = arguments.get("action")
+    if action == "download":
+        return await _download_drive_folder(svc, arguments)
+    elif action == "upload":
+        return await _upload_to_drive(svc, arguments)
+    elif action == "sync":
+        return await _sync_drive_folder(svc, arguments)
+    else:
+        return {"error": f"Unknown action '{action}'. Must be one of: download, upload, sync."}
+
+
 def get_handlers(svc: BaseService) -> dict[str, Any]:
     """Return name->callable mapping for Drive sync handlers."""
     return {
         "list_drive_contents": lambda args: _list_drive_contents(svc, args),
-        "download_drive_folder": lambda args: _download_drive_folder(svc, args),
-        "upload_to_drive": lambda args: _upload_to_drive(svc, args),
-        "sync_drive_folder": lambda args: _sync_drive_folder(svc, args),
+        "sync_drive": lambda args: _sync_drive(svc, args),
     }

@@ -15,234 +15,173 @@ if TYPE_CHECKING:
 
 TOOLS: list[Tool] = [
     Tool(
-        name="add_text_box",
-        description="Add a text box to a slide at the specified position.",
+        name="add_slide_content",
+        description=(
+            "Add content to a Google Slides slide. "
+            "type='text_box': add a plain text box (presentation_id, slide_id, text required). "
+            "type='formatted_text_box': add a text box with font formatting (presentation_id, slide_id, text required; optional font_size, bold, italic, font_color). "
+            "type='image': add an image from URL (presentation_id, slide_id, image_url required). "
+            "type='bulleted_list': create a new slide with a bulleted list (presentation_id, slide_index, bullet_points required; optional title)."
+        ),
         inputSchema={
             "type": "object",
             "properties": {
+                "type": {
+                    "type": "string",
+                    "description": "Content type to add: 'text_box', 'formatted_text_box', 'image', 'bulleted_list'",
+                    "enum": ["text_box", "formatted_text_box", "image", "bulleted_list"],
+                },
                 "presentation_id": {
                     "type": "string",
-                    "description": "Google Slides presentation ID",
+                    "description": "Google Slides presentation ID (required for all types)",
                 },
                 "slide_id": {
                     "type": "string",
-                    "description": "Object ID of the slide to add the text box to",
+                    "description": "Object ID of the target slide (required for text_box, formatted_text_box, image)",
+                },
+                "slide_index": {
+                    "type": "integer",
+                    "description": "Zero-based position to insert the new slide (required for bulleted_list)",
                 },
                 "text": {
                     "type": "string",
-                    "description": "Text content for the text box",
-                },
-                "x_pt": {
-                    "type": "number",
-                    "description": "X position in points from left edge (default: 100)",
-                    "default": 100,
-                },
-                "y_pt": {
-                    "type": "number",
-                    "description": "Y position in points from top edge (default: 100)",
-                    "default": 100,
-                },
-                "width_pt": {
-                    "type": "number",
-                    "description": "Width of text box in points (default: 300)",
-                    "default": 300,
-                },
-                "height_pt": {
-                    "type": "number",
-                    "description": "Height of text box in points (default: 50)",
-                    "default": 50,
-                },
-            },
-            "required": ["presentation_id", "slide_id", "text"],
-        },
-    ),
-    Tool(
-        name="add_image",
-        description="Add an image to a slide from a URL.",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "presentation_id": {
-                    "type": "string",
-                    "description": "Google Slides presentation ID",
-                },
-                "slide_id": {
-                    "type": "string",
-                    "description": "Object ID of the slide to add the image to",
+                    "description": "Text content (required for text_box, formatted_text_box, bulleted_list)",
                 },
                 "image_url": {
                     "type": "string",
-                    "description": "URL of the image to insert (must be publicly accessible)",
+                    "description": "URL of the image to insert, must be publicly accessible (required for image)",
                 },
                 "x_pt": {
                     "type": "number",
-                    "description": "X position in points from left edge (default: 100)",
+                    "description": "X position in points from left edge (default: 100; text_box, formatted_text_box, image)",
                     "default": 100,
                 },
                 "y_pt": {
                     "type": "number",
-                    "description": "Y position in points from top edge (default: 100)",
+                    "description": "Y position in points from top edge (default: 100; text_box, formatted_text_box, image)",
                     "default": 100,
                 },
                 "width_pt": {
                     "type": "number",
-                    "description": "Width of image in points (default: 300)",
+                    "description": "Width in points (default: 300; text_box, formatted_text_box, image)",
                     "default": 300,
                 },
                 "height_pt": {
                     "type": "number",
-                    "description": "Height of image in points (default: 200)",
-                    "default": 200,
-                },
-            },
-            "required": ["presentation_id", "slide_id", "image_url"],
-        },
-    ),
-    Tool(
-        name="format_text_in_slide",
-        description="Apply text formatting to specific text ranges in a Google Slides presentation.",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "presentation_id": {
-                    "type": "string",
-                    "description": "Google Slides presentation ID",
-                },
-                "slide_id": {
-                    "type": "string",
-                    "description": "Slide object ID",
-                },
-                "shape_id": {
-                    "type": "string",
-                    "description": "Text box or shape object ID containing the text",
-                },
-                "start_index": {
-                    "type": "integer",
-                    "description": "Start character index for formatting",
-                },
-                "end_index": {
-                    "type": "integer",
-                    "description": "End character index for formatting",
-                },
-                "bold": {
-                    "type": "boolean",
-                    "description": "Apply bold formatting",
-                },
-                "italic": {
-                    "type": "boolean",
-                    "description": "Apply italic formatting",
+                    "description": "Height in points (default: 50 for text_box, 100 for formatted_text_box, 200 for image)",
                 },
                 "font_size": {
                     "type": "number",
-                    "description": "Font size in points",
-                },
-                "font_color": {
-                    "type": "object",
-                    "description": "Font color in RGB format",
-                    "properties": {
-                        "red": {"type": "number", "minimum": 0, "maximum": 1},
-                        "green": {"type": "number", "minimum": 0, "maximum": 1},
-                        "blue": {"type": "number", "minimum": 0, "maximum": 1},
-                    },
-                },
-            },
-            "required": [
-                "presentation_id",
-                "slide_id",
-                "shape_id",
-                "start_index",
-                "end_index",
-            ],
-        },
-    ),
-    Tool(
-        name="add_formatted_text_box",
-        description="Add a text box with custom formatting to a Google Slides presentation.",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "presentation_id": {
-                    "type": "string",
-                    "description": "Google Slides presentation ID",
-                },
-                "slide_id": {
-                    "type": "string",
-                    "description": "Slide object ID where to add the text box",
-                },
-                "text": {
-                    "type": "string",
-                    "description": "Text content for the text box",
-                },
-                "x_pt": {
-                    "type": "number",
-                    "description": "X position in points (default: 100)",
-                    "default": 100,
-                },
-                "y_pt": {
-                    "type": "number",
-                    "description": "Y position in points (default: 100)",
-                    "default": 100,
-                },
-                "width_pt": {
-                    "type": "number",
-                    "description": "Width in points (default: 300)",
-                    "default": 300,
-                },
-                "height_pt": {
-                    "type": "number",
-                    "description": "Height in points (default: 100)",
-                    "default": 100,
-                },
-                "font_size": {
-                    "type": "number",
-                    "description": "Font size in points (default: 14)",
+                    "description": "Font size in points (default: 14; formatted_text_box only)",
                     "default": 14,
                 },
                 "bold": {
                     "type": "boolean",
-                    "description": "Apply bold formatting",
+                    "description": "Bold formatting (formatted_text_box only)",
                     "default": False,
                 },
                 "italic": {
                     "type": "boolean",
-                    "description": "Apply italic formatting",
+                    "description": "Italic formatting (formatted_text_box only)",
                     "default": False,
                 },
                 "font_color": {
                     "type": "object",
-                    "description": "Font color in RGB format",
+                    "description": "Font color in RGB format with keys red, green, blue (0–1 each; formatted_text_box only)",
                     "properties": {
                         "red": {"type": "number", "minimum": 0, "maximum": 1},
                         "green": {"type": "number", "minimum": 0, "maximum": 1},
                         "blue": {"type": "number", "minimum": 0, "maximum": 1},
                     },
                 },
+                "title": {
+                    "type": "string",
+                    "description": "Slide title (optional; bulleted_list only)",
+                },
+                "bullet_points": {
+                    "type": "array",
+                    "description": "Array of bullet point strings (required for bulleted_list)",
+                    "items": {"type": "string"},
+                },
+                "title_font_size": {
+                    "type": "number",
+                    "description": "Title font size in points (default: 24; bulleted_list only)",
+                    "default": 24,
+                },
+                "bullet_font_size": {
+                    "type": "number",
+                    "description": "Bullet point font size in points (default: 16; bulleted_list only)",
+                    "default": 16,
+                },
             },
-            "required": ["presentation_id", "slide_id", "text"],
+            "required": ["type", "presentation_id"],
         },
     ),
     Tool(
-        name="set_slide_background",
-        description="Set the background color or image for a slide in a Google Slides presentation.",
+        name="format_slide",
+        description=(
+            "Format elements in a Google Slides slide. "
+            "action='format_text': apply text styling to a range in a shape (presentation_id, slide_id, shape_id, start_index, end_index required; optional bold, italic, font_size, font_color). "
+            "action='set_background': set slide background color or image (presentation_id, slide_id, background_type required; color required for COLOR, image_url required for IMAGE). "
+            "action='apply_layout': apply a predefined layout to a slide (presentation_id, slide_id, layout_type required)."
+        ),
         inputSchema={
             "type": "object",
             "properties": {
+                "action": {
+                    "type": "string",
+                    "description": "Formatting action: 'format_text', 'set_background', 'apply_layout'",
+                    "enum": ["format_text", "set_background", "apply_layout"],
+                },
                 "presentation_id": {
                     "type": "string",
-                    "description": "Google Slides presentation ID",
+                    "description": "Google Slides presentation ID (required for all actions)",
                 },
                 "slide_id": {
                     "type": "string",
-                    "description": "Slide object ID",
+                    "description": "Object ID of the slide (required for all actions)",
+                },
+                "shape_id": {
+                    "type": "string",
+                    "description": "Object ID of the text shape (required for format_text)",
+                },
+                "start_index": {
+                    "type": "integer",
+                    "description": "Start character index for formatting range (required for format_text)",
+                },
+                "end_index": {
+                    "type": "integer",
+                    "description": "End character index for formatting range (required for format_text)",
+                },
+                "bold": {
+                    "type": "boolean",
+                    "description": "Bold formatting (format_text only)",
+                },
+                "italic": {
+                    "type": "boolean",
+                    "description": "Italic formatting (format_text only)",
+                },
+                "font_size": {
+                    "type": "number",
+                    "description": "Font size in points (format_text only)",
+                },
+                "font_color": {
+                    "type": "object",
+                    "description": "Font color in RGB format with keys red, green, blue (0–1 each; format_text only)",
+                    "properties": {
+                        "red": {"type": "number", "minimum": 0, "maximum": 1},
+                        "green": {"type": "number", "minimum": 0, "maximum": 1},
+                        "blue": {"type": "number", "minimum": 0, "maximum": 1},
+                    },
                 },
                 "background_type": {
                     "type": "string",
-                    "description": "Type of background to set",
+                    "description": "Background type (required for set_background): 'COLOR' or 'IMAGE'",
                     "enum": ["COLOR", "IMAGE"],
                 },
                 "color": {
                     "type": "object",
-                    "description": "Background color in RGB format (required if background_type is COLOR)",
+                    "description": "Background color in RGB format (required when background_type is COLOR)",
                     "properties": {
                         "red": {"type": "number", "minimum": 0, "maximum": 1},
                         "green": {"type": "number", "minimum": 0, "maximum": 1},
@@ -251,66 +190,11 @@ TOOLS: list[Tool] = [
                 },
                 "image_url": {
                     "type": "string",
-                    "description": "URL of background image (required if background_type is IMAGE)",
-                },
-            },
-            "required": ["presentation_id", "slide_id", "background_type"],
-        },
-    ),
-    Tool(
-        name="create_bulleted_list_slide",
-        description="Create a slide with a bulleted list and optional title in a Google Slides presentation.",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "presentation_id": {
-                    "type": "string",
-                    "description": "Google Slides presentation ID",
-                },
-                "slide_index": {
-                    "type": "integer",
-                    "description": "Position to insert the new slide (0-based)",
-                },
-                "title": {
-                    "type": "string",
-                    "description": "Title for the slide (optional)",
-                },
-                "bullet_points": {
-                    "type": "array",
-                    "description": "Array of bullet point text items",
-                    "items": {"type": "string"},
-                },
-                "title_font_size": {
-                    "type": "number",
-                    "description": "Title font size in points (default: 24)",
-                    "default": 24,
-                },
-                "bullet_font_size": {
-                    "type": "number",
-                    "description": "Bullet point font size in points (default: 16)",
-                    "default": 16,
-                },
-            },
-            "required": ["presentation_id", "slide_index", "bullet_points"],
-        },
-    ),
-    Tool(
-        name="apply_slide_layout",
-        description="Apply a predefined layout to a slide in a Google Slides presentation.",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "presentation_id": {
-                    "type": "string",
-                    "description": "Google Slides presentation ID",
-                },
-                "slide_id": {
-                    "type": "string",
-                    "description": "Slide object ID",
+                    "description": "URL of background image (required when background_type is IMAGE)",
                 },
                 "layout_type": {
                     "type": "string",
-                    "description": "Type of layout to apply",
+                    "description": "Predefined layout to apply (required for apply_layout)",
                     "enum": [
                         "BLANK",
                         "CAPTION_ONLY",
@@ -326,7 +210,7 @@ TOOLS: list[Tool] = [
                     ],
                 },
             },
-            "required": ["presentation_id", "slide_id", "layout_type"],
+            "required": ["action", "presentation_id", "slide_id"],
         },
     ),
 ]
@@ -785,14 +669,73 @@ async def _apply_slide_layout(svc: BaseService, arguments: dict[str, Any]) -> di
     }
 
 
+# =============================================================================
+# Dispatcher functions
+# =============================================================================
+
+
+async def _add_slide_content(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Dispatch add_slide_content type to appropriate handler."""
+    content_type = arguments.get("type")
+    if content_type == "text_box":
+        if "slide_id" not in arguments:
+            raise ValueError("slide_id is required for type='text_box'")
+        if "text" not in arguments:
+            raise ValueError("text is required for type='text_box'")
+        return await _add_text_box(svc, arguments)
+    elif content_type == "formatted_text_box":
+        if "slide_id" not in arguments:
+            raise ValueError("slide_id is required for type='formatted_text_box'")
+        if "text" not in arguments:
+            raise ValueError("text is required for type='formatted_text_box'")
+        return await _add_formatted_text_box(svc, arguments)
+    elif content_type == "image":
+        if "slide_id" not in arguments:
+            raise ValueError("slide_id is required for type='image'")
+        if "image_url" not in arguments:
+            raise ValueError("image_url is required for type='image'")
+        return await _add_image(svc, arguments)
+    elif content_type == "bulleted_list":
+        if "slide_index" not in arguments:
+            raise ValueError("slide_index is required for type='bulleted_list'")
+        if "bullet_points" not in arguments:
+            raise ValueError("bullet_points is required for type='bulleted_list'")
+        return await _create_bulleted_list_slide(svc, arguments)
+    else:
+        raise ValueError(
+            f"Unknown type: {content_type!r}. "
+            "Use 'text_box', 'formatted_text_box', 'image', or 'bulleted_list'."
+        )
+
+
+async def _format_slide(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Dispatch format_slide action to appropriate handler."""
+    action = arguments.get("action")
+    if action == "format_text":
+        if "shape_id" not in arguments:
+            raise ValueError("shape_id is required for action='format_text'")
+        if "start_index" not in arguments:
+            raise ValueError("start_index is required for action='format_text'")
+        if "end_index" not in arguments:
+            raise ValueError("end_index is required for action='format_text'")
+        return await _format_text_in_slide(svc, arguments)
+    elif action == "set_background":
+        if "background_type" not in arguments:
+            raise ValueError("background_type is required for action='set_background'")
+        return await _set_slide_background(svc, arguments)
+    elif action == "apply_layout":
+        if "layout_type" not in arguments:
+            raise ValueError("layout_type is required for action='apply_layout'")
+        return await _apply_slide_layout(svc, arguments)
+    else:
+        raise ValueError(
+            f"Unknown action: {action!r}. Use 'format_text', 'set_background', or 'apply_layout'."
+        )
+
+
 def get_handlers(svc: BaseService) -> dict[str, Any]:
     """Return name->callable mapping for Slides content handlers."""
     return {
-        "add_text_box": lambda args: _add_text_box(svc, args),
-        "add_image": lambda args: _add_image(svc, args),
-        "format_text_in_slide": lambda args: _format_text_in_slide(svc, args),
-        "add_formatted_text_box": lambda args: _add_formatted_text_box(svc, args),
-        "set_slide_background": lambda args: _set_slide_background(svc, args),
-        "create_bulleted_list_slide": lambda args: _create_bulleted_list_slide(svc, args),
-        "apply_slide_layout": lambda args: _apply_slide_layout(svc, args),
+        "add_slide_content": lambda args: _add_slide_content(svc, args),
+        "format_slide": lambda args: _format_slide(svc, args),
     }

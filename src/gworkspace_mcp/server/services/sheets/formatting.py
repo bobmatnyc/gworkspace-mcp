@@ -15,11 +15,22 @@ if TYPE_CHECKING:
 
 TOOLS: list[Tool] = [
     Tool(
-        name="format_cells",
-        description="Apply formatting to cells in a Google Spreadsheet including background color, font color, bold, italic, and borders.",
+        name="format_sheet",
+        description=(
+            "Apply formatting to cells in a Google Spreadsheet. "
+            "Actions: format_cells (background color, font color, bold, italic, borders), "
+            "set_number_format (currency, percentage, date, etc.), "
+            "merge (merge or unmerge a cell range), "
+            "set_column_width (set or auto-resize column widths)."
+        ),
         inputSchema={
             "type": "object",
             "properties": {
+                "action": {
+                    "type": "string",
+                    "description": "Formatting action to perform",
+                    "enum": ["format_cells", "set_number_format", "merge", "set_column_width"],
+                },
                 "spreadsheet_id": {
                     "type": "string",
                     "description": "Google Spreadsheet ID (from the URL)",
@@ -30,11 +41,11 @@ TOOLS: list[Tool] = [
                 },
                 "range": {
                     "type": "string",
-                    "description": "Cell range in A1 notation (e.g., 'A1:C3')",
+                    "description": "Cell range in A1 notation (e.g., 'A1:C3'). Required for format_cells, set_number_format, and merge.",
                 },
                 "background_color": {
                     "type": "object",
-                    "description": "Background color in RGB format",
+                    "description": "Background color in RGB format (format_cells only)",
                     "properties": {
                         "red": {"type": "number", "minimum": 0, "maximum": 1},
                         "green": {"type": "number", "minimum": 0, "maximum": 1},
@@ -43,7 +54,7 @@ TOOLS: list[Tool] = [
                 },
                 "font_color": {
                     "type": "object",
-                    "description": "Font color in RGB format",
+                    "description": "Font color in RGB format (format_cells only)",
                     "properties": {
                         "red": {"type": "number", "minimum": 0, "maximum": 1},
                         "green": {"type": "number", "minimum": 0, "maximum": 1},
@@ -52,15 +63,15 @@ TOOLS: list[Tool] = [
                 },
                 "bold": {
                     "type": "boolean",
-                    "description": "Apply bold formatting",
+                    "description": "Apply bold formatting (format_cells only)",
                 },
                 "italic": {
                     "type": "boolean",
-                    "description": "Apply italic formatting",
+                    "description": "Apply italic formatting (format_cells only)",
                 },
                 "borders": {
                     "type": "object",
-                    "description": "Border configuration",
+                    "description": "Border configuration (format_cells only)",
                     "properties": {
                         "style": {
                             "type": "string",
@@ -77,118 +88,44 @@ TOOLS: list[Tool] = [
                         },
                     },
                 },
-            },
-            "required": ["spreadsheet_id", "sheet_name", "range"],
-        },
-    ),
-    Tool(
-        name="set_number_format",
-        description="Set number formatting for cells in a Google Spreadsheet (currency, percentage, date formats).",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "spreadsheet_id": {
-                    "type": "string",
-                    "description": "Google Spreadsheet ID (from the URL)",
-                },
-                "sheet_name": {
-                    "type": "string",
-                    "description": "Name of the sheet/tab (e.g., 'Sheet1')",
-                },
-                "range": {
-                    "type": "string",
-                    "description": "Cell range in A1 notation (e.g., 'A1:C3')",
-                },
                 "format_type": {
                     "type": "string",
-                    "description": "Type of number format",
-                    "enum": [
-                        "CURRENCY",
-                        "PERCENTAGE",
-                        "DATE",
-                        "TIME",
-                        "NUMBER",
-                        "TEXT",
-                    ],
+                    "description": "Type of number format (set_number_format only)",
+                    "enum": ["CURRENCY", "PERCENTAGE", "DATE", "TIME", "NUMBER", "TEXT"],
                 },
                 "pattern": {
                     "type": "string",
-                    "description": "Custom format pattern (optional, e.g., '$#,##0.00', '0.00%', 'yyyy-mm-dd')",
-                },
-            },
-            "required": ["spreadsheet_id", "sheet_name", "range", "format_type"],
-        },
-    ),
-    Tool(
-        name="merge_cells",
-        description="Merge or unmerge cells in a Google Spreadsheet range.",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "spreadsheet_id": {
-                    "type": "string",
-                    "description": "Google Spreadsheet ID (from the URL)",
-                },
-                "sheet_name": {
-                    "type": "string",
-                    "description": "Name of the sheet/tab (e.g., 'Sheet1')",
-                },
-                "range": {
-                    "type": "string",
-                    "description": "Cell range in A1 notation to merge (e.g., 'A1:C3')",
+                    "description": "Custom format pattern (set_number_format only, e.g., '$#,##0.00', '0.00%', 'yyyy-mm-dd')",
                 },
                 "merge_type": {
                     "type": "string",
-                    "description": "Type of merge operation",
+                    "description": "Type of merge operation (merge only)",
                     "enum": ["MERGE_ALL", "MERGE_COLUMNS", "MERGE_ROWS"],
                 },
                 "unmerge": {
                     "type": "boolean",
-                    "description": "Whether to unmerge cells instead of merging",
+                    "description": "Whether to unmerge cells instead of merging (merge only)",
                     "default": False,
-                },
-            },
-            "required": ["spreadsheet_id", "sheet_name", "range"],
-        },
-    ),
-    Tool(
-        name="set_column_width",
-        description="Set column width in a Google Spreadsheet or auto-resize columns to fit content.",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "spreadsheet_id": {
-                    "type": "string",
-                    "description": "Google Spreadsheet ID (from the URL)",
-                },
-                "sheet_name": {
-                    "type": "string",
-                    "description": "Name of the sheet/tab (e.g., 'Sheet1')",
                 },
                 "start_column_index": {
                     "type": "integer",
-                    "description": "Start column index (0-based, where A=0, B=1, etc.)",
+                    "description": "Start column index, 0-based where A=0 (set_column_width only)",
                 },
                 "end_column_index": {
                     "type": "integer",
-                    "description": "End column index (0-based, exclusive)",
+                    "description": "End column index, 0-based exclusive (set_column_width only)",
                 },
                 "width_pixels": {
                     "type": "integer",
-                    "description": "Column width in pixels (optional if auto_resize is true)",
+                    "description": "Column width in pixels (set_column_width only; optional when auto_resize is true)",
                 },
                 "auto_resize": {
                     "type": "boolean",
-                    "description": "Whether to auto-resize columns to fit content",
+                    "description": "Auto-resize columns to fit content (set_column_width only)",
                     "default": False,
                 },
             },
-            "required": [
-                "spreadsheet_id",
-                "sheet_name",
-                "start_column_index",
-                "end_column_index",
-            ],
+            "required": ["action", "spreadsheet_id", "sheet_name"],
         },
     ),
     Tool(
@@ -515,12 +452,26 @@ async def _create_chart(svc: BaseService, arguments: dict[str, Any]) -> dict[str
     }
 
 
+async def _format_sheet(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Dispatch format_sheet actions to the appropriate handler."""
+    action = arguments.get("action")
+    if action == "format_cells":
+        return await _format_cells(svc, arguments)
+    elif action == "set_number_format":
+        return await _set_number_format(svc, arguments)
+    elif action == "merge":
+        return await _merge_cells(svc, arguments)
+    elif action == "set_column_width":
+        return await _set_column_width(svc, arguments)
+    else:
+        raise ValueError(
+            f"Unknown action '{action}'. Must be one of: format_cells, set_number_format, merge, set_column_width"
+        )
+
+
 def get_handlers(svc: BaseService) -> dict[str, Any]:
     """Return name->callable mapping for Sheets formatting handlers."""
     return {
-        "format_cells": lambda args: _format_cells(svc, args),
-        "set_number_format": lambda args: _set_number_format(svc, args),
-        "merge_cells": lambda args: _merge_cells(svc, args),
-        "set_column_width": lambda args: _set_column_width(svc, args),
+        "format_sheet": lambda args: _format_sheet(svc, args),
         "create_chart": lambda args: _create_chart(svc, args),
     }

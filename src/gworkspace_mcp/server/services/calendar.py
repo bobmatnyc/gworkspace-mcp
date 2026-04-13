@@ -13,23 +13,25 @@ if TYPE_CHECKING:
 
 TOOLS: list[Tool] = [
     Tool(
-        name="list_calendars",
-        description="List all calendars accessible by the authenticated user",
-        inputSchema={
-            "type": "object",
-            "properties": {},
-            "required": [],
-        },
-    ),
-    Tool(
-        name="create_calendar",
-        description="Create a new calendar",
+        name="manage_calendars",
+        description=(
+            "Manage Google Calendars. Actions: list (all calendars), create, update, delete."
+        ),
         inputSchema={
             "type": "object",
             "properties": {
+                "action": {
+                    "type": "string",
+                    "description": "Operation to perform",
+                    "enum": ["list", "create", "update", "delete"],
+                },
+                "calendar_id": {
+                    "type": "string",
+                    "description": "Calendar ID (required for update, delete)",
+                },
                 "summary": {
                     "type": "string",
-                    "description": "Calendar title/name",
+                    "description": "Calendar title/name (required for create; optional for update)",
                 },
                 "description": {
                     "type": "string",
@@ -40,192 +42,81 @@ TOOLS: list[Tool] = [
                     "description": "Calendar timezone (e.g., 'America/New_York', optional)",
                 },
             },
-            "required": ["summary"],
+            "required": ["action"],
         },
     ),
     Tool(
-        name="update_calendar",
-        description="Update an existing calendar's properties",
+        name="manage_events",
+        description=(
+            "Manage Google Calendar events. "
+            "Actions: list (events in a calendar), create, update, delete."
+        ),
         inputSchema={
             "type": "object",
             "properties": {
-                "calendar_id": {
+                "action": {
                     "type": "string",
-                    "description": "Calendar ID to update",
+                    "description": "Operation to perform",
+                    "enum": ["list", "create", "update", "delete"],
                 },
-                "summary": {
-                    "type": "string",
-                    "description": "New calendar title/name (optional)",
-                },
-                "description": {
-                    "type": "string",
-                    "description": "New calendar description (optional)",
-                },
-                "timezone": {
-                    "type": "string",
-                    "description": "New calendar timezone (optional)",
-                },
-            },
-            "required": ["calendar_id"],
-        },
-    ),
-    Tool(
-        name="delete_calendar",
-        description="Delete a calendar (cannot delete primary calendar)",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "calendar_id": {
-                    "type": "string",
-                    "description": "Calendar ID to delete",
-                },
-            },
-            "required": ["calendar_id"],
-        },
-    ),
-    Tool(
-        name="get_events",
-        description="Get events from a calendar within a time range",
-        inputSchema={
-            "type": "object",
-            "properties": {
                 "calendar_id": {
                     "type": "string",
                     "description": "Calendar ID (default: 'primary')",
                     "default": "primary",
+                },
+                "event_id": {
+                    "type": "string",
+                    "description": "Event ID (required for update, delete)",
+                },
+                "summary": {
+                    "type": "string",
+                    "description": "Event title (required for create; optional for update)",
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Event description (optional)",
+                },
+                "start_time": {
+                    "type": "string",
+                    "description": "Start time in RFC3339 format, e.g. '2024-01-15T10:00:00Z' (required for create; optional for update)",
+                },
+                "end_time": {
+                    "type": "string",
+                    "description": "End time in RFC3339 format, e.g. '2024-01-15T11:00:00Z' (required for create; optional for update)",
+                },
+                "attendees": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of attendee email addresses (optional)",
+                },
+                "location": {
+                    "type": "string",
+                    "description": "Event location (optional)",
+                },
+                "timezone": {
+                    "type": "string",
+                    "description": "Timezone for the event, e.g. 'America/New_York' (create only, optional)",
+                },
+                "recurrence": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "RRULE strings for recurring events, e.g. ['RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR'] (optional)",
                 },
                 "time_min": {
                     "type": "string",
-                    "description": "Start time in RFC3339 format (e.g., '2024-01-01T00:00:00Z')",
+                    "description": "Start time filter in RFC3339 format (list only, optional)",
                 },
                 "time_max": {
                     "type": "string",
-                    "description": "End time in RFC3339 format",
+                    "description": "End time filter in RFC3339 format (list only, optional)",
                 },
                 "max_results": {
                     "type": "integer",
-                    "description": "Maximum number of events to return (default: 10)",
+                    "description": "Maximum number of events to return (list only, default: 10)",
                     "default": 10,
                 },
             },
-            "required": [],
-        },
-    ),
-    Tool(
-        name="create_event",
-        description="Create a new calendar event",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "calendar_id": {
-                    "type": "string",
-                    "description": "Calendar ID (default: 'primary')",
-                    "default": "primary",
-                },
-                "summary": {
-                    "type": "string",
-                    "description": "Event title",
-                },
-                "description": {
-                    "type": "string",
-                    "description": "Event description",
-                },
-                "start_time": {
-                    "type": "string",
-                    "description": "Start time in RFC3339 format (e.g., '2024-01-15T10:00:00Z')",
-                },
-                "end_time": {
-                    "type": "string",
-                    "description": "End time in RFC3339 format (e.g., '2024-01-15T11:00:00Z')",
-                },
-                "attendees": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "List of attendee email addresses",
-                },
-                "location": {
-                    "type": "string",
-                    "description": "Event location",
-                },
-                "timezone": {
-                    "type": "string",
-                    "description": "Timezone for the event (e.g., 'America/New_York')",
-                },
-                "recurrence": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "RRULE strings for recurring events (e.g., ['RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR'])",
-                },
-            },
-            "required": ["summary", "start_time", "end_time"],
-        },
-    ),
-    Tool(
-        name="update_event",
-        description="Update an existing calendar event",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "calendar_id": {
-                    "type": "string",
-                    "description": "Calendar ID (default: 'primary')",
-                    "default": "primary",
-                },
-                "event_id": {
-                    "type": "string",
-                    "description": "Event ID to update",
-                },
-                "summary": {
-                    "type": "string",
-                    "description": "New event title",
-                },
-                "description": {
-                    "type": "string",
-                    "description": "New event description",
-                },
-                "start_time": {
-                    "type": "string",
-                    "description": "New start time in RFC3339 format",
-                },
-                "end_time": {
-                    "type": "string",
-                    "description": "New end time in RFC3339 format",
-                },
-                "attendees": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "New list of attendee email addresses",
-                },
-                "location": {
-                    "type": "string",
-                    "description": "New event location",
-                },
-                "recurrence": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "RRULE strings for recurring events (e.g., ['RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR'])",
-                },
-            },
-            "required": ["event_id"],
-        },
-    ),
-    Tool(
-        name="delete_event",
-        description="Delete a calendar event",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "calendar_id": {
-                    "type": "string",
-                    "description": "Calendar ID (default: 'primary')",
-                    "default": "primary",
-                },
-                "event_id": {
-                    "type": "string",
-                    "description": "Event ID to delete",
-                },
-            },
-            "required": ["event_id"],
+            "required": ["action"],
         },
     ),
     Tool(
@@ -258,7 +149,7 @@ TOOLS: list[Tool] = [
 ]
 
 
-async def _list_calendars(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
+async def _list_calendars(svc: BaseService, _: dict[str, Any]) -> dict[str, Any]:
     """List all calendars accessible by the user."""
     url = f"{CALENDAR_API_BASE}/users/me/calendarList"
     response = await svc._make_request("GET", url)
@@ -499,16 +390,61 @@ async def _query_free_busy(svc: BaseService, arguments: dict[str, Any]) -> dict[
     }
 
 
+async def _manage_calendars(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Dispatch manage_calendars actions."""
+    action = arguments["action"]
+    if action == "list":
+        return await _list_calendars(svc, arguments)
+    if action == "create":
+        if "summary" not in arguments:
+            raise ValueError("summary is required for action 'create'")
+        return await _create_calendar(svc, arguments)
+    if action == "update":
+        if "calendar_id" not in arguments:
+            raise ValueError("calendar_id is required for action 'update'")
+        return await _update_calendar(svc, arguments)
+    if action == "delete":
+        if "calendar_id" not in arguments:
+            raise ValueError("calendar_id is required for action 'delete'")
+        return await _delete_calendar(svc, arguments)
+    raise ValueError(f"Unknown action '{action}' for manage_calendars")
+
+
+async def _manage_events(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Dispatch manage_events actions."""
+    action = arguments["action"]
+    if action == "list":
+        return await _get_events(svc, arguments)
+    if action == "create":
+        if "summary" not in arguments:
+            raise ValueError("summary is required for action 'create'")
+        if "start_time" not in arguments:
+            raise ValueError("start_time is required for action 'create'")
+        if "end_time" not in arguments:
+            raise ValueError("end_time is required for action 'create'")
+        return await _create_event(svc, arguments)
+    if action == "update":
+        if "event_id" not in arguments:
+            raise ValueError("event_id is required for action 'update'")
+        return await _update_event(svc, arguments)
+    if action == "delete":
+        if "event_id" not in arguments:
+            raise ValueError("event_id is required for action 'delete'")
+        return await _delete_event(svc, arguments)
+    raise ValueError(f"Unknown action '{action}' for manage_events")
+
+
 def get_handlers(svc: BaseService) -> dict[str, Any]:
-    """Return name->callable mapping for all calendar tool handlers."""
+    """Return name->callable mapping for all calendar tool handlers.
+
+    Args:
+        svc: BaseService instance providing HTTP helpers.
+
+    Returns:
+        Dictionary mapping tool names to async callables.
+    """
     return {
-        "list_calendars": lambda args: _list_calendars(svc, args),
-        "create_calendar": lambda args: _create_calendar(svc, args),
-        "update_calendar": lambda args: _update_calendar(svc, args),
-        "delete_calendar": lambda args: _delete_calendar(svc, args),
-        "get_events": lambda args: _get_events(svc, args),
-        "create_event": lambda args: _create_event(svc, args),
-        "update_event": lambda args: _update_event(svc, args),
-        "delete_event": lambda args: _delete_event(svc, args),
+        "manage_calendars": lambda args: _manage_calendars(svc, args),
+        "manage_events": lambda args: _manage_events(svc, args),
         "query_free_busy": lambda args: _query_free_busy(svc, args),
     }

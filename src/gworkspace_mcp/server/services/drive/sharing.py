@@ -13,120 +13,84 @@ if TYPE_CHECKING:
 
 TOOLS: list[Tool] = [
     Tool(
-        name="list_file_permissions",
-        description="List all permissions (who has access) for a Google Drive file or folder",
+        name="manage_file_permissions",
+        description=(
+            "List, share, update, remove, or transfer ownership of permissions on a "
+            "Google Drive file or folder. Use action='list' to see who has access, "
+            "'share' to grant access, 'update' to change a permission's role, "
+            "'remove' to revoke access, or 'transfer' to change ownership."
+        ),
         inputSchema={
             "type": "object",
             "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["list", "share", "update", "remove", "transfer"],
+                    "description": (
+                        "Operation to perform: list (get all permissions), "
+                        "share (grant access), update (change role), "
+                        "remove (revoke access), transfer (change owner)"
+                    ),
+                },
                 "file_id": {
                     "type": "string",
                     "description": "ID of the file or folder",
                 },
-            },
-            "required": ["file_id"],
-        },
-    ),
-    Tool(
-        name="share_file",
-        description="Share a Drive file or folder with a user, group, domain, or make it public (anyone with link)",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "file_id": {
+                "permission_id": {
                     "type": "string",
-                    "description": "ID of the file or folder to share",
+                    "description": "Permission ID (required for update and remove actions; from list action)",
                 },
                 "type": {
                     "type": "string",
                     "enum": ["user", "group", "domain", "anyone"],
-                    "description": "Type of grantee: user (individual), group (Google Group), domain (all users in domain), anyone (public link)",
+                    "description": (
+                        "Type of grantee (share action only): user (individual), "
+                        "group (Google Group), domain (all users in domain), "
+                        "anyone (public link)"
+                    ),
                 },
                 "role": {
                     "type": "string",
-                    "enum": ["reader", "writer", "commenter"],
-                    "description": "Permission level: reader (view only), writer (can edit), commenter (can comment)",
+                    "enum": [
+                        "owner",
+                        "organizer",
+                        "fileOrganizer",
+                        "writer",
+                        "commenter",
+                        "reader",
+                    ],
+                    "description": (
+                        "Permission level (share and update actions): "
+                        "reader (view only), commenter, writer (edit), "
+                        "fileOrganizer, organizer, owner"
+                    ),
                 },
                 "email_address": {
                     "type": "string",
-                    "description": "Email address (required for user/group type)",
+                    "description": "Email address of the user or group (share action for user/group type; also used for transfer)",
                 },
                 "domain": {
                     "type": "string",
-                    "description": "Domain name (required for domain type, e.g., 'company.com')",
+                    "description": "Domain name (share action for domain type, e.g., 'company.com')",
                 },
                 "send_notification": {
                     "type": "boolean",
-                    "description": "Send email notification to the user (default: true, only for user/group type)",
+                    "description": "Send email notification to the user (share action only, default: true)",
                     "default": True,
-                },
-            },
-            "required": ["file_id", "type", "role"],
-        },
-    ),
-    Tool(
-        name="update_file_permission",
-        description="Update an existing permission's role on a Drive file or folder",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "file_id": {
-                    "type": "string",
-                    "description": "ID of the file or folder",
-                },
-                "permission_id": {
-                    "type": "string",
-                    "description": "Permission ID to update (from list_file_permissions)",
-                },
-                "role": {
-                    "type": "string",
-                    "enum": ["reader", "writer", "commenter"],
-                    "description": "New permission level",
-                },
-            },
-            "required": ["file_id", "permission_id", "role"],
-        },
-    ),
-    Tool(
-        name="remove_file_permission",
-        description="Remove a permission (revoke access) from a Drive file or folder",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "file_id": {
-                    "type": "string",
-                    "description": "ID of the file or folder",
-                },
-                "permission_id": {
-                    "type": "string",
-                    "description": "Permission ID to remove (from list_file_permissions)",
-                },
-            },
-            "required": ["file_id", "permission_id"],
-        },
-    ),
-    Tool(
-        name="transfer_file_ownership",
-        description="Transfer ownership of a Drive file to another user. The current owner becomes a writer. Only works for files you own.",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "file_id": {
-                    "type": "string",
-                    "description": "ID of the file to transfer ownership",
                 },
                 "new_owner_email": {
                     "type": "string",
-                    "description": "Email address of the new owner",
+                    "description": "Email address of the new owner (transfer action only)",
                 },
             },
-            "required": ["file_id", "new_owner_email"],
+            "required": ["action", "file_id"],
         },
     ),
 ]
 
 
 # =============================================================================
-# Handler functions
+# Helper functions
 # =============================================================================
 
 
@@ -163,22 +127,20 @@ async def _list_file_permissions(svc: BaseService, arguments: dict[str, Any]) ->
 async def _share_file(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
     """Share a Drive file or folder with a user, group, domain, or anyone."""
     file_id = arguments["file_id"]
-    perm_type = arguments["type"]
-    role = arguments["role"]
+    perm_type = arguments.get("type")
+    role = arguments.get("role")
     email_address = arguments.get("email_address")
     domain = arguments.get("domain")
     send_notification = arguments.get("send_notification", True)
 
+    if not perm_type:
+        return {"error": "type is required for share action (user, group, domain, or anyone)"}
+    if not role:
+        return {"error": "role is required for share action"}
     if perm_type in ("user", "group") and not email_address:
-        return {
-            "status": "error",
-            "error": f"email_address is required for type '{perm_type}'",
-        }
+        return {"error": f"email_address is required for type '{perm_type}'"}
     if perm_type == "domain" and not domain:
-        return {
-            "status": "error",
-            "error": "domain is required for type 'domain'",
-        }
+        return {"error": "domain is required for type 'domain'"}
 
     permission: dict[str, Any] = {
         "type": perm_type,
@@ -212,8 +174,13 @@ async def _share_file(svc: BaseService, arguments: dict[str, Any]) -> dict[str, 
 async def _update_file_permission(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
     """Update an existing permission's role on a Drive file."""
     file_id = arguments["file_id"]
-    permission_id = arguments["permission_id"]
-    role = arguments["role"]
+    permission_id = arguments.get("permission_id")
+    role = arguments.get("role")
+
+    if not permission_id:
+        return {"error": "permission_id is required for update action"}
+    if not role:
+        return {"error": "role is required for update action"}
 
     url = f"{DRIVE_API_BASE}/files/{file_id}/permissions/{permission_id}"
     response = await svc._make_request("PATCH", url, json_data={"role": role})
@@ -230,7 +197,10 @@ async def _update_file_permission(svc: BaseService, arguments: dict[str, Any]) -
 async def _remove_file_permission(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
     """Remove a permission from a Drive file or folder."""
     file_id = arguments["file_id"]
-    permission_id = arguments["permission_id"]
+    permission_id = arguments.get("permission_id")
+
+    if not permission_id:
+        return {"error": "permission_id is required for remove action"}
 
     url = f"{DRIVE_API_BASE}/files/{file_id}/permissions/{permission_id}"
     await svc._make_delete_request(url)
@@ -245,7 +215,10 @@ async def _remove_file_permission(svc: BaseService, arguments: dict[str, Any]) -
 async def _transfer_file_ownership(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
     """Transfer ownership of a Drive file to another user."""
     file_id = arguments["file_id"]
-    new_owner_email = arguments["new_owner_email"]
+    new_owner_email = arguments.get("new_owner_email") or arguments.get("email_address")
+
+    if not new_owner_email:
+        return {"error": "new_owner_email is required for transfer action"}
 
     permission = {
         "type": "user",
@@ -266,12 +239,34 @@ async def _transfer_file_ownership(svc: BaseService, arguments: dict[str, Any]) 
     }
 
 
+# =============================================================================
+# Dispatcher
+# =============================================================================
+
+
+async def _manage_file_permissions(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Dispatch to the appropriate permissions handler based on action."""
+    action = arguments.get("action")
+    if action == "list":
+        return await _list_file_permissions(svc, arguments)
+    elif action == "share":
+        return await _share_file(svc, arguments)
+    elif action == "update":
+        return await _update_file_permission(svc, arguments)
+    elif action == "remove":
+        return await _remove_file_permission(svc, arguments)
+    elif action == "transfer":
+        return await _transfer_file_ownership(svc, arguments)
+    else:
+        return {
+            "error": (
+                f"Unknown action '{action}'. Must be one of: list, share, update, remove, transfer."
+            )
+        }
+
+
 def get_handlers(svc: BaseService) -> dict[str, Any]:
     """Return name->callable mapping for Drive sharing handlers."""
     return {
-        "list_file_permissions": lambda args: _list_file_permissions(svc, args),
-        "share_file": lambda args: _share_file(svc, args),
-        "update_file_permission": lambda args: _update_file_permission(svc, args),
-        "remove_file_permission": lambda args: _remove_file_permission(svc, args),
-        "transfer_file_ownership": lambda args: _transfer_file_ownership(svc, args),
+        "manage_file_permissions": lambda args: _manage_file_permissions(svc, args),
     }

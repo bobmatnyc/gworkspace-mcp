@@ -72,22 +72,35 @@ TOOLS: list[Tool] = [
         },
     ),
     Tool(
-        name="send_email",
-        description="Send an email message, optionally with file attachments",
+        name="compose_email",
+        description=(
+            "Compose and send emails, create drafts, send existing drafts, or reply to messages. "
+            "Actions: 'send' (send immediately), 'draft' (save as draft), "
+            "'send_draft' (send an existing draft by draft_id), 'reply' (reply to a message by message_id)."
+        ),
         inputSchema={
             "type": "object",
             "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["send", "draft", "send_draft", "reply"],
+                    "description": "Action to perform",
+                },
                 "to": {
                     "type": "string",
-                    "description": "Recipient email address(es), comma-separated for multiple",
+                    "description": "Recipient email address(es), comma-separated (required for send/draft)",
                 },
                 "subject": {
                     "type": "string",
-                    "description": "Email subject",
+                    "description": "Email subject (required for send/draft)",
                 },
                 "body": {
                     "type": "string",
-                    "description": "Email body (plain text)",
+                    "description": "Email body — plain text by default; ignored if html_body is provided",
+                },
+                "html_body": {
+                    "type": "string",
+                    "description": "HTML email body; overrides body and sets content-type to text/html",
                 },
                 "cc": {
                     "type": "string",
@@ -100,94 +113,26 @@ TOOLS: list[Tool] = [
                 "attachments": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "List of absolute local file paths to attach to the email",
+                    "description": "List of absolute local file paths to attach",
                 },
-            },
-            "required": ["to", "subject", "body"],
-        },
-    ),
-    Tool(
-        name="create_draft",
-        description="Create an email draft without sending it, optionally as a reply on an existing thread",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "to": {
+                "draft_id": {
                     "type": "string",
-                    "description": "Recipient email address(es), comma-separated for multiple",
+                    "description": "Draft ID to send (required for action=send_draft)",
                 },
-                "subject": {
+                "message_id": {
                     "type": "string",
-                    "description": "Email subject",
-                },
-                "body": {
-                    "type": "string",
-                    "description": "Email body (plain text or HTML)",
-                },
-                "cc": {
-                    "type": "string",
-                    "description": "CC recipients, comma-separated",
-                },
-                "bcc": {
-                    "type": "string",
-                    "description": "BCC recipients, comma-separated",
+                    "description": "Original message ID to reply to (required for action=reply)",
                 },
                 "in_reply_to": {
                     "type": "string",
-                    "description": "Message-ID header of the message to reply to (for threading)",
+                    "description": "Message-ID header for threading (used with action=draft)",
                 },
                 "thread_id": {
                     "type": "string",
-                    "description": "Gmail thread ID to associate the draft with",
-                },
-                "html": {
-                    "type": "boolean",
-                    "description": "If true, body is treated as HTML content (default false)",
-                },
-                "attachments": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "List of absolute local file paths to attach to the draft",
+                    "description": "Gmail thread ID to associate the draft with (used with action=draft)",
                 },
             },
-            "required": ["to", "subject", "body"],
-        },
-    ),
-    Tool(
-        name="send_draft",
-        description="Send an existing Gmail draft by its draft ID",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "draft_id": {
-                    "type": "string",
-                    "description": "The Gmail draft ID to send",
-                },
-            },
-            "required": ["draft_id"],
-        },
-    ),
-    Tool(
-        name="reply_to_email",
-        description="Reply to an existing email thread, optionally with file attachments",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "message_id": {
-                    "type": "string",
-                    "description": "Original message ID to reply to",
-                },
-                "body": {
-                    "type": "string",
-                    "description": "Reply body (plain text)",
-                },
-                "attachments": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "List of absolute local file paths to attach to the reply",
-                },
-            },
-            "required": ["message_id", "body"],
+            "required": ["action"],
         },
     ),
 ]
@@ -425,119 +370,115 @@ async def _download_gmail_attachment(svc: BaseService, arguments: dict[str, Any]
     return {"saved_to": save_path, "size": len(data)}
 
 
-async def _send_email(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
-    """Send an email message."""
+async def _compose_email(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Compose emails: send, draft, send_draft, or reply."""
+    action = arguments["action"]
+
+    if action == "send_draft":
+        draft_id = arguments["draft_id"]
+        url = f"{GMAIL_API_BASE}/users/me/drafts/send"
+        response = await svc._make_request("POST", url, json_data={"id": draft_id})
+        return {
+            "status": "sent",
+            "message_id": response.get("id"),
+            "thread_id": response.get("threadId"),
+        }
+
+    if action == "reply":
+        message_id = arguments["message_id"]
+        body = arguments.get("body", "")
+        html_body = arguments.get("html_body")
+        attachments = arguments.get("attachments")
+
+        orig_url = f"{GMAIL_API_BASE}/users/me/messages/{message_id}"
+        original = await svc._make_request("GET", orig_url, params={"format": "metadata"})
+
+        thread_id = original.get("threadId")
+        headers = {h["name"]: h["value"] for h in original.get("payload", {}).get("headers", [])}
+
+        reply_to = headers.get("Reply-To") or headers.get("From", "")
+        original_subject = headers.get("Subject", "")
+        message_id_header = headers.get("Message-ID")
+
+        reply_subject = (
+            original_subject
+            if original_subject.lower().startswith("re:")
+            else f"Re: {original_subject}"
+        )
+
+        use_html = html_body is not None
+        actual_body = html_body if use_html else body
+
+        raw_message = _build_email_message(
+            to=reply_to,
+            subject=reply_subject,
+            body=actual_body or "",
+            in_reply_to=message_id_header,
+            references=message_id_header,
+            attachments=attachments,
+            html=use_html,
+        )
+
+        url = f"{GMAIL_API_BASE}/users/me/messages/send"
+        response = await svc._make_request(
+            "POST", url, json_data={"raw": raw_message, "threadId": thread_id}
+        )
+
+        return {
+            "status": "reply_sent",
+            "id": response.get("id"),
+            "thread_id": response.get("threadId"),
+            "in_reply_to": message_id,
+        }
+
+    # action in ("send", "draft")
     to = arguments["to"]
     subject = arguments["subject"]
-    body = arguments["body"]
+    body = arguments.get("body", "") or ""
+    html_body = arguments.get("html_body")
     cc = arguments.get("cc")
     bcc = arguments.get("bcc")
     attachments = arguments.get("attachments")
-
-    raw_message = _build_email_message(to, subject, body, cc, bcc, attachments=attachments)
-
-    url = f"{GMAIL_API_BASE}/users/me/messages/send"
-    response = await svc._make_request("POST", url, json_data={"raw": raw_message})
-
-    return {
-        "status": "sent",
-        "id": response.get("id"),
-        "thread_id": response.get("threadId"),
-        "label_ids": response.get("labelIds", []),
-    }
-
-
-async def _create_draft(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
-    """Create an email draft without sending it."""
-    to = arguments["to"]
-    subject = arguments["subject"]
-    body = arguments["body"]
-    cc = arguments.get("cc")
-    bcc = arguments.get("bcc")
     in_reply_to = arguments.get("in_reply_to")
     thread_id = arguments.get("thread_id")
-    html = bool(arguments.get("html", False))
-    attachments = arguments.get("attachments")
+
+    use_html = html_body is not None
+    actual_body = html_body if use_html else body
 
     raw_message = _build_email_message(
         to,
         subject,
-        body,
+        actual_body or "",
         cc,
         bcc,
+        thread_id=thread_id,
         in_reply_to=in_reply_to,
         attachments=attachments,
-        html=html,
+        html=use_html,
     )
 
+    if action == "send":
+        url = f"{GMAIL_API_BASE}/users/me/messages/send"
+        response = await svc._make_request("POST", url, json_data={"raw": raw_message})
+        return {
+            "status": "sent",
+            "id": response.get("id"),
+            "thread_id": response.get("threadId"),
+            "label_ids": response.get("labelIds", []),
+        }
+
+    # action == "draft"
     message_body: dict[str, Any] = {"raw": raw_message}
     if thread_id:
         message_body["threadId"] = thread_id
 
     url = f"{GMAIL_API_BASE}/users/me/drafts"
     response = await svc._make_request("POST", url, json_data={"message": message_body})
-
     return {
+        "status": "draft_created",
         "draft_id": response.get("id"),
         "message_id": response.get("message", {}).get("id"),
         "thread_id": response.get("message", {}).get("threadId"),
-    }
-
-
-async def _send_draft(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
-    """Send an existing Gmail draft."""
-    draft_id = arguments["draft_id"]
-
-    url = f"{GMAIL_API_BASE}/users/me/drafts/send"
-    response = await svc._make_request("POST", url, json_data={"id": draft_id})
-
-    return {
-        "message_id": response.get("id"),
-        "thread_id": response.get("threadId"),
-        "status": "sent",
-    }
-
-
-async def _reply_to_email(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
-    """Reply to an existing email thread."""
-    message_id = arguments["message_id"]
-    body = arguments["body"]
-    attachments = arguments.get("attachments")
-
-    orig_url = f"{GMAIL_API_BASE}/users/me/messages/{message_id}"
-    original = await svc._make_request("GET", orig_url, params={"format": "metadata"})
-
-    thread_id = original.get("threadId")
-    headers = {h["name"]: h["value"] for h in original.get("payload", {}).get("headers", [])}
-
-    reply_to = headers.get("Reply-To") or headers.get("From", "")
-    original_subject = headers.get("Subject", "")
-    message_id_header = headers.get("Message-ID")
-
-    if not original_subject.lower().startswith("re:"):
-        reply_subject = f"Re: {original_subject}"
-    else:
-        reply_subject = original_subject
-
-    raw_message = _build_email_message(
-        to=reply_to,
-        subject=reply_subject,
-        body=body,
-        in_reply_to=message_id_header,
-        references=message_id_header,
-        attachments=attachments,
-    )
-
-    url = f"{GMAIL_API_BASE}/users/me/messages/send"
-    response = await svc._make_request(
-        "POST", url, json_data={"raw": raw_message, "threadId": thread_id}
-    )
-
-    return {
-        "status": "reply_sent",
-        "id": response.get("id"),
-        "thread_id": response.get("threadId"),
-        "in_reply_to": message_id,
     }
 
 
@@ -547,8 +488,5 @@ def get_handlers(svc: BaseService) -> dict[str, Any]:
         "search_gmail_messages": lambda args: _search_gmail_messages(svc, args),
         "get_gmail_message_content": lambda args: _get_gmail_message_content(svc, args),
         "download_gmail_attachment": lambda args: _download_gmail_attachment(svc, args),
-        "send_email": lambda args: _send_email(svc, args),
-        "create_draft": lambda args: _create_draft(svc, args),
-        "send_draft": lambda args: _send_draft(svc, args),
-        "reply_to_email": lambda args: _reply_to_email(svc, args),
+        "compose_email": lambda args: _compose_email(svc, args),
     }

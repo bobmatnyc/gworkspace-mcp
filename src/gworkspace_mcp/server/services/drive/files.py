@@ -1,4 +1,4 @@
-"""Google Drive files sub-module: search, get, create, upload, delete, move, copy, rename."""
+"""Google Drive files sub-module: search, get, convert, and manage files."""
 
 from __future__ import annotations
 
@@ -117,124 +117,51 @@ TOOLS: list[Tool] = [
         },
     ),
     Tool(
-        name="create_drive_folder",
-        description="Create a new folder in Google Drive",
+        name="manage_drive_file",
+        description=(
+            "Create, upload, delete, move, copy, or rename files and folders in Google Drive. "
+            "Actions: 'create_folder' creates a new folder; 'upload' uploads a local file or inline text; "
+            "'delete' removes a file/folder; 'move' moves a file to a different folder; "
+            "'copy' duplicates a file; 'rename' renames a file or folder."
+        ),
         inputSchema={
             "type": "object",
             "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["create_folder", "upload", "delete", "move", "copy", "rename"],
+                    "description": "Operation to perform.",
+                },
+                "file_id": {
+                    "type": "string",
+                    "description": "File or folder ID. Required for delete, move, copy, rename.",
+                },
                 "name": {
                     "type": "string",
-                    "description": "Folder name",
+                    "description": "Name for the file/folder. Required for create_folder and rename; optional for upload and copy.",
                 },
                 "parent_id": {
                     "type": "string",
-                    "description": "Parent folder ID (optional, defaults to root)",
-                },
-            },
-            "required": ["name"],
-        },
-    ),
-    Tool(
-        name="upload_drive_file",
-        description="Upload a file to Google Drive. Supports binary files via local_path or text content via content parameter.",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string",
-                    "description": "File name in Drive. If omitted when using local_path, the local filename is used.",
-                },
-                "local_path": {
-                    "type": "string",
-                    "description": "Absolute path to a local file to upload (binary or text). If provided, content parameter is ignored.",
-                },
-                "content": {
-                    "type": "string",
-                    "description": "Text content to upload. Use local_path instead for binary files.",
-                },
-                "mime_type": {
-                    "type": "string",
-                    "description": "MIME type (default: 'text/plain', or auto-detected from local_path)",
-                    "default": "text/plain",
-                },
-                "parent_id": {
-                    "type": "string",
-                    "description": "Parent folder ID (optional)",
-                },
-            },
-            "required": [],
-        },
-    ),
-    Tool(
-        name="delete_drive_file",
-        description="Delete a file or folder from Google Drive",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "file_id": {
-                    "type": "string",
-                    "description": "File or folder ID to delete",
-                },
-            },
-            "required": ["file_id"],
-        },
-    ),
-    Tool(
-        name="move_drive_file",
-        description="Move a file to a different folder in Google Drive",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "file_id": {
-                    "type": "string",
-                    "description": "File ID to move",
+                    "description": "Parent folder ID. Optional for create_folder, upload, and copy.",
                 },
                 "new_parent_id": {
                     "type": "string",
-                    "description": "Destination folder ID",
+                    "description": "Destination folder ID. Required for move.",
+                },
+                "local_path": {
+                    "type": "string",
+                    "description": "Absolute path to a local file to upload. Used with action='upload'.",
+                },
+                "content": {
+                    "type": "string",
+                    "description": "Inline text content to upload. Used with action='upload' when local_path is not provided.",
+                },
+                "mime_type": {
+                    "type": "string",
+                    "description": "MIME type for upload. Auto-detected from local_path if omitted; defaults to 'text/plain' for inline content.",
                 },
             },
-            "required": ["file_id", "new_parent_id"],
-        },
-    ),
-    Tool(
-        name="copy_drive_file",
-        description="Create a copy of a file in Google Drive",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "file_id": {
-                    "type": "string",
-                    "description": "File ID to copy",
-                },
-                "name": {
-                    "type": "string",
-                    "description": "Name for the copy (optional, defaults to 'Copy of [original]')",
-                },
-                "parent_id": {
-                    "type": "string",
-                    "description": "Destination folder ID (optional, defaults to same folder)",
-                },
-            },
-            "required": ["file_id"],
-        },
-    ),
-    Tool(
-        name="rename_drive_file",
-        description="Rename a file or folder in Google Drive",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "file_id": {
-                    "type": "string",
-                    "description": "File or folder ID to rename",
-                },
-                "new_name": {
-                    "type": "string",
-                    "description": "New name for the file or folder",
-                },
-            },
-            "required": ["file_id", "new_name"],
+            "required": ["action"],
         },
     ),
 ]
@@ -528,9 +455,33 @@ async def _convert_document(
     }
 
 
+async def _manage_drive_file(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Dispatch create_folder, upload, delete, move, copy, or rename actions."""
+    action = arguments.get("action")
+
+    if action == "create_folder":
+        return await _create_drive_folder(svc, arguments)
+    elif action == "upload":
+        return await _upload_drive_file(svc, arguments)
+    elif action == "delete":
+        return await _delete_drive_file(svc, arguments)
+    elif action == "move":
+        return await _move_drive_file(svc, arguments)
+    elif action == "copy":
+        return await _copy_drive_file(svc, arguments)
+    elif action == "rename":
+        return await _rename_drive_file(svc, arguments)
+    else:
+        return {
+            "error": f"Unknown action '{action}'. Must be one of: create_folder, upload, delete, move, copy, rename."
+        }
+
+
 async def _create_drive_folder(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
     """Create a new folder in Google Drive."""
-    name = arguments["name"]
+    name = arguments.get("name")
+    if not name:
+        return {"error": "name is required for action='create_folder'"}
     parent_id = arguments.get("parent_id")
 
     url = f"{DRIVE_API_BASE}/files"
@@ -573,7 +524,9 @@ async def _upload_drive_file(svc: BaseService, arguments: dict[str, Any]) -> dic
     else:
         content = arguments.get("content")
         if content is None:
-            raise ValueError("Either 'local_path' or 'content' must be provided")
+            return {
+                "error": "Either 'local_path' or 'content' must be provided for action='upload'"
+            }
         name = arguments.get("name", "untitled")
         file_bytes = content.encode("utf-8")
 
@@ -616,7 +569,9 @@ async def _upload_drive_file(svc: BaseService, arguments: dict[str, Any]) -> dic
 
 async def _delete_drive_file(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
     """Delete a file or folder from Google Drive."""
-    file_id = arguments["file_id"]
+    file_id = arguments.get("file_id")
+    if not file_id:
+        return {"error": "file_id is required for action='delete'"}
 
     url = f"{DRIVE_API_BASE}/files/{file_id}?supportsAllDrives=true"
     await svc._make_delete_request(url)
@@ -626,8 +581,12 @@ async def _delete_drive_file(svc: BaseService, arguments: dict[str, Any]) -> dic
 
 async def _move_drive_file(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
     """Move a file to a different folder in Google Drive."""
-    file_id = arguments["file_id"]
-    new_parent_id = arguments["new_parent_id"]
+    file_id = arguments.get("file_id")
+    new_parent_id = arguments.get("new_parent_id")
+    if not file_id:
+        return {"error": "file_id is required for action='move'"}
+    if not new_parent_id:
+        return {"error": "new_parent_id is required for action='move'"}
 
     get_url = f"{DRIVE_API_BASE}/files/{file_id}?fields=parents&supportsAllDrives=true"
     file_info = await svc._make_request("GET", get_url)
@@ -654,7 +613,9 @@ async def _move_drive_file(svc: BaseService, arguments: dict[str, Any]) -> dict[
 
 async def _copy_drive_file(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
     """Create a copy of a file in Google Drive."""
-    file_id = arguments["file_id"]
+    file_id = arguments.get("file_id")
+    if not file_id:
+        return {"error": "file_id is required for action='copy'"}
     name = arguments.get("name")
     parent_id = arguments.get("parent_id")
 
@@ -682,8 +643,12 @@ async def _copy_drive_file(svc: BaseService, arguments: dict[str, Any]) -> dict[
 
 async def _rename_drive_file(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
     """Rename a file or folder in Google Drive."""
-    file_id = arguments["file_id"]
-    new_name = arguments["new_name"]
+    file_id = arguments.get("file_id")
+    new_name = arguments.get("name")
+    if not file_id:
+        return {"error": "file_id is required for action='rename'"}
+    if not new_name:
+        return {"error": "name is required for action='rename'"}
 
     url = f"{DRIVE_API_BASE}/files/{file_id}"
     params = {"fields": "id,name,mimeType", "supportsAllDrives": "true"}
@@ -704,10 +669,5 @@ def get_handlers(svc: BaseService) -> dict[str, Any]:
         "search_drive_files": lambda args: _search_drive_files(svc, args),
         "get_drive_file_content": lambda args: _get_drive_file_content(svc, args),
         "convert_document": lambda args: _convert_document(svc, args),
-        "create_drive_folder": lambda args: _create_drive_folder(svc, args),
-        "upload_drive_file": lambda args: _upload_drive_file(svc, args),
-        "delete_drive_file": lambda args: _delete_drive_file(svc, args),
-        "move_drive_file": lambda args: _move_drive_file(svc, args),
-        "copy_drive_file": lambda args: _copy_drive_file(svc, args),
-        "rename_drive_file": lambda args: _rename_drive_file(svc, args),
+        "manage_drive_file": lambda args: _manage_drive_file(svc, args),
     }

@@ -16,98 +16,72 @@ EMU_PER_PT = 12700  # English Metric Units per point
 
 TOOLS: list[Tool] = [
     Tool(
-        name="list_presentations",
-        description="Search for Google Slides presentations in Drive. Returns presentation metadata including ID, name, and modification time.",
+        name="get_slides",
+        description=(
+            "Read Google Slides data. "
+            "action='list': search presentations in Drive (optional query, max_results). "
+            "action='get_presentation': get metadata for a presentation (presentation_id required). "
+            "action='get_slide': get content of a specific slide (presentation_id, slide_index required). "
+            "action='get_text': extract all text from a presentation (presentation_id required)."
+        ),
         inputSchema={
             "type": "object",
             "properties": {
+                "action": {
+                    "type": "string",
+                    "description": "Operation to perform: 'list', 'get_presentation', 'get_slide', 'get_text'",
+                    "enum": ["list", "get_presentation", "get_slide", "get_text"],
+                },
+                "presentation_id": {
+                    "type": "string",
+                    "description": "Google Slides presentation ID (required for get_presentation, get_slide, get_text)",
+                },
+                "slide_index": {
+                    "type": "integer",
+                    "description": "Zero-based index of the slide to retrieve (required for get_slide)",
+                },
                 "query": {
                     "type": "string",
-                    "description": "Search query to filter presentations (e.g., 'quarterly report'). Leave empty to list all presentations.",
+                    "description": "Search query to filter presentations (list only). Leave empty to list all.",
                     "default": "",
                 },
                 "max_results": {
                     "type": "integer",
-                    "description": "Maximum number of presentations to return (default: 10)",
+                    "description": "Maximum number of presentations to return (list only, default: 10)",
                     "default": 10,
                 },
             },
-            "required": [],
+            "required": ["action"],
         },
     ),
     Tool(
-        name="get_presentation",
-        description="Get presentation metadata including title, slide count, master slides, and layouts.",
+        name="manage_slides",
+        description=(
+            "Create or modify a Google Slides presentation or its slides. "
+            "action='create': create a new presentation (title required). "
+            "action='add_slide': add a new slide (presentation_id required; optional layout, insertion_index). "
+            "action='delete_slide': delete a slide (presentation_id, slide_id required). "
+            "action='update_text': update text in a shape (presentation_id, slide_id, shape_id, text required)."
+        ),
         inputSchema={
             "type": "object",
             "properties": {
+                "action": {
+                    "type": "string",
+                    "description": "Operation to perform: 'create', 'add_slide', 'delete_slide', 'update_text'",
+                    "enum": ["create", "add_slide", "delete_slide", "update_text"],
+                },
                 "presentation_id": {
                     "type": "string",
-                    "description": "Google Slides presentation ID (from the URL)",
+                    "description": "Google Slides presentation ID (required except for create)",
                 },
-            },
-            "required": ["presentation_id"],
-        },
-    ),
-    Tool(
-        name="get_slide",
-        description="Get the content of a specific slide including shapes, text, and images.",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "presentation_id": {
-                    "type": "string",
-                    "description": "Google Slides presentation ID",
-                },
-                "slide_index": {
-                    "type": "integer",
-                    "description": "Zero-based index of the slide to retrieve",
-                },
-            },
-            "required": ["presentation_id", "slide_index"],
-        },
-    ),
-    Tool(
-        name="get_presentation_text",
-        description="Extract all text content from a presentation, organized by slide.",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "presentation_id": {
-                    "type": "string",
-                    "description": "Google Slides presentation ID",
-                },
-            },
-            "required": ["presentation_id"],
-        },
-    ),
-    Tool(
-        name="create_presentation",
-        description="Create a new Google Slides presentation with the specified title.",
-        inputSchema={
-            "type": "object",
-            "properties": {
                 "title": {
                     "type": "string",
-                    "description": "Title for the new presentation",
-                },
-            },
-            "required": ["title"],
-        },
-    ),
-    Tool(
-        name="add_slide",
-        description="Add a new slide to a presentation. Can specify layout and insertion index.",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "presentation_id": {
-                    "type": "string",
-                    "description": "Google Slides presentation ID",
+                    "description": "Title for the new presentation (required for create)",
                 },
                 "layout": {
                     "type": "string",
-                    "description": "Predefined layout type: 'BLANK', 'TITLE', 'TITLE_AND_BODY', 'TITLE_AND_TWO_COLUMNS', 'TITLE_ONLY', 'ONE_COLUMN_TEXT', 'MAIN_POINT', 'SECTION_HEADER', 'CAPTION_ONLY', 'BIG_NUMBER'",
+                    "description": "Predefined layout type for add_slide (default: 'BLANK')",
                     "default": "BLANK",
                     "enum": [
                         "BLANK",
@@ -124,50 +98,22 @@ TOOLS: list[Tool] = [
                 },
                 "insertion_index": {
                     "type": "integer",
-                    "description": "Zero-based index where to insert the slide. If not specified, adds at the end.",
-                },
-            },
-            "required": ["presentation_id"],
-        },
-    ),
-    Tool(
-        name="delete_slide",
-        description="Delete a slide from a presentation by its object ID.",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "presentation_id": {
-                    "type": "string",
-                    "description": "Google Slides presentation ID",
+                    "description": "Zero-based index where to insert the slide (add_slide only). Adds at end if omitted.",
                 },
                 "slide_id": {
                     "type": "string",
-                    "description": "Object ID of the slide to delete (from get_presentation or get_slide)",
-                },
-            },
-            "required": ["presentation_id", "slide_id"],
-        },
-    ),
-    Tool(
-        name="update_slide_text",
-        description="Update the text content in a shape or placeholder on a slide.",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "presentation_id": {
-                    "type": "string",
-                    "description": "Google Slides presentation ID",
+                    "description": "Object ID of the slide (required for delete_slide and update_text)",
                 },
                 "shape_id": {
                     "type": "string",
-                    "description": "Object ID of the shape/placeholder containing text",
+                    "description": "Object ID of the shape/placeholder containing text (required for update_text)",
                 },
                 "text": {
                     "type": "string",
-                    "description": "New text content to set in the shape",
+                    "description": "New text content to set in the shape (required for update_text)",
                 },
             },
-            "required": ["presentation_id", "shape_id", "text"],
+            "required": ["action"],
         },
     ),
 ]
@@ -453,15 +399,67 @@ async def _update_slide_text(svc: BaseService, arguments: dict[str, Any]) -> dic
     }
 
 
+async def _get_slides(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Dispatch get_slides action to appropriate handler."""
+    action = arguments.get("action")
+    if action == "list":
+        return await _list_presentations(svc, arguments)
+    elif action == "get_presentation":
+        if "presentation_id" not in arguments:
+            raise ValueError("presentation_id is required for action='get_presentation'")
+        return await _get_presentation(svc, arguments)
+    elif action == "get_slide":
+        if "presentation_id" not in arguments:
+            raise ValueError("presentation_id is required for action='get_slide'")
+        if "slide_index" not in arguments:
+            raise ValueError("slide_index is required for action='get_slide'")
+        return await _get_slide(svc, arguments)
+    elif action == "get_text":
+        if "presentation_id" not in arguments:
+            raise ValueError("presentation_id is required for action='get_text'")
+        return await _get_presentation_text(svc, arguments)
+    else:
+        raise ValueError(
+            f"Unknown action: {action!r}. Use 'list', 'get_presentation', 'get_slide', or 'get_text'."
+        )
+
+
+async def _manage_slides(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Dispatch manage_slides action to appropriate handler."""
+    action = arguments.get("action")
+    if action == "create":
+        if "title" not in arguments:
+            raise ValueError("title is required for action='create'")
+        return await _create_presentation(svc, arguments)
+    elif action == "add_slide":
+        if "presentation_id" not in arguments:
+            raise ValueError("presentation_id is required for action='add_slide'")
+        return await _add_slide(svc, arguments)
+    elif action == "delete_slide":
+        if "presentation_id" not in arguments:
+            raise ValueError("presentation_id is required for action='delete_slide'")
+        if "slide_id" not in arguments:
+            raise ValueError("slide_id is required for action='delete_slide'")
+        return await _delete_slide(svc, arguments)
+    elif action == "update_text":
+        if "presentation_id" not in arguments:
+            raise ValueError("presentation_id is required for action='update_text'")
+        if "slide_id" not in arguments:
+            raise ValueError("slide_id is required for action='update_text'")
+        if "shape_id" not in arguments:
+            raise ValueError("shape_id is required for action='update_text'")
+        if "text" not in arguments:
+            raise ValueError("text is required for action='update_text'")
+        return await _update_slide_text(svc, arguments)
+    else:
+        raise ValueError(
+            f"Unknown action: {action!r}. Use 'create', 'add_slide', 'delete_slide', or 'update_text'."
+        )
+
+
 def get_handlers(svc: BaseService) -> dict[str, Any]:
     """Return name->callable mapping for Slides core handlers."""
     return {
-        "list_presentations": lambda args: _list_presentations(svc, args),
-        "get_presentation": lambda args: _get_presentation(svc, args),
-        "get_slide": lambda args: _get_slide(svc, args),
-        "get_presentation_text": lambda args: _get_presentation_text(svc, args),
-        "create_presentation": lambda args: _create_presentation(svc, args),
-        "add_slide": lambda args: _add_slide(svc, args),
-        "delete_slide": lambda args: _delete_slide(svc, args),
-        "update_slide_text": lambda args: _update_slide_text(svc, args),
+        "get_slides": lambda args: _get_slides(svc, args),
+        "manage_slides": lambda args: _manage_slides(svc, args),
     }

@@ -64,35 +64,57 @@ TOOLS: list[Tool] = [
         },
     ),
     Tool(
-        name="list_document_tabs",
-        description="List all tabs in a Google Doc with their metadata (tabId, title, index, nestingLevel, iconEmoji, parentTabId).",
+        name="manage_document_tabs",
+        description=(
+            "Manage tabs in a Google Doc. Actions: "
+            "'list' — list all tabs with metadata; "
+            "'get_content' — get text content of a specific tab; "
+            "'create' — create a new tab; "
+            "'update' — update tab title or icon; "
+            "'move' — move tab to a new position or parent."
+        ),
         inputSchema={
             "type": "object",
             "properties": {
-                "document_id": {
+                "action": {
                     "type": "string",
-                    "description": "Google Doc ID",
+                    "enum": ["list", "get_content", "create", "update", "move"],
+                    "description": "Operation to perform on document tabs",
                 },
-            },
-            "required": ["document_id"],
-        },
-    ),
-    Tool(
-        name="get_tab_content",
-        description="Get the content from a specific tab in a Google Doc.",
-        inputSchema={
-            "type": "object",
-            "properties": {
                 "document_id": {
                     "type": "string",
                     "description": "Google Doc ID",
                 },
                 "tab_id": {
                     "type": "string",
-                    "description": "Tab ID (from list_document_tabs)",
+                    "description": "Tab ID (required for get_content, update, move)",
+                },
+                "title": {
+                    "type": "string",
+                    "description": "Tab title (required for create, optional for update)",
+                },
+                "icon_emoji": {
+                    "type": "string",
+                    "description": "Icon emoji for the tab (create/update only, optional)",
+                },
+                "parent_tab_id": {
+                    "type": "string",
+                    "description": "Parent tab ID for nested tabs (create/move only, optional)",
+                },
+                "index": {
+                    "type": "integer",
+                    "description": "Position index for the tab (create/move only, optional)",
+                },
+                "new_parent_tab_id": {
+                    "type": "string",
+                    "description": "New parent tab ID for move action. Use empty string to move to root level.",
+                },
+                "new_index": {
+                    "type": "integer",
+                    "description": "New position index for move action",
                 },
             },
-            "required": ["document_id", "tab_id"],
+            "required": ["action", "document_id"],
         },
     ),
     Tool(
@@ -123,58 +145,6 @@ TOOLS: list[Tool] = [
                 },
             },
             "required": ["document_id", "title"],
-        },
-    ),
-    Tool(
-        name="update_tab_properties",
-        description="Update properties of an existing tab (title, iconEmoji).",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "document_id": {
-                    "type": "string",
-                    "description": "Google Doc ID",
-                },
-                "tab_id": {
-                    "type": "string",
-                    "description": "Tab ID to update (from list_document_tabs)",
-                },
-                "title": {
-                    "type": "string",
-                    "description": "New tab title (optional)",
-                },
-                "icon_emoji": {
-                    "type": "string",
-                    "description": "New icon emoji (optional)",
-                },
-            },
-            "required": ["document_id", "tab_id"],
-        },
-    ),
-    Tool(
-        name="move_tab",
-        description="Move a tab to a new position or change its parent (nesting level).",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "document_id": {
-                    "type": "string",
-                    "description": "Google Doc ID",
-                },
-                "tab_id": {
-                    "type": "string",
-                    "description": "Tab ID to move (from list_document_tabs)",
-                },
-                "new_parent_tab_id": {
-                    "type": "string",
-                    "description": "New parent tab ID (optional). Use empty string to move to root level.",
-                },
-                "new_index": {
-                    "type": "integer",
-                    "description": "New position index (optional)",
-                },
-            },
-            "required": ["document_id", "tab_id"],
         },
     ),
 ]
@@ -313,68 +283,173 @@ async def _get_document(svc: BaseService, arguments: dict[str, Any]) -> dict[str
     return result
 
 
-async def _list_document_tabs(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
+async def _manage_document_tabs(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Unified handler for all tab management operations."""
+    action = arguments["action"]
     document_id = arguments["document_id"]
 
-    url = f"{DOCS_API_BASE}/documents/{document_id}?includeTabsContent=true"
-    response = await svc._make_request("GET", url)
+    if action == "list":
+        url = f"{DOCS_API_BASE}/documents/{document_id}?includeTabsContent=true"
+        response = await svc._make_request("GET", url)
+        tabs = response.get("tabs", [])
+        if not tabs:
+            return {
+                "document_id": document_id,
+                "tabs": [],
+                "count": 0,
+                "message": "Document has no tabs or only a single tab",
+            }
+        formatted_tabs = _format_tabs(tabs)
+        return {"document_id": document_id, "tabs": formatted_tabs, "count": len(formatted_tabs)}
 
-    tabs = response.get("tabs", [])
-    if not tabs:
-        return {
+    if action == "get_content":
+        tab_id = arguments.get("tab_id")
+        if not tab_id:
+            return {"error": "tab_id is required for get_content action"}
+        url = f"{DOCS_API_BASE}/documents/{document_id}?includeTabsContent=true"
+        response = await svc._make_request("GET", url)
+        tabs = response.get("tabs", [])
+        target_tab = None
+        for tab in tabs:
+            if tab.get("tabProperties", {}).get("tabId") == tab_id:
+                target_tab = tab
+                break
+        if not target_tab:
+            return {
+                "error": f"Tab '{tab_id}' not found in document",
+                "document_id": document_id,
+                "available_tabs": [
+                    t.get("tabProperties", {}).get("tabId") for t in tabs if "tabProperties" in t
+                ],
+            }
+        tab_props = target_tab.get("tabProperties", {})
+        tab_body = target_tab.get("documentTab", {}).get("body", {})
+        text_content = _extract_doc_text(tab_body)
+        result: dict[str, Any] = {
             "document_id": document_id,
-            "tabs": [],
-            "count": 0,
-            "message": "Document has no tabs or only a single tab",
+            "tab_id": tab_id,
+            "title": tab_props.get("title", ""),
+            "index": tab_props.get("index", 0),
+            "nesting_level": tab_props.get("nestingLevel", 0),
+            "text_content": text_content,
+        }
+        if "iconEmoji" in tab_props:
+            result["icon_emoji"] = tab_props["iconEmoji"]
+        if "parentTabId" in tab_props:
+            result["parent_tab_id"] = tab_props["parentTabId"]
+        return result
+
+    if action == "create":
+        title = arguments.get("title")
+        if not title:
+            return {"error": "title is required for create action"}
+        icon_emoji = arguments.get("icon_emoji")
+        parent_tab_id = arguments.get("parent_tab_id")
+        index = arguments.get("index")
+        create_tab_request: dict[str, Any] = {"createTab": {"tabProperties": {"title": title}}}
+        if icon_emoji:
+            create_tab_request["createTab"]["tabProperties"]["iconEmoji"] = icon_emoji
+        if parent_tab_id:
+            create_tab_request["createTab"]["tabProperties"]["parentTabId"] = parent_tab_id
+        if index is not None:
+            create_tab_request["createTab"]["tabProperties"]["index"] = index
+        url = f"{DOCS_API_BASE}/documents/{document_id}:batchUpdate"
+        response = await svc._make_request(
+            "POST", url, json_data={"requests": [create_tab_request]}
+        )
+        replies = response.get("replies", [])
+        if replies and "createTab" in replies[0]:
+            created_tab = replies[0]["createTab"]
+            return {
+                "status": "created",
+                "document_id": document_id,
+                "tab_id": created_tab.get("tabId"),
+                "title": title,
+            }
+        return {"status": "created", "document_id": document_id, "title": title}
+
+    if action == "update":
+        tab_id = arguments.get("tab_id")
+        if not tab_id:
+            return {"error": "tab_id is required for update action"}
+        title = arguments.get("title")
+        icon_emoji = arguments.get("icon_emoji")
+        if not title and not icon_emoji:
+            return {
+                "error": "At least one of 'title' or 'icon_emoji' must be provided",
+                "document_id": document_id,
+                "tab_id": tab_id,
+            }
+        update_request: dict[str, Any] = {
+            "updateTabProperties": {
+                "tabId": tab_id,
+                "tabProperties": {},
+                "fields": [],
+            }
+        }
+        if title:
+            update_request["updateTabProperties"]["tabProperties"]["title"] = title
+            update_request["updateTabProperties"]["fields"].append("title")
+        if icon_emoji:
+            update_request["updateTabProperties"]["tabProperties"]["iconEmoji"] = icon_emoji
+            update_request["updateTabProperties"]["fields"].append("iconEmoji")
+        update_request["updateTabProperties"]["fields"] = ",".join(
+            update_request["updateTabProperties"]["fields"]
+        )
+        url = f"{DOCS_API_BASE}/documents/{document_id}:batchUpdate"
+        await svc._make_request("POST", url, json_data={"requests": [update_request]})
+        return {
+            "status": "updated",
+            "document_id": document_id,
+            "tab_id": tab_id,
+            "updated_fields": update_request["updateTabProperties"]["fields"].split(","),
         }
 
-    formatted_tabs = _format_tabs(tabs)
-    return {"document_id": document_id, "tabs": formatted_tabs, "count": len(formatted_tabs)}
-
-
-async def _get_tab_content(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
-    document_id = arguments["document_id"]
-    tab_id = arguments["tab_id"]
-
-    url = f"{DOCS_API_BASE}/documents/{document_id}?includeTabsContent=true"
-    response = await svc._make_request("GET", url)
-
-    tabs = response.get("tabs", [])
-    target_tab = None
-    for tab in tabs:
-        tab_props = tab.get("tabProperties", {})
-        if tab_props.get("tabId") == tab_id:
-            target_tab = tab
-            break
-
-    if not target_tab:
+    if action == "move":
+        tab_id = arguments.get("tab_id")
+        if not tab_id:
+            return {"error": "tab_id is required for move action"}
+        new_parent_tab_id = arguments.get("new_parent_tab_id")
+        new_index = arguments.get("new_index")
+        if new_parent_tab_id is None and new_index is None:
+            return {
+                "error": "At least one of 'new_parent_tab_id' or 'new_index' must be provided",
+                "document_id": document_id,
+                "tab_id": tab_id,
+            }
+        move_request: dict[str, Any] = {
+            "updateTabProperties": {
+                "tabId": tab_id,
+                "tabProperties": {},
+                "fields": [],
+            }
+        }
+        if new_parent_tab_id is not None:
+            if new_parent_tab_id == "":
+                move_request["updateTabProperties"]["tabProperties"]["parentTabId"] = None
+            else:
+                move_request["updateTabProperties"]["tabProperties"]["parentTabId"] = (
+                    new_parent_tab_id
+                )
+            move_request["updateTabProperties"]["fields"].append("parentTabId")
+        if new_index is not None:
+            move_request["updateTabProperties"]["tabProperties"]["index"] = new_index
+            move_request["updateTabProperties"]["fields"].append("index")
+        move_request["updateTabProperties"]["fields"] = ",".join(
+            move_request["updateTabProperties"]["fields"]
+        )
+        url = f"{DOCS_API_BASE}/documents/{document_id}:batchUpdate"
+        await svc._make_request("POST", url, json_data={"requests": [move_request]})
         return {
-            "error": f"Tab '{tab_id}' not found in document",
+            "status": "moved",
             "document_id": document_id,
-            "available_tabs": [
-                t.get("tabProperties", {}).get("tabId") for t in tabs if "tabProperties" in t
-            ],
+            "tab_id": tab_id,
+            "updated_fields": move_request["updateTabProperties"]["fields"].split(","),
         }
 
-    tab_props = target_tab.get("tabProperties", {})
-    tab_body = target_tab.get("documentTab", {}).get("body", {})
-    text_content = _extract_doc_text(tab_body)
-
-    result: dict[str, Any] = {
-        "document_id": document_id,
-        "tab_id": tab_id,
-        "title": tab_props.get("title", ""),
-        "index": tab_props.get("index", 0),
-        "nesting_level": tab_props.get("nestingLevel", 0),
-        "text_content": text_content,
+    return {
+        "error": f"Unknown action '{action}'. Valid actions: list, get_content, create, update, move"
     }
-
-    if "iconEmoji" in tab_props:
-        result["icon_emoji"] = tab_props["iconEmoji"]
-    if "parentTabId" in tab_props:
-        result["parent_tab_id"] = tab_props["parentTabId"]
-
-    return result
 
 
 async def _create_document_tab(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -416,109 +491,12 @@ async def _create_document_tab(svc: BaseService, arguments: dict[str, Any]) -> d
     return {"status": "created", "document_id": document_id, "title": title}
 
 
-async def _update_tab_properties(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
-    document_id = arguments["document_id"]
-    tab_id = arguments["tab_id"]
-    title = arguments.get("title")
-    icon_emoji = arguments.get("icon_emoji")
-
-    if not title and not icon_emoji:
-        return {
-            "error": "At least one of 'title' or 'icon_emoji' must be provided",
-            "document_id": document_id,
-            "tab_id": tab_id,
-        }
-
-    update_request: dict[str, Any] = {
-        "updateTabProperties": {
-            "tabId": tab_id,
-            "tabProperties": {},
-            "fields": [],
-        }
-    }
-
-    if title:
-        update_request["updateTabProperties"]["tabProperties"]["title"] = title
-        update_request["updateTabProperties"]["fields"].append("title")
-    if icon_emoji:
-        update_request["updateTabProperties"]["tabProperties"]["iconEmoji"] = icon_emoji
-        update_request["updateTabProperties"]["fields"].append("iconEmoji")
-
-    update_request["updateTabProperties"]["fields"] = ",".join(
-        update_request["updateTabProperties"]["fields"]
-    )
-
-    url = f"{DOCS_API_BASE}/documents/{document_id}:batchUpdate"
-    body = {"requests": [update_request]}
-    await svc._make_request("POST", url, json_data=body)
-
-    return {
-        "status": "updated",
-        "document_id": document_id,
-        "tab_id": tab_id,
-        "updated_fields": update_request["updateTabProperties"]["fields"].split(","),
-    }
-
-
-async def _move_tab(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
-    document_id = arguments["document_id"]
-    tab_id = arguments["tab_id"]
-    new_parent_tab_id = arguments.get("new_parent_tab_id")
-    new_index = arguments.get("new_index")
-
-    if new_parent_tab_id is None and new_index is None:
-        return {
-            "error": "At least one of 'new_parent_tab_id' or 'new_index' must be provided",
-            "document_id": document_id,
-            "tab_id": tab_id,
-        }
-
-    update_request: dict[str, Any] = {
-        "updateTabProperties": {
-            "tabId": tab_id,
-            "tabProperties": {},
-            "fields": [],
-        }
-    }
-
-    if new_parent_tab_id is not None:
-        if new_parent_tab_id == "":
-            update_request["updateTabProperties"]["tabProperties"]["parentTabId"] = None
-        else:
-            update_request["updateTabProperties"]["tabProperties"]["parentTabId"] = (
-                new_parent_tab_id
-            )
-        update_request["updateTabProperties"]["fields"].append("parentTabId")
-
-    if new_index is not None:
-        update_request["updateTabProperties"]["tabProperties"]["index"] = new_index
-        update_request["updateTabProperties"]["fields"].append("index")
-
-    update_request["updateTabProperties"]["fields"] = ",".join(
-        update_request["updateTabProperties"]["fields"]
-    )
-
-    url = f"{DOCS_API_BASE}/documents/{document_id}:batchUpdate"
-    body = {"requests": [update_request]}
-    await svc._make_request("POST", url, json_data=body)
-
-    return {
-        "status": "moved",
-        "document_id": document_id,
-        "tab_id": tab_id,
-        "updated_fields": update_request["updateTabProperties"]["fields"].split(","),
-    }
-
-
 def get_handlers(svc: BaseService) -> dict[str, Any]:
     """Return name->callable mapping for Docs core and tab handlers."""
     return {
         "create_document": lambda args: _create_document(svc, args),
         "append_to_document": lambda args: _append_to_document(svc, args),
         "get_document": lambda args: _get_document(svc, args),
-        "list_document_tabs": lambda args: _list_document_tabs(svc, args),
-        "get_tab_content": lambda args: _get_tab_content(svc, args),
+        "manage_document_tabs": lambda args: _manage_document_tabs(svc, args),
         "create_document_tab": lambda args: _create_document_tab(svc, args),
-        "update_tab_properties": lambda args: _update_tab_properties(svc, args),
-        "move_tab": lambda args: _move_tab(svc, args),
     }

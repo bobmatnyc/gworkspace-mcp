@@ -82,8 +82,7 @@ class BaseService:
             )
         except FileNotFoundError as err:
             raise RuntimeError(
-                "npx is not installed. Install Node.js for mermaid support:\n"
-                "  https://nodejs.org/"
+                "npx is not installed. Install Node.js for mermaid support:\n  https://nodejs.org/"
             ) from err
 
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -14,55 +14,73 @@ if TYPE_CHECKING:
 
 TOOLS: list[Tool] = [
     Tool(
-        name="format_text_in_document",
-        description="Apply text formatting to a specific range in a Google Doc.",
+        name="format_document_range",
+        description=(
+            "Apply text style, paragraph style, and/or heading style to a range in a Google Doc "
+            "in a single call. At least one of text_style, paragraph_style, or heading_style must "
+            "be provided. All supplied styles are applied together via a single batchUpdate."
+        ),
         inputSchema={
             "type": "object",
             "properties": {
                 "document_id": {"type": "string", "description": "Google Doc ID"},
                 "start_index": {"type": "integer", "description": "Start character index"},
                 "end_index": {"type": "integer", "description": "End character index"},
-                "bold": {"type": "boolean", "description": "Apply bold formatting (optional)"},
-                "italic": {"type": "boolean", "description": "Apply italic formatting (optional)"},
-                "underline": {
-                    "type": "boolean",
-                    "description": "Apply underline formatting (optional)",
-                },
-                "font_size": {"type": "number", "description": "Font size in points (optional)"},
-                "font_family": {"type": "string", "description": "Font family name (optional)"},
-                "text_color": {
+                "text_style": {
                     "type": "object",
-                    "description": "Text color in RGB format",
+                    "description": "Text formatting to apply (optional)",
                     "properties": {
-                        "red": {"type": "number", "minimum": 0, "maximum": 1},
-                        "green": {"type": "number", "minimum": 0, "maximum": 1},
-                        "blue": {"type": "number", "minimum": 0, "maximum": 1},
+                        "bold": {"type": "boolean"},
+                        "italic": {"type": "boolean"},
+                        "underline": {"type": "boolean"},
+                        "font_size": {"type": "number", "description": "Font size in points"},
+                        "font_family": {"type": "string"},
+                        "text_color": {
+                            "type": "object",
+                            "description": "RGB color object",
+                            "properties": {
+                                "red": {"type": "number", "minimum": 0, "maximum": 1},
+                                "green": {"type": "number", "minimum": 0, "maximum": 1},
+                                "blue": {"type": "number", "minimum": 0, "maximum": 1},
+                            },
+                        },
                     },
                 },
-            },
-            "required": ["document_id", "start_index", "end_index"],
-        },
-    ),
-    Tool(
-        name="format_paragraph_in_document",
-        description="Apply paragraph formatting to a specific range in a Google Doc.",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "document_id": {"type": "string", "description": "Google Doc ID"},
-                "start_index": {"type": "integer", "description": "Start character index"},
-                "end_index": {"type": "integer", "description": "End character index"},
-                "alignment": {
+                "paragraph_style": {
+                    "type": "object",
+                    "description": "Paragraph formatting to apply (optional)",
+                    "properties": {
+                        "alignment": {
+                            "type": "string",
+                            "enum": ["LEFT", "CENTER", "RIGHT", "JUSTIFY"],
+                        },
+                        "line_spacing": {
+                            "type": "number",
+                            "description": "Line spacing multiplier",
+                        },
+                        "indent_first_line": {
+                            "type": "number",
+                            "description": "First line indent in points",
+                        },
+                        "indent_start": {"type": "number", "description": "Left indent in points"},
+                        "indent_end": {"type": "number", "description": "Right indent in points"},
+                    },
+                },
+                "heading_style": {
                     "type": "string",
-                    "enum": ["LEFT", "CENTER", "RIGHT", "JUSTIFY"],
+                    "description": "Named heading style to apply (optional)",
+                    "enum": [
+                        "NORMAL_TEXT",
+                        "TITLE",
+                        "SUBTITLE",
+                        "HEADING_1",
+                        "HEADING_2",
+                        "HEADING_3",
+                        "HEADING_4",
+                        "HEADING_5",
+                        "HEADING_6",
+                    ],
                 },
-                "line_spacing": {"type": "number", "description": "Line spacing multiplier"},
-                "indent_first_line": {
-                    "type": "number",
-                    "description": "First line indent in points",
-                },
-                "indent_start": {"type": "number", "description": "Left indent in points"},
-                "indent_end": {"type": "number", "description": "Right indent in points"},
             },
             "required": ["document_id", "start_index", "end_index"],
         },
@@ -163,33 +181,6 @@ TOOLS: list[Tool] = [
                 },
             },
             "required": ["document_id", "insert_index", "rows", "columns"],
-        },
-    ),
-    Tool(
-        name="apply_heading_style",
-        description="Apply heading styles to text in a Google Doc (Heading 1-6, Normal text, Title, Subtitle).",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "document_id": {"type": "string", "description": "Google Doc ID"},
-                "start_index": {"type": "integer"},
-                "end_index": {"type": "integer"},
-                "heading_style": {
-                    "type": "string",
-                    "enum": [
-                        "NORMAL_TEXT",
-                        "TITLE",
-                        "SUBTITLE",
-                        "HEADING_1",
-                        "HEADING_2",
-                        "HEADING_3",
-                        "HEADING_4",
-                        "HEADING_5",
-                        "HEADING_6",
-                    ],
-                },
-            },
-            "required": ["document_id", "start_index", "end_index", "heading_style"],
         },
     ),
     Tool(
@@ -556,40 +547,95 @@ def _find_table_cell_indices(
 # =============================================================================
 
 
-async def _format_text_in_document(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
+async def _format_document_range(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Apply text style, paragraph style, and/or heading style in a single batchUpdate."""
     document_id = arguments["document_id"]
     start_index = arguments["start_index"]
     end_index = arguments["end_index"]
+    text_style_args: dict[str, Any] = arguments.get("text_style") or {}
+    paragraph_style_args: dict[str, Any] = arguments.get("paragraph_style") or {}
+    heading_style: str | None = arguments.get("heading_style")
 
     url = f"{DOCS_API_BASE}/documents/{document_id}:batchUpdate"
+    requests: list[dict[str, Any]] = []
+    applied: list[str] = []
 
-    text_style: dict[str, Any] = {}
-    if "bold" in arguments:
-        text_style["bold"] = arguments["bold"]
-    if "italic" in arguments:
-        text_style["italic"] = arguments["italic"]
-    if "underline" in arguments:
-        text_style["underline"] = arguments["underline"]
-    if "font_size" in arguments:
-        text_style["fontSize"] = {"magnitude": arguments["font_size"], "unit": "PT"}
-    if "font_family" in arguments:
-        text_style["weightedFontFamily"] = {"fontFamily": arguments["font_family"]}
-    if "text_color" in arguments:
-        color = arguments["text_color"]
-        text_style["foregroundColor"] = {"color": {"rgbColor": color}}
+    # Build text style request
+    if text_style_args:
+        text_style: dict[str, Any] = {}
+        if "bold" in text_style_args:
+            text_style["bold"] = text_style_args["bold"]
+        if "italic" in text_style_args:
+            text_style["italic"] = text_style_args["italic"]
+        if "underline" in text_style_args:
+            text_style["underline"] = text_style_args["underline"]
+        if "font_size" in text_style_args:
+            text_style["fontSize"] = {"magnitude": text_style_args["font_size"], "unit": "PT"}
+        if "font_family" in text_style_args:
+            text_style["weightedFontFamily"] = {"fontFamily": text_style_args["font_family"]}
+        if "text_color" in text_style_args:
+            text_style["foregroundColor"] = {"color": {"rgbColor": text_style_args["text_color"]}}
+        if text_style:
+            requests.append(
+                {
+                    "updateTextStyle": {
+                        "range": {"startIndex": start_index, "endIndex": end_index},
+                        "textStyle": text_style,
+                        "fields": ",".join(text_style.keys()),
+                    }
+                }
+            )
+            applied.append("text_style")
 
-    if not text_style:
-        return {"status": "no_formatting_applied"}
-
-    requests = [
-        {
-            "updateTextStyle": {
-                "range": {"startIndex": start_index, "endIndex": end_index},
-                "textStyle": text_style,
-                "fields": ",".join(text_style.keys()),
+    # Build paragraph style request
+    if paragraph_style_args:
+        paragraph_style: dict[str, Any] = {}
+        if "alignment" in paragraph_style_args:
+            paragraph_style["alignment"] = paragraph_style_args["alignment"]
+        if "line_spacing" in paragraph_style_args:
+            paragraph_style["lineSpacing"] = paragraph_style_args["line_spacing"]
+        if "indent_first_line" in paragraph_style_args:
+            paragraph_style["indentFirstLine"] = {
+                "magnitude": paragraph_style_args["indent_first_line"],
+                "unit": "PT",
             }
-        }
-    ]
+        if "indent_start" in paragraph_style_args:
+            paragraph_style["indentStart"] = {
+                "magnitude": paragraph_style_args["indent_start"],
+                "unit": "PT",
+            }
+        if "indent_end" in paragraph_style_args:
+            paragraph_style["indentEnd"] = {
+                "magnitude": paragraph_style_args["indent_end"],
+                "unit": "PT",
+            }
+        if paragraph_style:
+            requests.append(
+                {
+                    "updateParagraphStyle": {
+                        "range": {"startIndex": start_index, "endIndex": end_index},
+                        "paragraphStyle": paragraph_style,
+                        "fields": ",".join(paragraph_style.keys()),
+                    }
+                }
+            )
+            applied.append("paragraph_style")
+
+    # Build heading style request
+    if heading_style:
+        requests.append(
+            {
+                "updateParagraphStyle": {
+                    "range": {"startIndex": start_index, "endIndex": end_index},
+                    "paragraphStyle": {"namedStyleType": heading_style},
+                    "fields": "namedStyleType",
+                }
+            }
+        )
+        applied.append("heading_style")
+
+    if not requests:
+        return {"status": "no_formatting_applied"}
 
     await svc._make_request("POST", url, json_data={"requests": requests})
 
@@ -597,56 +643,7 @@ async def _format_text_in_document(svc: BaseService, arguments: dict[str, Any]) 
         "status": "formatted",
         "document_id": document_id,
         "range": {"start_index": start_index, "end_index": end_index},
-        "applied_formatting": list(text_style.keys()),
-    }
-
-
-async def _format_paragraph_in_document(
-    svc: BaseService, arguments: dict[str, Any]
-) -> dict[str, Any]:
-    document_id = arguments["document_id"]
-    start_index = arguments["start_index"]
-    end_index = arguments["end_index"]
-
-    url = f"{DOCS_API_BASE}/documents/{document_id}:batchUpdate"
-
-    paragraph_style: dict[str, Any] = {}
-    if "alignment" in arguments:
-        paragraph_style["alignment"] = arguments["alignment"]
-    if "line_spacing" in arguments:
-        paragraph_style["lineSpacing"] = arguments["line_spacing"]
-    if "indent_first_line" in arguments:
-        paragraph_style["indentFirstLine"] = {
-            "magnitude": arguments["indent_first_line"],
-            "unit": "PT",
-        }
-    if "indent_start" in arguments:
-        paragraph_style["indentStart"] = {"magnitude": arguments["indent_start"], "unit": "PT"}
-    if "indent_end" in arguments:
-        paragraph_style["indentEnd"] = {"magnitude": arguments["indent_end"], "unit": "PT"}
-
-    if not paragraph_style:
-        return {"status": "no_formatting_applied"}
-
-    request_body = {
-        "requests": [
-            {
-                "updateParagraphStyle": {
-                    "range": {"startIndex": start_index, "endIndex": end_index},
-                    "paragraphStyle": paragraph_style,
-                    "fields": ",".join(paragraph_style.keys()),
-                }
-            }
-        ]
-    }
-
-    await svc._make_request("POST", url, json_data=request_body)
-
-    return {
-        "status": "formatted",
-        "document_id": document_id,
-        "range": {"start_index": start_index, "end_index": end_index},
-        "applied_formatting": list(paragraph_style.keys()),
+        "applied_styles": applied,
     }
 
 
@@ -968,44 +965,12 @@ async def _set_table_column_widths(svc: BaseService, arguments: dict[str, Any]) 
     }
 
 
-async def _apply_heading_style(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
-    document_id = arguments["document_id"]
-    start_index = arguments["start_index"]
-    end_index = arguments["end_index"]
-    heading_style = arguments["heading_style"]
-
-    url = f"{DOCS_API_BASE}/documents/{document_id}:batchUpdate"
-
-    request_body = {
-        "requests": [
-            {
-                "updateParagraphStyle": {
-                    "range": {"startIndex": start_index, "endIndex": end_index},
-                    "paragraphStyle": {"namedStyleType": heading_style},
-                    "fields": "namedStyleType",
-                }
-            }
-        ]
-    }
-
-    await svc._make_request("POST", url, json_data=request_body)
-
-    return {
-        "status": "applied",
-        "document_id": document_id,
-        "range": {"start_index": start_index, "end_index": end_index},
-        "heading_style": heading_style,
-    }
-
-
 def get_handlers(svc: BaseService) -> dict[str, Any]:
     """Return name->callable mapping for Docs formatting handlers."""
     return {
-        "format_text_in_document": lambda args: _format_text_in_document(svc, args),
-        "format_paragraph_in_document": lambda args: _format_paragraph_in_document(svc, args),
+        "format_document_range": lambda args: _format_document_range(svc, args),
         "create_list_in_document": lambda args: _create_list_in_document(svc, args),
         "insert_table_in_document": lambda args: _insert_table_in_document(svc, args),
-        "apply_heading_style": lambda args: _apply_heading_style(svc, args),
         "format_table_cells": lambda args: _format_table_cells(svc, args),
         "set_table_column_widths": lambda args: _set_table_column_widths(svc, args),
     }

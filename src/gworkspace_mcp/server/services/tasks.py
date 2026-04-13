@@ -12,289 +12,124 @@ if TYPE_CHECKING:
     from gworkspace_mcp.server.base import BaseService
 
 TOOLS: list[Tool] = [
-    # Google Tasks API - Task Lists Operations
     Tool(
-        name="list_task_lists",
-        description="List all task lists for the authenticated user",
+        name="manage_task_lists",
+        description=(
+            "Manage Google Tasks task lists. "
+            "Actions: list (all task lists), get (one by ID), create, update, delete."
+        ),
         inputSchema={
             "type": "object",
             "properties": {
+                "action": {
+                    "type": "string",
+                    "description": "Operation to perform",
+                    "enum": ["list", "get", "create", "update", "delete"],
+                },
+                "tasklist_id": {
+                    "type": "string",
+                    "description": "Task list ID (required for get, update, delete)",
+                },
+                "title": {
+                    "type": "string",
+                    "description": "Task list title (required for create; optional for update)",
+                },
                 "max_results": {
                     "type": "integer",
-                    "description": "Maximum number of task lists to return (default: 100)",
+                    "description": "Maximum number of task lists to return (list only, default: 100)",
                     "default": 100,
                 },
             },
-            "required": [],
+            "required": ["action"],
         },
     ),
     Tool(
-        name="get_task_list",
-        description="Get a specific task list by ID",
+        name="manage_tasks",
+        description=(
+            "Manage Google Tasks. "
+            "Actions: list (tasks in a list), get (one task), search (across all lists), "
+            "create, update, complete, delete, move."
+        ),
         inputSchema={
             "type": "object",
             "properties": {
+                "action": {
+                    "type": "string",
+                    "description": "Operation to perform",
+                    "enum": [
+                        "list",
+                        "get",
+                        "search",
+                        "create",
+                        "update",
+                        "complete",
+                        "delete",
+                        "move",
+                    ],
+                },
+                "task_id": {
+                    "type": "string",
+                    "description": "Task ID (required for get, update, complete, delete, move)",
+                },
                 "tasklist_id": {
                     "type": "string",
-                    "description": "Task list ID",
-                },
-            },
-            "required": ["tasklist_id"],
-        },
-    ),
-    Tool(
-        name="create_task_list",
-        description="Create a new task list",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "title": {
-                    "type": "string",
-                    "description": "Title of the new task list",
-                },
-            },
-            "required": ["title"],
-        },
-    ),
-    Tool(
-        name="update_task_list",
-        description="Update an existing task list",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "tasklist_id": {
-                    "type": "string",
-                    "description": "Task list ID to update",
-                },
-                "title": {
-                    "type": "string",
-                    "description": "New title for the task list",
-                },
-            },
-            "required": ["tasklist_id", "title"],
-        },
-    ),
-    Tool(
-        name="delete_task_list",
-        description="Delete a task list",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "tasklist_id": {
-                    "type": "string",
-                    "description": "Task list ID to delete",
-                },
-            },
-            "required": ["tasklist_id"],
-        },
-    ),
-    # Google Tasks API - Tasks Operations
-    Tool(
-        name="list_tasks",
-        description="List all tasks in a task list",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "tasklist_id": {
-                    "type": "string",
-                    "description": "Task list ID (default: '@default' for the default list)",
+                    "description": "Task list ID (optional, defaults to '@default')",
                     "default": "@default",
+                },
+                "title": {
+                    "type": "string",
+                    "description": "Task title (required for create; optional for update)",
+                },
+                "notes": {
+                    "type": "string",
+                    "description": "Task notes/description (optional)",
+                },
+                "due": {
+                    "type": "string",
+                    "description": "Due date in RFC3339 format, e.g. '2024-01-15T00:00:00Z' (optional)",
+                },
+                "status": {
+                    "type": "string",
+                    "description": "Task status: 'needsAction' or 'completed' (update only)",
+                    "enum": ["needsAction", "completed"],
+                },
+                "parent": {
+                    "type": "string",
+                    "description": "Parent task ID for subtasks (create or move only)",
+                },
+                "previous": {
+                    "type": "string",
+                    "description": "Task ID to position this task after (move only)",
+                },
+                "query": {
+                    "type": "string",
+                    "description": "Search string matched against task titles and notes (required for search)",
                 },
                 "show_completed": {
                     "type": "boolean",
-                    "description": "Include completed tasks (default: true)",
+                    "description": "Include completed tasks (list and search only, default: true)",
                     "default": True,
                 },
                 "show_hidden": {
                     "type": "boolean",
-                    "description": "Include hidden tasks (default: false)",
+                    "description": "Include hidden tasks (list only, default: false)",
                     "default": False,
                 },
                 "due_min": {
                     "type": "string",
-                    "description": "Lower bound for due date (RFC3339 format)",
+                    "description": "Lower bound for due date in RFC3339 format (list only)",
                 },
                 "due_max": {
                     "type": "string",
-                    "description": "Upper bound for due date (RFC3339 format)",
+                    "description": "Upper bound for due date in RFC3339 format (list only)",
                 },
                 "max_results": {
                     "type": "integer",
-                    "description": "Maximum number of tasks to return (default: 100)",
+                    "description": "Maximum number of tasks to return (list only, default: 100)",
                     "default": 100,
                 },
             },
-            "required": [],
-        },
-    ),
-    Tool(
-        name="get_task",
-        description="Get a specific task by ID",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "tasklist_id": {
-                    "type": "string",
-                    "description": "Task list ID (default: '@default')",
-                    "default": "@default",
-                },
-                "task_id": {
-                    "type": "string",
-                    "description": "Task ID",
-                },
-            },
-            "required": ["task_id"],
-        },
-    ),
-    Tool(
-        name="search_tasks",
-        description="Search tasks across all task lists by title or notes content",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Search query to match against task titles and notes",
-                },
-                "show_completed": {
-                    "type": "boolean",
-                    "description": "Include completed tasks in search (default: true)",
-                    "default": True,
-                },
-            },
-            "required": ["query"],
-        },
-    ),
-    Tool(
-        name="create_task",
-        description="Create a new task in a task list",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "tasklist_id": {
-                    "type": "string",
-                    "description": "Task list ID (default: '@default')",
-                    "default": "@default",
-                },
-                "title": {
-                    "type": "string",
-                    "description": "Task title",
-                },
-                "notes": {
-                    "type": "string",
-                    "description": "Task notes/description",
-                },
-                "due": {
-                    "type": "string",
-                    "description": "Due date in RFC3339 format (e.g., '2024-01-15T00:00:00Z')",
-                },
-                "parent": {
-                    "type": "string",
-                    "description": "Parent task ID for creating subtasks",
-                },
-            },
-            "required": ["title"],
-        },
-    ),
-    Tool(
-        name="update_task",
-        description="Update an existing task",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "tasklist_id": {
-                    "type": "string",
-                    "description": "Task list ID (default: '@default')",
-                    "default": "@default",
-                },
-                "task_id": {
-                    "type": "string",
-                    "description": "Task ID to update",
-                },
-                "title": {
-                    "type": "string",
-                    "description": "New task title",
-                },
-                "notes": {
-                    "type": "string",
-                    "description": "New task notes/description",
-                },
-                "due": {
-                    "type": "string",
-                    "description": "New due date in RFC3339 format",
-                },
-                "status": {
-                    "type": "string",
-                    "description": "Task status: 'needsAction' or 'completed'",
-                    "enum": ["needsAction", "completed"],
-                },
-            },
-            "required": ["task_id"],
-        },
-    ),
-    Tool(
-        name="complete_task",
-        description="Mark a task as completed",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "tasklist_id": {
-                    "type": "string",
-                    "description": "Task list ID (default: '@default')",
-                    "default": "@default",
-                },
-                "task_id": {
-                    "type": "string",
-                    "description": "Task ID to complete",
-                },
-            },
-            "required": ["task_id"],
-        },
-    ),
-    Tool(
-        name="delete_task",
-        description="Delete a task",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "tasklist_id": {
-                    "type": "string",
-                    "description": "Task list ID (default: '@default')",
-                    "default": "@default",
-                },
-                "task_id": {
-                    "type": "string",
-                    "description": "Task ID to delete",
-                },
-            },
-            "required": ["task_id"],
-        },
-    ),
-    Tool(
-        name="move_task",
-        description="Move a task to a different position or make it a subtask",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "tasklist_id": {
-                    "type": "string",
-                    "description": "Task list ID (default: '@default')",
-                    "default": "@default",
-                },
-                "task_id": {
-                    "type": "string",
-                    "description": "Task ID to move",
-                },
-                "parent": {
-                    "type": "string",
-                    "description": "New parent task ID (to make this task a subtask)",
-                },
-                "previous": {
-                    "type": "string",
-                    "description": "Task ID to position this task after",
-                },
-            },
-            "required": ["task_id"],
+            "required": ["action"],
         },
     ),
 ]
@@ -546,6 +381,68 @@ async def _move_task(svc: BaseService, arguments: dict[str, Any]) -> dict[str, A
     return result
 
 
+async def _manage_task_lists(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Dispatch manage_task_lists actions."""
+    action = arguments["action"]
+    if action == "list":
+        return await _list_task_lists(svc, arguments)
+    if action == "get":
+        if "tasklist_id" not in arguments:
+            raise ValueError("tasklist_id is required for action 'get'")
+        return await _get_task_list(svc, arguments)
+    if action == "create":
+        if "title" not in arguments:
+            raise ValueError("title is required for action 'create'")
+        return await _create_task_list(svc, arguments)
+    if action == "update":
+        if "tasklist_id" not in arguments:
+            raise ValueError("tasklist_id is required for action 'update'")
+        if "title" not in arguments:
+            raise ValueError("title is required for action 'update'")
+        return await _update_task_list(svc, arguments)
+    if action == "delete":
+        if "tasklist_id" not in arguments:
+            raise ValueError("tasklist_id is required for action 'delete'")
+        return await _delete_task_list(svc, arguments)
+    raise ValueError(f"Unknown action '{action}' for manage_task_lists")
+
+
+async def _manage_tasks(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Dispatch manage_tasks actions."""
+    action = arguments["action"]
+    if action == "list":
+        return await _list_tasks(svc, arguments)
+    if action == "get":
+        if "task_id" not in arguments:
+            raise ValueError("task_id is required for action 'get'")
+        return await _get_task(svc, arguments)
+    if action == "search":
+        if "query" not in arguments:
+            raise ValueError("query is required for action 'search'")
+        return await _search_tasks(svc, arguments)
+    if action == "create":
+        if "title" not in arguments:
+            raise ValueError("title is required for action 'create'")
+        return await _create_task(svc, arguments)
+    if action == "update":
+        if "task_id" not in arguments:
+            raise ValueError("task_id is required for action 'update'")
+        return await _update_task(svc, arguments)
+    if action == "complete":
+        if "task_id" not in arguments:
+            raise ValueError("task_id is required for action 'complete'")
+        return await _complete_task(svc, arguments)
+    if action == "delete":
+        if "task_id" not in arguments:
+            raise ValueError("task_id is required for action 'delete'")
+        return await _delete_task(svc, arguments)
+    if action == "move":
+        if "task_id" not in arguments:
+            raise ValueError("task_id is required for action 'move'")
+        return await _move_task(svc, arguments)
+    raise ValueError(f"Unknown action '{action}' for manage_tasks")
+
+
 def get_handlers(svc: BaseService) -> dict[str, Any]:
     """Return name->callable mapping for all tasks tool handlers.
 
@@ -556,17 +453,6 @@ def get_handlers(svc: BaseService) -> dict[str, Any]:
         Dictionary mapping tool names to async callables.
     """
     return {
-        "list_task_lists": lambda args: _list_task_lists(svc, args),
-        "get_task_list": lambda args: _get_task_list(svc, args),
-        "create_task_list": lambda args: _create_task_list(svc, args),
-        "update_task_list": lambda args: _update_task_list(svc, args),
-        "delete_task_list": lambda args: _delete_task_list(svc, args),
-        "list_tasks": lambda args: _list_tasks(svc, args),
-        "get_task": lambda args: _get_task(svc, args),
-        "search_tasks": lambda args: _search_tasks(svc, args),
-        "create_task": lambda args: _create_task(svc, args),
-        "update_task": lambda args: _update_task(svc, args),
-        "complete_task": lambda args: _complete_task(svc, args),
-        "delete_task": lambda args: _delete_task(svc, args),
-        "move_task": lambda args: _move_task(svc, args),
+        "manage_task_lists": lambda args: _manage_task_lists(svc, args),
+        "manage_tasks": lambda args: _manage_tasks(svc, args),
     }
