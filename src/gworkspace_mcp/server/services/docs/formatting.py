@@ -54,6 +54,14 @@ TABLE_STYLE_PRESETS: dict[str, dict[str, Any]] = {
 }
 
 
+PAGE_SIZE_PRESETS: dict[str, tuple[float, float]] = {
+    "letter": (612.0, 792.0),  # 8.5 × 11 in
+    "a4": (595.28, 841.89),  # 210 × 297 mm
+    "legal": (612.0, 1008.0),  # 8.5 × 14 in
+    "tabloid": (792.0, 1224.0),  # 11 × 17 in
+}
+
+
 TOOLS: list[Tool] = [
     Tool(
         name="format_document_range",
@@ -455,6 +463,33 @@ TOOLS: list[Tool] = [
                 },
             },
             "required": ["document_id", "table_start_index", "num_rows", "num_columns"],
+        },
+    ),
+    Tool(
+        name="set_document_style",
+        description=(
+            "Set page size and/or margins for a Google Doc. "
+            "Presets: letter (612×792 PT), a4 (595×842 PT), legal (612×1008 PT), tabloid (792×1224 PT). "
+            "All values in points (PT); 1 inch = 72 PT. "
+            "Returns available_width (page_width − left − right margins) for table column balancing."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "document_id": {"type": "string"},
+                "page_size": {
+                    "type": "string",
+                    "enum": ["letter", "a4", "legal", "tabloid"],
+                    "description": "Named preset; sets both width and height",
+                },
+                "page_width": {"type": "number", "description": "Page width in PT"},
+                "page_height": {"type": "number", "description": "Page height in PT"},
+                "margin_top": {"type": "number", "description": "Top margin in PT"},
+                "margin_bottom": {"type": "number", "description": "Bottom margin in PT"},
+                "margin_left": {"type": "number", "description": "Left margin in PT"},
+                "margin_right": {"type": "number", "description": "Right margin in PT"},
+            },
+            "required": ["document_id"],
         },
     ),
 ]
@@ -1239,6 +1274,76 @@ async def _apply_table_style(svc: BaseService, arguments: dict[str, Any]) -> dic
     }
 
 
+async def _set_document_style(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
+    document_id = arguments["document_id"]
+    url = f"{DOCS_API_BASE}/documents/{document_id}:batchUpdate"
+
+    preset = arguments.get("page_size")
+    preset_w, preset_h = PAGE_SIZE_PRESETS.get(preset, (612.0, 792.0)) if preset else (612.0, 792.0)
+
+    page_width = float(arguments.get("page_width", preset_w))
+    page_height = float(arguments.get("page_height", preset_h))
+    margin_top = float(arguments.get("margin_top", 72.0))
+    margin_bottom = float(arguments.get("margin_bottom", 72.0))
+    margin_left = float(arguments.get("margin_left", 72.0))
+    margin_right = float(arguments.get("margin_right", 72.0))
+
+    doc_style: dict[str, Any] = {
+        "pageSize": {
+            "width": {"magnitude": page_width, "unit": "PT"},
+            "height": {"magnitude": page_height, "unit": "PT"},
+        },
+        "marginTop": {"magnitude": margin_top, "unit": "PT"},
+        "marginBottom": {"magnitude": margin_bottom, "unit": "PT"},
+        "marginLeft": {"magnitude": margin_left, "unit": "PT"},
+        "marginRight": {"magnitude": margin_right, "unit": "PT"},
+    }
+
+    fields: list[str] = []
+    if preset or "page_width" in arguments or "page_height" in arguments:
+        fields.append("pageSize")
+    for arg, field in [
+        ("margin_top", "marginTop"),
+        ("margin_bottom", "marginBottom"),
+        ("margin_left", "marginLeft"),
+        ("margin_right", "marginRight"),
+    ]:
+        if arg in arguments:
+            fields.append(field)
+    if not fields:
+        fields = ["pageSize", "marginTop", "marginBottom", "marginLeft", "marginRight"]
+
+    await svc._make_request(
+        "POST",
+        url,
+        json_data={
+            "requests": [
+                {
+                    "updateDocumentStyle": {
+                        "documentStyle": doc_style,
+                        "fields": ",".join(fields),
+                    }
+                }
+            ]
+        },
+    )
+
+    return {
+        "status": "applied",
+        "document_id": document_id,
+        "page_width": page_width,
+        "page_height": page_height,
+        "margins": {
+            "top": margin_top,
+            "bottom": margin_bottom,
+            "left": margin_left,
+            "right": margin_right,
+        },
+        "available_width": page_width - margin_left - margin_right,
+        "fields_updated": fields,
+    }
+
+
 def get_handlers(svc: BaseService) -> dict[str, Any]:
     """Return name->callable mapping for Docs formatting handlers."""
     return {
@@ -1248,4 +1353,5 @@ def get_handlers(svc: BaseService) -> dict[str, Any]:
         "format_table_cells": lambda args: _format_table_cells(svc, args),
         "set_table_column_widths": lambda args: _set_table_column_widths(svc, args),
         "apply_table_style": lambda args: _apply_table_style(svc, args),
+        "set_document_style": lambda args: _set_document_style(svc, args),
     }
