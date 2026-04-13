@@ -18,10 +18,11 @@ TOOLS: list[Tool] = [
         name="format_sheet",
         description=(
             "Apply formatting to cells in a Google Spreadsheet. "
-            "Actions: format_cells (background color, font color, bold, italic, borders), "
-            "set_number_format (currency, percentage, date, etc.), "
-            "merge (merge or unmerge a cell range), "
-            "set_column_width (set or auto-resize column widths)."
+            "All actions require spreadsheet_id and sheet_name. "
+            "Actions: 'format_cells' (range required; background_color, font_color, bold, italic, borders optional), "
+            "'set_number_format' (range and format_type required; pattern optional for custom formats), "
+            "'merge' (range required; merge_type optional, unmerge=true to unmerge), "
+            "'set_column_width' (start_column_index and end_column_index required; width_pixels or auto_resize=true)."
         ),
         inputSchema={
             "type": "object",

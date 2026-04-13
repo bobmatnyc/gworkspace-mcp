@@ -17,7 +17,9 @@ TOOLS: list[Tool] = [
         name="manage_task_lists",
         description=(
             "Manage Google Tasks task lists. "
-            "Actions: list (all task lists), get (one by ID), create, update, delete."
+            "Actions: 'list' (max_results optional), 'get' (tasklist_id required), "
+            "'create' (title required), 'update' (tasklist_id and title required), "
+            "'delete' (tasklist_id required)."
         ),
         inputSchema={
             "type": "object",
@@ -48,8 +50,13 @@ TOOLS: list[Tool] = [
         name="manage_tasks",
         description=(
             "Manage Google Tasks. "
-            "Actions: list (tasks in a list), get (one task), search (across all lists), "
-            "create, update, complete, delete, move."
+            "Actions: 'list' (tasklist_id optional, defaults to @default; show_completed, due_min, due_max, max_results optional), "
+            "'get' (task_id required; tasklist_id optional), "
+            "'search' (query required; searches titles and notes across all lists), "
+            "'create' (title required; tasklist_id, notes, due, parent optional), "
+            "'update' (task_id required; title, notes, due, status optional), "
+            "'complete' (task_id required), 'delete' (task_id required), "
+            "'move' (task_id required; parent and previous optional for repositioning)."
         ),
         inputSchema={
             "type": "object",

@@ -15,7 +15,10 @@ TOOLS: list[Tool] = [
     Tool(
         name="manage_calendars",
         description=(
-            "Manage Google Calendars. Actions: list (all calendars), create, update, delete."
+            "Manage Google Calendars. "
+            "Actions: 'list' (no extra params), 'create' (summary required; description, timezone optional), "
+            "'update' (calendar_id required; summary, description, timezone optional), "
+            "'delete' (calendar_id required; primary calendar cannot be deleted)."
         ),
         inputSchema={
             "type": "object",
@@ -49,7 +52,10 @@ TOOLS: list[Tool] = [
         name="manage_events",
         description=(
             "Manage Google Calendar events. "
-            "Actions: list (events in a calendar), create, update, delete."
+            "Actions: 'list' (calendar_id optional; time_min, time_max, max_results optional), "
+            "'create' (summary, start_time, end_time required; calendar_id, description, attendees, location, timezone, recurrence optional), "
+            "'update' (event_id required; calendar_id, summary, description, start_time, end_time, attendees, location optional), "
+            "'delete' (event_id required; calendar_id optional, defaults to 'primary')."
         ),
         inputSchema={
             "type": "object",

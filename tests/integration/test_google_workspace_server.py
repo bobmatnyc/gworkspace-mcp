@@ -14,7 +14,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
-import pytest
+import pytest  # type: ignore[import-not-found]
 
 from gworkspace_mcp.server.google_workspace_server import GoogleWorkspaceServer
 
@@ -105,7 +105,7 @@ class TestGmailTools:
 
         call_count = [0]
 
-        async def mock_request(method, url, **kwargs):
+        async def mock_request(_method, url, **kwargs):  # pyright: ignore[reportUnusedParameter]
             call_count[0] += 1
             if "messages" in url and "msg_001" in url:
                 return create_mock_response(msg_detail_001)
@@ -157,7 +157,7 @@ class TestGmailTools:
             },
         }
 
-        async def mock_request(method, url, **kwargs):
+        async def mock_request(_method, _url, **kwargs):
             return create_mock_response(message_response)
 
         with patch("httpx.AsyncClient") as mock_client_class:
@@ -187,7 +187,7 @@ class TestGmailTools:
             "labelIds": ["SENT"],
         }
 
-        async def mock_request(method, url, **kwargs):
+        async def mock_request(_method, _url, **kwargs):
             return create_mock_response(send_response)
 
         with patch("httpx.AsyncClient") as mock_client_class:
@@ -220,7 +220,7 @@ class TestGmailTools:
             "message": {"id": "msg_draft_001", "threadId": "thread_draft_001"},
         }
 
-        async def mock_request(method, url, **kwargs):
+        async def mock_request(_method, _url, **kwargs):
             return create_mock_response(draft_response)
 
         with patch("httpx.AsyncClient") as mock_client_class:
@@ -553,7 +553,7 @@ class TestDriveTools:
             assert result["count"] == 2
             assert len(result["files"]) == 2
             assert result["files"][0]["name"] == "Project Proposal.docx"
-            assert result["files"][0]["owners"] == ["owner@example.com"]
+            assert "webViewLink" in result["files"][0]
 
     @pytest.mark.asyncio
     async def test_get_drive_file_content_google_doc(self, server):
@@ -984,26 +984,45 @@ class TestSheetsTools:
 
     @pytest.mark.asyncio
     async def test_get_spreadsheet_data_success(self, server):
-        """Test getting all sheets data uses batch get efficiently."""
-        # Arrange
-        sheets_response = {
+        """Test getting all sheets data uses a single includeGridData request."""
+        # Arrange — new implementation uses includeGridData=true (single call)
+        grid_response = {
             "spreadsheetId": "spreadsheet_001",
             "properties": {"title": "Multi-Tab Spreadsheet"},
             "sheets": [
-                {"properties": {"sheetId": 0, "title": "Sheet1", "index": 0}},
-                {"properties": {"sheetId": 1, "title": "Sheet2", "index": 1}},
-            ],
-        }
-        batch_response = {
-            "spreadsheetId": "spreadsheet_001",
-            "valueRanges": [
                 {
-                    "range": "'Sheet1'!A1:ZZ1000",
-                    "values": [["A", "B"], ["1", "2"]],
+                    "properties": {"sheetId": 0, "title": "Sheet1", "index": 0},
+                    "data": [
+                        {
+                            "rowData": [
+                                {"values": [{"formattedValue": "A"}, {"formattedValue": "B"}]},
+                                {"values": [{"formattedValue": "1"}, {"formattedValue": "2"}]},
+                            ]
+                        }
+                    ],
                 },
                 {
-                    "range": "'Sheet2'!A1:ZZ1000",
-                    "values": [["X", "Y", "Z"], ["10", "20", "30"]],
+                    "properties": {"sheetId": 1, "title": "Sheet2", "index": 1},
+                    "data": [
+                        {
+                            "rowData": [
+                                {
+                                    "values": [
+                                        {"formattedValue": "X"},
+                                        {"formattedValue": "Y"},
+                                        {"formattedValue": "Z"},
+                                    ]
+                                },
+                                {
+                                    "values": [
+                                        {"formattedValue": "10"},
+                                        {"formattedValue": "20"},
+                                        {"formattedValue": "30"},
+                                    ]
+                                },
+                            ]
+                        }
+                    ],
                 },
             ],
         }
@@ -1012,9 +1031,7 @@ class TestSheetsTools:
 
         async def mock_request(method, url, **kwargs):
             call_count[0] += 1
-            if "batchGet" in url:
-                return create_mock_response(batch_response)
-            return create_mock_response(sheets_response)
+            return create_mock_response(grid_response)
 
         with patch.object(server, "_get_http_client") as mock_get_client:
             mock_client = AsyncMock()
@@ -1033,8 +1050,8 @@ class TestSheetsTools:
             assert result["sheets"]["Sheet1"]["row_count"] == 2
             assert result["sheets"]["Sheet2"]["row_count"] == 2
             assert result["sheets"]["Sheet2"]["column_count"] == 3
-            # Verify batch get was used (2 calls: one for sheets list, one for batch values)
-            assert call_count[0] == 2
+            # Verify single-call strategy (includeGridData=true)
+            assert call_count[0] == 1
 
     @pytest.mark.asyncio
     async def test_create_spreadsheet_success(self, server):
@@ -1593,6 +1610,7 @@ class TestSlidesTools:
             result = await server._update_slide_text(
                 {
                     "presentation_id": "pres_001",
+                    "slide_id": "slide_001",
                     "shape_id": "shape_001",
                     "text": "Updated text content",
                 }

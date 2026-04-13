@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 TOOLS: list[Tool] = [
     Tool(
         name="create_document",
-        description="Create a new Google Doc",
+        description="Create a new Google Doc with the given title. Returns the document ID and URL.",
         inputSchema={
             "type": "object",
             "properties": {
@@ -28,7 +28,7 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="append_to_document",
-        description="Append text to an existing Google Doc",
+        description="Append plain text to the end of an existing Google Doc. Requires document_id and text.",
         inputSchema={
             "type": "object",
             "properties": {
@@ -119,7 +119,7 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         name="create_document_tab",
-        description="Create a new tab in a Google Doc.",
+        description="Create a new tab in a Google Doc. Requires document_id and title. Optionally specify icon_emoji, parent_tab_id, or index. Prefer manage_document_tabs action='create' for consistency.",
         inputSchema={
             "type": "object",
             "properties": {
