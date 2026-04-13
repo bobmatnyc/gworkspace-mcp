@@ -105,8 +105,9 @@ class TestGmailTools:
 
         call_count = [0]
 
-        async def mock_request(_method, url, **kwargs):  # pyright: ignore[reportUnusedParameter]
+        async def mock_request(**kwargs):  # pyright: ignore[reportUnusedParameter]
             call_count[0] += 1
+            url = kwargs.get("url", "")
             if "messages" in url and "msg_001" in url:
                 return create_mock_response(msg_detail_001)
             if "messages" in url and "msg_002" in url:
@@ -157,7 +158,7 @@ class TestGmailTools:
             },
         }
 
-        async def mock_request(_method, _url, **kwargs):
+        async def mock_request(**kwargs):  # pyright: ignore[reportUnusedParameter]
             return create_mock_response(message_response)
 
         with patch("httpx.AsyncClient") as mock_client_class:
@@ -187,7 +188,7 @@ class TestGmailTools:
             "labelIds": ["SENT"],
         }
 
-        async def mock_request(_method, _url, **kwargs):
+        async def mock_request(**kwargs):  # pyright: ignore[reportUnusedParameter]
             return create_mock_response(send_response)
 
         with patch("httpx.AsyncClient") as mock_client_class:
@@ -220,7 +221,7 @@ class TestGmailTools:
             "message": {"id": "msg_draft_001", "threadId": "thread_draft_001"},
         }
 
-        async def mock_request(_method, _url, **kwargs):
+        async def mock_request(**kwargs):  # pyright: ignore[reportUnusedParameter]
             return create_mock_response(draft_response)
 
         with patch("httpx.AsyncClient") as mock_client_class:
@@ -296,7 +297,7 @@ class TestGmailTools:
             "labelIds": ["SENT"],
         }
 
-        async def mock_request(method, url, **kwargs):
+        async def mock_request(**kwargs):  # pyright: ignore[reportUnusedParameter]
             return create_mock_response(send_response)
 
         with patch("httpx.AsyncClient") as mock_client_class:
@@ -347,7 +348,7 @@ class TestGmailTools:
         """Test searching Gmail with no matches returns empty list."""
         list_response = {"messages": []}
 
-        async def mock_request(method, url, **kwargs):
+        async def mock_request(**_kwargs):
             return create_mock_response(list_response)
 
         with patch("httpx.AsyncClient") as mock_client_class:
@@ -397,7 +398,7 @@ class TestCalendarTools:
             ]
         }
 
-        async def mock_request(method, url, **kwargs):
+        async def mock_request(**_kwargs):
             return create_mock_response(calendar_list_response)
 
         with patch("httpx.AsyncClient") as mock_client_class:

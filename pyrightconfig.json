@@ -1,0 +1,5 @@
+{
+  "include": ["src", "tests"],
+  "reportUnusedParameter": "none",
+  "reportUnusedVariable": "none"
+}
