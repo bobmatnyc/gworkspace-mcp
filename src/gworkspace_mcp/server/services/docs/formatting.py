@@ -628,7 +628,6 @@ def _build_cell_style_request(
 
     return {
         "updateTableCellStyle": {
-            "tableStartLocation": {"index": table_start_index},
             "tableCellStyle": cell_style,
             "fields": ",".join(field_keys),
             "tableRange": {
