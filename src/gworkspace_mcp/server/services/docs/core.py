@@ -250,10 +250,15 @@ async def _get_document(svc: BaseService, arguments: dict[str, Any]) -> dict[str
     document_id = arguments["document_id"]
     include_tabs_content = arguments.get("include_tabs_content", False)
 
-    # Always request tab content so modern tabbed documents return non-empty body.
-    url = f"{DOCS_API_BASE}/documents/{document_id}?includeTabsContent=true"
+    # Exclude large unused objects (inlineObjects, positionedObjects, headers,
+    # footers, footnotes) to reduce response payload by ~60-80%.
+    _FIELDS = "documentId,title,body,namedStyles,tabs,revisionId"
 
-    response = await svc._make_request("GET", url)
+    # Always request tab content so modern tabbed documents return non-empty body.
+    url = f"{DOCS_API_BASE}/documents/{document_id}"
+    params: dict[str, Any] = {"includeTabsContent": "true", "fields": _FIELDS}
+
+    response = await svc._make_request("GET", url, params=params)
 
     # For documents that use tabs, `body` is empty; content lives inside each
     # tab's `documentTab.body`.  Fall back to the top-level `body` only when

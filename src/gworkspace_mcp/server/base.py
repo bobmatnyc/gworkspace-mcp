@@ -185,6 +185,9 @@ class BaseService:
     ) -> dict[str, Any]:
         """Make an authenticated HTTP request to Google APIs.
 
+        Automatically retries once after refreshing the token on a 401
+        response, which handles token expiry that occurs mid-session.
+
         Args:
             method: HTTP method (GET, POST, etc.).
             url: Full URL to request.
@@ -195,7 +198,7 @@ class BaseService:
             JSON response as a dictionary.
 
         Raises:
-            httpx.HTTPStatusError: If the request fails.
+            httpx.HTTPStatusError: If the request fails after retry.
         """
         access_token = await self._get_access_token()
         client = await self._get_http_client()
@@ -210,6 +213,24 @@ class BaseService:
                 "Accept": "application/json",
             },
         )
+
+        if response.status_code == 401:
+            logger.info("Received 401, refreshing token and retrying...")
+            refreshed = await self.manager.refresh_if_needed()
+            if refreshed is None:
+                response.raise_for_status()
+            access_token = refreshed.access_token  # type: ignore[union-attr]
+            response = await client.request(
+                method=method,
+                url=url,
+                params=params,
+                json=json_data,
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Accept": "application/json",
+                },
+            )
+
         response.raise_for_status()
         result: dict[str, Any] = response.json()
         return result
@@ -217,11 +238,14 @@ class BaseService:
     async def _make_delete_request(self, url: str) -> None:
         """Make an authenticated DELETE request to Google APIs.
 
+        Automatically retries once after refreshing the token on a 401
+        response, which handles token expiry that occurs mid-session.
+
         Args:
             url: Full URL to request.
 
         Raises:
-            httpx.HTTPStatusError: If the request fails.
+            httpx.HTTPStatusError: If the request fails after retry.
         """
         access_token = await self._get_access_token()
         client = await self._get_http_client()
@@ -230,6 +254,18 @@ class BaseService:
             url,
             headers={"Authorization": f"Bearer {access_token}"},
         )
+
+        if response.status_code == 401:
+            logger.info("Received 401, refreshing token and retrying...")
+            refreshed = await self.manager.refresh_if_needed()
+            if refreshed is None:
+                response.raise_for_status()
+            access_token = refreshed.access_token  # type: ignore[union-attr]
+            response = await client.delete(
+                url,
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+
         response.raise_for_status()
 
     async def _make_raw_request(
@@ -243,6 +279,9 @@ class BaseService:
     ) -> httpx.Response:
         """Make an authenticated HTTP request returning raw response.
 
+        Automatically retries once after refreshing the token on a 401
+        response, which handles token expiry that occurs mid-session.
+
         Args:
             method: HTTP method (GET, POST, etc.).
             url: Full URL to request.
@@ -255,7 +294,7 @@ class BaseService:
             Raw httpx.Response object.
 
         Raises:
-            httpx.HTTPStatusError: If the request fails.
+            httpx.HTTPStatusError: If the request fails after retry.
         """
         access_token = await self._get_access_token()
         client = await self._get_http_client()
@@ -272,5 +311,24 @@ class BaseService:
             headers=request_headers,
             timeout=timeout,
         )
+
+        if response.status_code == 401:
+            logger.info("Received 401, refreshing token and retrying...")
+            refreshed = await self.manager.refresh_if_needed()
+            if refreshed is None:
+                response.raise_for_status()
+            access_token = refreshed.access_token  # type: ignore[union-attr]
+            request_headers = {"Authorization": f"Bearer {access_token}"}
+            if headers:
+                request_headers.update(headers)
+            response = await client.request(
+                method=method,
+                url=url,
+                params=params,
+                content=content,
+                headers=request_headers,
+                timeout=timeout,
+            )
+
         response.raise_for_status()
         return response

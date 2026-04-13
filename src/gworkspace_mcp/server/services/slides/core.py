@@ -175,9 +175,13 @@ async def _list_presentations(svc: BaseService, arguments: dict[str, Any]) -> di
 
 async def _get_presentation(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
     """Get presentation metadata and structure."""
+    _FIELDS = (
+        "presentationId,title,slides(objectId,slideProperties,pageElements/objectId),"
+        "pageSize,masters/objectId,layouts(objectId,layoutProperties)"
+    )
     presentation_id = arguments["presentation_id"]
     url = f"{SLIDES_API_BASE}/presentations/{presentation_id}"
-    response = await svc._make_request("GET", url)
+    response = await svc._make_request("GET", url, params={"fields": _FIELDS})
 
     slides = []
     for slide in response.get("slides", []):
@@ -215,11 +219,14 @@ async def _get_presentation(svc: BaseService, arguments: dict[str, Any]) -> dict
 
 async def _get_slide(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
     """Get content of a specific slide."""
+    # Fetch full pageElements so shape/image/table details are available;
+    # omit masters and layouts which are not used by this handler.
+    _FIELDS = "slides(objectId,slideProperties,pageElements)"
     presentation_id = arguments["presentation_id"]
     slide_index = arguments["slide_index"]
 
     url = f"{SLIDES_API_BASE}/presentations/{presentation_id}"
-    response = await svc._make_request("GET", url)
+    response = await svc._make_request("GET", url, params={"fields": _FIELDS})
 
     slides = response.get("slides", [])
     if slide_index < 0 or slide_index >= len(slides):

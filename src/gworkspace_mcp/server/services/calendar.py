@@ -151,8 +151,9 @@ TOOLS: list[Tool] = [
 
 async def _list_calendars(svc: BaseService, _: dict[str, Any]) -> dict[str, Any]:
     """List all calendars accessible by the user."""
+    _FIELDS = "items(id,summary,description,timeZone,selected,primary)"
     url = f"{CALENDAR_API_BASE}/users/me/calendarList"
-    response = await svc._make_request("GET", url)
+    response = await svc._make_request("GET", url, params={"fields": _FIELDS})
     calendars = []
     for item in response.get("items", []):
         calendars.append(
@@ -238,11 +239,15 @@ async def _get_events(svc: BaseService, arguments: dict[str, Any]) -> dict[str, 
     time_max = arguments.get("time_max")
     max_results = arguments.get("max_results", 10)
 
+    _FIELDS = (
+        "items(id,summary,description,start,end,location,attendees,recurrence,status),nextPageToken"
+    )
     url = f"{CALENDAR_API_BASE}/calendars/{calendar_id}/events"
     params: dict[str, Any] = {
         "maxResults": max_results,
         "singleEvents": True,
         "orderBy": "startTime",
+        "fields": _FIELDS,
     }
     if time_min:
         params["timeMin"] = time_min

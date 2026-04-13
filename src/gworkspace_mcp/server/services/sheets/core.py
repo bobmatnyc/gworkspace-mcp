@@ -148,7 +148,9 @@ async def get_sheet_id(svc: BaseService, spreadsheet_id: str, sheet_name: str) -
     Public helper used by the formatting sub-module.
     """
     url = f"{SHEETS_API_BASE}/spreadsheets/{spreadsheet_id}"
-    response = await svc._make_request("GET", url)
+    response = await svc._make_request(
+        "GET", url, params={"fields": "sheets(properties(sheetId,title))"}
+    )
     for sheet in response["sheets"]:
         if sheet["properties"]["title"] == sheet_name:
             return {"sheet_id": sheet["properties"]["sheetId"], "sheet_name": sheet_name}
@@ -188,8 +190,12 @@ async def a1_to_grid_range(range_a1: str, sheet_id: int) -> dict[str, Any]:
 
 async def _list_spreadsheet_sheets(svc: BaseService, spreadsheet_id: str) -> dict[str, Any]:
     """List all sheets/tabs in a Google Spreadsheet."""
+    _FIELDS = (
+        "spreadsheetId,properties/title,"
+        "sheets(properties(sheetId,title,index,sheetType,gridProperties,tabColor))"
+    )
     url = f"{SHEETS_API_BASE}/spreadsheets/{spreadsheet_id}"
-    params = {"fields": "spreadsheetId,properties.title,sheets.properties"}
+    params = {"fields": _FIELDS}
     response = await svc._make_request("GET", url, params=params)
 
     sheets = []
@@ -257,49 +263,73 @@ async def _get_sheet_values(
 async def _get_spreadsheet_data(
     svc: BaseService, spreadsheet_id: str, max_rows: int = 1000
 ) -> dict[str, Any]:
-    """Get all sheets and their data from a Google Spreadsheet."""
-    sheets_response = await _list_spreadsheet_sheets(svc, spreadsheet_id)
-    sheet_names = [sheet["name"] for sheet in sheets_response.get("sheets", [])]
+    """Get all sheets and their data from a Google Spreadsheet in a single API call.
 
-    if not sheet_names:
+    Uses ``includeGridData=true`` on the spreadsheets.get endpoint so that both
+    sheet metadata and cell values are returned together, reducing HTTP round-trips
+    from 2 (metadata + batchGet) to 1.
+    """
+    url = f"{SHEETS_API_BASE}/spreadsheets/{spreadsheet_id}"
+    params = {
+        "includeGridData": "true",
+        "fields": (
+            "spreadsheetId,properties/title,"
+            "sheets(properties(title,sheetId),data/rowData/values/formattedValue)"
+        ),
+    }
+    response = await svc._make_request("GET", url, params=params)
+
+    title = response.get("properties", {}).get("title", "")
+    raw_sheets = response.get("sheets", [])
+
+    if not raw_sheets:
         return {
             "spreadsheet_id": spreadsheet_id,
-            "title": sheets_response.get("title", ""),
+            "title": title,
             "sheets": {},
             "count": 0,
             "message": "No sheets found in this spreadsheet.",
         }
 
-    ranges = [f"'{name}'!A1:ZZ{max_rows}" for name in sheet_names]
-    url = f"{SHEETS_API_BASE}/spreadsheets/{spreadsheet_id}/values:batchGet"
-    params = {"ranges": ranges, "valueRenderOption": "FORMATTED_VALUE"}
-    response = await svc._make_request("GET", url, params=params)
+    sheets_data: dict[str, Any] = {}
+    for sheet in raw_sheets:
+        sheet_name = sheet.get("properties", {}).get("title", "")
+        # data is a list of grid ranges; we only need the first one (the full grid)
+        row_data = []
+        sheet_data_list = sheet.get("data", [])
+        if sheet_data_list:
+            row_data = sheet_data_list[0].get("rowData", [])
 
-    sheets_data = {}
-    value_ranges = response.get("valueRanges", [])
-    for i, sheet_name in enumerate(sheet_names):
-        if i < len(value_ranges):
-            values = value_ranges[i].get("values", [])
-            csv_lines = []
-            for row in values:
-                escaped_row = []
-                for cell in row:
-                    cell_str = str(cell) if cell is not None else ""
-                    if "," in cell_str or '"' in cell_str or "\n" in cell_str:
-                        cell_str = '"' + cell_str.replace('"', '""') + '"'
-                    escaped_row.append(cell_str)
-                csv_lines.append(",".join(escaped_row))
-            sheets_data[sheet_name] = {
-                "data": "\n".join(csv_lines),
-                "row_count": len(values),
-                "column_count": max(len(row) for row in values) if values else 0,
-            }
-        else:
-            sheets_data[sheet_name] = {"data": "", "row_count": 0, "column_count": 0}
+        # Apply max_rows limit
+        row_data = row_data[:max_rows]
+
+        values: list[list[str]] = []
+        for row in row_data:
+            cells = row.get("values", [])
+            values.append([c.get("formattedValue", "") or "" for c in cells])
+
+        # Drop trailing empty rows introduced by includeGridData padding
+        while values and all(cell == "" for cell in values[-1]):
+            values.pop()
+
+        csv_lines = []
+        for row in values:
+            escaped_row = []
+            for cell_str in row:
+                if "," in cell_str or '"' in cell_str or "\n" in cell_str:
+                    cell_str = '"' + cell_str.replace('"', '""') + '"'
+                escaped_row.append(cell_str)
+            csv_lines.append(",".join(escaped_row))
+
+        sheets_data[sheet_name] = {
+            "data": "\n".join(csv_lines),
+            "row_count": len(values),
+            "column_count": max(len(row) for row in values) if values else 0,
+        }
 
     return {
         "spreadsheet_id": spreadsheet_id,
-        "title": sheets_response.get("title", ""),
+        "title": title,
         "sheets": sheets_data,
         "count": len(sheets_data),
     }

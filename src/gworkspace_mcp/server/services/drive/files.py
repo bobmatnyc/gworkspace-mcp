@@ -197,11 +197,14 @@ async def _search_drive_files(svc: BaseService, arguments: dict[str, Any]) -> di
 
     normalized_query = _normalize_drive_query(query)
 
+    _FIELDS = (
+        "files(id,name,mimeType,size,modifiedTime,parents,webViewLink,thumbnailLink),nextPageToken"
+    )
     url = f"{DRIVE_API_BASE}/files"
     params = {
         "q": normalized_query,
         "pageSize": max_results,
-        "fields": "files(id,name,mimeType,modifiedTime,size,webViewLink,owners)",
+        "fields": _FIELDS,
         "includeItemsFromAllDrives": "true",
         "supportsAllDrives": "true",
     }
@@ -217,8 +220,9 @@ async def _search_drive_files(svc: BaseService, arguments: dict[str, Any]) -> di
                 "mimeType": item.get("mimeType"),
                 "modifiedTime": item.get("modifiedTime"),
                 "size": item.get("size"),
+                "parents": item.get("parents", []),
                 "webViewLink": item.get("webViewLink"),
-                "owners": [o.get("emailAddress") for o in item.get("owners", [])],
+                "thumbnailLink": item.get("thumbnailLink"),
             }
         )
 
@@ -404,7 +408,7 @@ async def _get_drive_file_content(svc: BaseService, arguments: dict[str, Any]) -
 
 
 async def _convert_document(
-    svc: BaseService,  # noqa: ARG001
+    _: BaseService,
     arguments: dict[str, Any],
 ) -> dict[str, Any]:
     """Convert a local document between formats using pandoc or openpyxl."""

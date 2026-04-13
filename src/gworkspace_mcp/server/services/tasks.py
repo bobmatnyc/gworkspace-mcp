@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING, Any
 
 from mcp.types import Tool
@@ -267,19 +268,16 @@ async def _search_tasks(svc: BaseService, arguments: dict[str, Any]) -> dict[str
 
     lists_url = f"{TASKS_API_BASE}/users/@me/lists"
     lists_response = await svc._make_request("GET", lists_url)
+    task_lists = lists_response.get("items", [])
 
-    matching_tasks = []
-    for task_list in lists_response.get("items", []):
-        tasklist_id = task_list.get("id")
-        tasklist_title = task_list.get("title")
-
+    async def _search_single_list(tasklist_id: str, tasklist_title: str) -> list[dict[str, Any]]:
         tasks_url = f"{TASKS_API_BASE}/lists/{tasklist_id}/tasks"
-        params = {
+        params: dict[str, Any] = {
             "showCompleted": str(show_completed).lower(),
             "maxResults": 100,
         }
         tasks_response = await svc._make_request("GET", tasks_url, params=params)
-
+        matches: list[dict[str, Any]] = []
         for task in tasks_response.get("items", []):
             title = task.get("title", "").lower()
             notes = task.get("notes", "").lower()
@@ -287,7 +285,18 @@ async def _search_tasks(svc: BaseService, arguments: dict[str, Any]) -> dict[str
                 formatted = _format_task(task)
                 formatted["tasklist_id"] = tasklist_id
                 formatted["tasklist_title"] = tasklist_title
-                matching_tasks.append(formatted)
+                matches.append(formatted)
+        return matches
+
+    results = await asyncio.gather(
+        *[_search_single_list(tl.get("id", ""), tl.get("title", "")) for tl in task_lists],
+        return_exceptions=True,
+    )
+
+    matching_tasks: list[dict[str, Any]] = []
+    for result in results:
+        if not isinstance(result, BaseException):
+            matching_tasks.extend(result)
 
     return {"tasks": matching_tasks, "count": len(matching_tasks), "query": query}
 
