@@ -12,6 +12,48 @@ from gworkspace_mcp.server.constants import DOCS_API_BASE
 if TYPE_CHECKING:
     from gworkspace_mcp.server.base import BaseService
 
+# =============================================================================
+# Table style presets
+# =============================================================================
+
+# Each preset is a dict with a subset of:
+#   header_background, header_text_bold, odd_row_background, even_row_background,
+#   border_color, border_width, border_dash_style, cell_padding
+TABLE_STYLE_PRESETS: dict[str, dict[str, Any]] = {
+    "plain": {},  # Google Docs default — no changes
+    "minimal": {
+        "border_color": {"red": 0.9, "green": 0.9, "blue": 0.9},
+        "border_width": 0.5,
+        "border_dash_style": "SOLID",
+        "cell_padding": {"top": 4, "bottom": 4, "left": 6, "right": 6},
+    },
+    "bordered": {
+        "border_color": {"red": 0.4, "green": 0.4, "blue": 0.4},
+        "border_width": 1.0,
+        "border_dash_style": "SOLID",
+        "cell_padding": {"top": 4, "bottom": 4, "left": 6, "right": 6},
+    },
+    "striped": {
+        "border_color": {"red": 0.85, "green": 0.85, "blue": 0.85},
+        "border_width": 0.5,
+        "border_dash_style": "SOLID",
+        "odd_row_background": {"red": 1.0, "green": 1.0, "blue": 1.0},
+        "even_row_background": {"red": 0.95, "green": 0.95, "blue": 0.97},
+        "cell_padding": {"top": 4, "bottom": 4, "left": 6, "right": 6},
+    },
+    "professional": {
+        "header_background": {"red": 0.2, "green": 0.35, "blue": 0.6},
+        "header_text_bold": True,
+        "odd_row_background": {"red": 1.0, "green": 1.0, "blue": 1.0},
+        "even_row_background": {"red": 0.93, "green": 0.95, "blue": 0.98},
+        "border_color": {"red": 0.7, "green": 0.75, "blue": 0.85},
+        "border_width": 0.75,
+        "border_dash_style": "SOLID",
+        "cell_padding": {"top": 5, "bottom": 5, "left": 8, "right": 8},
+    },
+}
+
+
 TOOLS: list[Tool] = [
     Tool(
         name="format_document_range",
@@ -323,6 +365,96 @@ TOOLS: list[Tool] = [
                 },
             },
             "required": ["document_id", "table_start_index"],
+        },
+    ),
+    Tool(
+        name="apply_table_style",
+        description=(
+            "Apply a named style preset or custom style to an entire table in a Google Doc. "
+            "Presets: minimal, bordered, striped, professional, plain. "
+            "Custom overrides any preset field. Requires table_start_index from get_document."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "document_id": {"type": "string"},
+                "table_start_index": {
+                    "type": "integer",
+                    "description": "Index of the table node in the doc body",
+                },
+                "num_rows": {
+                    "type": "integer",
+                    "description": "Number of rows in the table",
+                },
+                "num_columns": {
+                    "type": "integer",
+                    "description": "Number of columns in the table",
+                },
+                "preset": {
+                    "type": "string",
+                    "enum": ["minimal", "bordered", "striped", "professional", "plain"],
+                    "description": "Named style preset. Can be combined with custom overrides.",
+                },
+                "header_row": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Whether to style first row as header",
+                },
+                "custom": {
+                    "type": "object",
+                    "description": "Override specific style properties",
+                    "properties": {
+                        "header_background": {
+                            "type": "object",
+                            "properties": {
+                                "red": {"type": "number"},
+                                "green": {"type": "number"},
+                                "blue": {"type": "number"},
+                            },
+                        },
+                        "header_text_bold": {"type": "boolean"},
+                        "odd_row_background": {
+                            "type": "object",
+                            "properties": {
+                                "red": {"type": "number"},
+                                "green": {"type": "number"},
+                                "blue": {"type": "number"},
+                            },
+                        },
+                        "even_row_background": {
+                            "type": "object",
+                            "properties": {
+                                "red": {"type": "number"},
+                                "green": {"type": "number"},
+                                "blue": {"type": "number"},
+                            },
+                        },
+                        "border_color": {
+                            "type": "object",
+                            "properties": {
+                                "red": {"type": "number"},
+                                "green": {"type": "number"},
+                                "blue": {"type": "number"},
+                            },
+                        },
+                        "border_width": {"type": "number"},
+                        "border_dash_style": {
+                            "type": "string",
+                            "enum": ["SOLID", "DOT", "DASH"],
+                        },
+                        "cell_padding": {
+                            "type": "object",
+                            "properties": {
+                                "top": {"type": "number"},
+                                "bottom": {"type": "number"},
+                                "left": {"type": "number"},
+                                "right": {"type": "number"},
+                            },
+                        },
+                    },
+                },
+            },
+            "required": ["document_id", "table_start_index", "num_rows", "num_columns"],
         },
     ),
 ]
@@ -965,6 +1097,149 @@ async def _set_table_column_widths(svc: BaseService, arguments: dict[str, Any]) 
     }
 
 
+async def _apply_table_style(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Apply a named style preset or custom style to an entire table."""
+    document_id: str = arguments["document_id"]
+    table_start_index: int = arguments["table_start_index"]
+    num_rows: int = arguments["num_rows"]
+    num_columns: int = arguments["num_columns"]
+    header_row: bool = arguments.get("header_row", True)
+    preset_name: str = arguments.get("preset", "plain")
+    custom: dict[str, Any] = arguments.get("custom") or {}
+
+    # Merge preset with custom overrides
+    style: dict[str, Any] = {**TABLE_STYLE_PRESETS.get(preset_name, {}), **custom}
+
+    if not style:
+        return {"status": "no_style_applied", "preset": preset_name, "document_id": document_id}
+
+    url = f"{DOCS_API_BASE}/documents/{document_id}:batchUpdate"
+    requests: list[dict[str, Any]] = []
+
+    # Extract style fields
+    border_color: dict[str, float] | None = style.get("border_color")
+    border_width: float | None = style.get("border_width")
+    border_dash: str = style.get("border_dash_style", "SOLID")
+    cell_padding: dict[str, float] | None = style.get("cell_padding")
+    header_background: dict[str, float] | None = style.get("header_background")
+    header_text_bold: bool = style.get("header_text_bold", False)
+    odd_row_background: dict[str, float] | None = style.get("odd_row_background")
+    even_row_background: dict[str, float] | None = style.get("even_row_background")
+
+    for row_idx in range(num_rows):
+        is_header = header_row and row_idx == 0
+        # Determine row background
+        if is_header and header_background:
+            row_bg: dict[str, float] | None = header_background
+        elif not is_header:
+            # Non-header rows: odd/even alternation (row 1 is first non-header)
+            # row_idx 1 => "odd" visual row => odd_row_background
+            # row_idx 2 => "even" visual row => even_row_background
+            if row_idx % 2 == 0:
+                row_bg = even_row_background
+            else:
+                row_bg = odd_row_background
+        else:
+            row_bg = None
+
+        for col_idx in range(num_columns):
+            cell_style: dict[str, Any] = {}
+            field_keys: list[str] = []
+
+            # Border
+            if border_color is not None and border_width is not None:
+                border_obj = {
+                    "color": {"color": {"rgbColor": border_color}},
+                    "width": {"magnitude": border_width, "unit": "PT"},
+                    "dashStyle": border_dash,
+                }
+                cell_style["borderTop"] = border_obj
+                cell_style["borderBottom"] = border_obj
+                cell_style["borderLeft"] = border_obj
+                cell_style["borderRight"] = border_obj
+                field_keys += ["borderTop", "borderBottom", "borderLeft", "borderRight"]
+
+            # Padding
+            if cell_padding:
+                cell_style["paddingTop"] = {"magnitude": cell_padding.get("top", 0), "unit": "PT"}
+                cell_style["paddingBottom"] = {
+                    "magnitude": cell_padding.get("bottom", 0),
+                    "unit": "PT",
+                }
+                cell_style["paddingLeft"] = {
+                    "magnitude": cell_padding.get("left", 0),
+                    "unit": "PT",
+                }
+                cell_style["paddingRight"] = {
+                    "magnitude": cell_padding.get("right", 0),
+                    "unit": "PT",
+                }
+                field_keys += ["paddingTop", "paddingBottom", "paddingLeft", "paddingRight"]
+
+            # Background
+            if row_bg:
+                cell_style["backgroundColor"] = {"color": {"rgbColor": row_bg}}
+                field_keys.append("backgroundColor")
+
+            if cell_style and field_keys:
+                requests.append(
+                    {
+                        "updateTableCellStyle": {
+                            "tableCellStyle": cell_style,
+                            "fields": ",".join(field_keys),
+                            "tableRange": {
+                                "tableCellLocation": {
+                                    "tableStartLocation": {"index": table_start_index},
+                                    "rowIndex": row_idx,
+                                    "columnIndex": col_idx,
+                                },
+                                "rowSpan": 1,
+                                "columnSpan": 1,
+                            },
+                        }
+                    }
+                )
+
+    # Header bold: fetch doc to get cell content indices
+    if header_row and header_text_bold:
+        doc_resp: dict[str, Any] = await svc._make_request(
+            "GET",
+            f"{DOCS_API_BASE}/documents/{document_id}",
+            params={"fields": "body"},
+        )
+        doc_body: list[dict[str, Any]] = (doc_resp or {}).get("body", {}).get("content", [])
+        cell_indices = _find_table_cell_indices(doc_body, table_start_index)
+        if cell_indices:
+            first_row = cell_indices[0]
+            for _, start_idx in enumerate(first_row):
+                if start_idx > 0:
+                    requests.append(
+                        {
+                            "updateTextStyle": {
+                                "range": {"startIndex": start_idx, "endIndex": start_idx + 1},
+                                "textStyle": {"bold": True},
+                                "fields": "bold",
+                            }
+                        }
+                    )
+
+    if not requests:
+        return {"status": "no_style_applied", "preset": preset_name, "document_id": document_id}
+
+    await svc._make_request("POST", url, json_data={"requests": requests})
+
+    return {
+        "status": "styled",
+        "document_id": document_id,
+        "table_start_index": table_start_index,
+        "preset": preset_name,
+        "num_rows": num_rows,
+        "num_columns": num_columns,
+        "header_row": header_row,
+        "requests_sent": len(requests),
+    }
+
+
 def get_handlers(svc: BaseService) -> dict[str, Any]:
     """Return name->callable mapping for Docs formatting handlers."""
     return {
@@ -973,4 +1248,5 @@ def get_handlers(svc: BaseService) -> dict[str, Any]:
         "insert_table_in_document": lambda args: _insert_table_in_document(svc, args),
         "format_table_cells": lambda args: _format_table_cells(svc, args),
         "set_table_column_widths": lambda args: _set_table_column_widths(svc, args),
+        "apply_table_style": lambda args: _apply_table_style(svc, args),
     }

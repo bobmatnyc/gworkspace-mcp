@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
 
+import httpx
 from mcp.types import Tool
 
 from gworkspace_mcp.server.constants import DOCS_API_BASE
 
 if TYPE_CHECKING:
     from gworkspace_mcp.server.base import BaseService
+
+logger = logging.getLogger(__name__)
 
 TOOLS: list[Tool] = [
     Tool(
@@ -248,17 +252,42 @@ async def _append_to_document(svc: BaseService, arguments: dict[str, Any]) -> di
 
 async def _get_document(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
     document_id = arguments["document_id"]
-    include_tabs_content = arguments.get("include_tabs_content", False)
+    include_tabs = arguments.get("include_tabs_content", False)
 
     # Exclude large unused objects (inlineObjects, positionedObjects, headers,
     # footers, footnotes) to reduce response payload by ~60-80%.
-    _FIELDS = "documentId,title,body,namedStyles,tabs,revisionId"
+    # Separate field masks: pandoc/DOCX-uploaded docs reject requests that
+    # include `tabs` in the field mask together with includeTabsContent=true.
+    _FIELDS_WITH_TABS = "documentId,title,body,namedStyles,tabs,revisionId"
+    _FIELDS_NO_TABS = "documentId,title,body,namedStyles,revisionId"
 
-    # Always request tab content so modern tabbed documents return non-empty body.
     url = f"{DOCS_API_BASE}/documents/{document_id}"
-    params: dict[str, Any] = {"includeTabsContent": "true", "fields": _FIELDS}
+    params: dict[str, Any] = {
+        "fields": _FIELDS_WITH_TABS if include_tabs else _FIELDS_NO_TABS,
+    }
+    if include_tabs:
+        params["includeTabsContent"] = "true"
 
-    response = await svc._make_request("GET", url, params=params)
+    try:
+        response = await svc._make_request("GET", url, params=params)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 400 and include_tabs:
+            # Pandoc/DOCX-uploaded documents do not support the tabs API.
+            # Retry without tabs and surface a warning so callers know.
+            logger.warning(
+                "get_document: 400 error with tabs request for %s; "
+                "retrying without tabs (pandoc/DOCX-uploaded document).",
+                document_id,
+            )
+            params = {"fields": _FIELDS_NO_TABS}
+            response = await svc._make_request("GET", url, params=params)
+            warning: str | None = (
+                "Document does not support tabs API; returned without tab content."
+            )
+        else:
+            raise
+    else:
+        warning = None
 
     # For documents that use tabs, `body` is empty; content lives inside each
     # tab's `documentTab.body`.  Fall back to the top-level `body` only when
@@ -282,8 +311,11 @@ async def _get_document(svc: BaseService, arguments: dict[str, Any]) -> dict[str
         "text_content": text_content,
     }
 
-    if include_tabs_content and tabs:
+    if include_tabs and tabs:
         result["tabs"] = _format_tabs(tabs)
+
+    if warning is not None:
+        result["warning"] = warning
 
     return result
 
