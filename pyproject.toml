@@ -139,3 +139,10 @@ dev = [
     "build>=1.4.0",
     "twine>=6.2.0",
 ]
+
+[tool.pyright]
+reportUnusedParameter = "none"
+reportUnusedVariable = "none"
+reportUnusedImport = "none"
+reportUnusedClass = "none"
+reportUnusedFunction = "none"

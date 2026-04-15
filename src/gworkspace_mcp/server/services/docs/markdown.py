@@ -113,6 +113,11 @@ TOOLS: list[Tool] = [
                     "description": "Add original mermaid source as document comments for future editing (gdoc only)",
                     "default": True,
                 },
+                "apply_heading_styles": {
+                    "type": "boolean",
+                    "description": "After upload, detect markdown headings and apply Google Docs heading styles (H1–H6) via batchUpdate. Default true.",
+                    "default": True,
+                },
             },
             "required": ["markdown_content", "title"],
         },
@@ -155,6 +160,39 @@ def _clean_docx_for_gdocs(docx_path: Any) -> None:
             style.font.name = "Arial"  # type: ignore[attr-defined]
 
     doc.save(str(docx_path))
+
+
+def _extract_markdown_headings(markdown: str) -> list[tuple[int, str]]:
+    """Return list of (level, text) for each ATX heading in the markdown.
+
+    Strips inline formatting (bold, italic, backticks, links) from heading text
+    so it matches the plain text in the Google Doc.
+    """
+    import re
+
+    headings = []
+    for line in markdown.splitlines():
+        m = re.match(r"^(#{1,6})\s+(.+?)(?:\s+#+)?$", line.strip())
+        if m:
+            level = len(m.group(1))
+            raw = m.group(2)
+            # Strip inline markdown formatting
+            raw = re.sub(r"\*\*(.+?)\*\*", r"\1", raw)  # bold
+            raw = re.sub(r"\*(.+?)\*", r"\1", raw)  # italic
+            raw = re.sub(r"__(.+?)__", r"\1", raw)  # bold alt
+            raw = re.sub(r"_(.+?)_", r"\1", raw)  # italic alt
+            raw = re.sub(r"`(.+?)`", r"\1", raw)  # code
+            raw = re.sub(r"\[(.+?)\]\(.+?\)", r"\1", raw)  # links
+            raw = raw.strip()
+            if raw:
+                headings.append((level, raw))
+    return headings
+
+
+def _extract_paragraph_text(paragraph: dict) -> str:  # type: ignore[type-arg]
+    """Extract plain text from a Google Docs paragraph element."""
+    elements = paragraph.get("paragraph", {}).get("elements", [])
+    return "".join(el.get("textRun", {}).get("content", "") for el in elements).strip()
 
 
 # =============================================================================
@@ -392,6 +430,82 @@ async def _publish_markdown_to_doc(svc: BaseService, arguments: dict[str, Any]) 
     result = response.json()
     document_id = result.get("id")
 
+    headings_applied = 0
+    apply_heading_styles = arguments.get("apply_heading_styles", True)
+
+    if apply_heading_styles and document_id:
+        try:
+            headings = _extract_markdown_headings(markdown_content)
+            if headings:
+                # Build a lookup: normalized text → heading level
+                heading_lookup: dict[str, int] = {}
+                for h_lvl, h_text in headings:
+                    heading_lookup[h_text.lower()] = h_lvl
+
+                heading_style_map = {
+                    1: "HEADING_1",
+                    2: "HEADING_2",
+                    3: "HEADING_3",
+                    4: "HEADING_4",
+                    5: "HEADING_5",
+                    6: "HEADING_6",
+                }
+
+                # Fetch the document body
+                doc_url = f"{DOCS_API_BASE}/documents/{document_id}"
+                doc = await svc._make_request(
+                    "GET",
+                    doc_url,
+                    params={
+                        "fields": "body(content(paragraph(elements(textRun(content)),paragraphStyle(namedStyleType)),startIndex,endIndex))"
+                    },
+                )
+                body_content = doc.get("body", {}).get("content", [])
+
+                style_requests = []
+                for element in body_content:
+                    if "paragraph" not in element:
+                        continue
+                    para_text = _extract_paragraph_text(element)
+                    if not para_text:
+                        continue
+                    level: int | None = heading_lookup.get(para_text.lower())
+                    if level is None:
+                        # Try prefix match for truncated text
+                        for heading_text, h_level in heading_lookup.items():
+                            if (
+                                para_text.lower().startswith(heading_text[:20].lower())
+                                and len(para_text) > 3
+                            ):
+                                level = h_level
+                                break
+                    if level is not None:
+                        start = element.get("startIndex", 0)
+                        end = element.get("endIndex", start + 1)
+                        style_requests.append(
+                            {
+                                "updateParagraphStyle": {
+                                    "range": {"startIndex": start, "endIndex": end},
+                                    "paragraphStyle": {"namedStyleType": heading_style_map[level]},
+                                    "fields": "namedStyleType",
+                                }
+                            }
+                        )
+
+                if style_requests:
+                    batch_url = f"{DOCS_API_BASE}/documents/{document_id}:batchUpdate"
+                    await svc._make_request(
+                        "POST", batch_url, json_data={"requests": style_requests}
+                    )
+                    headings_applied = len(style_requests)
+                    logger.info(
+                        "Applied %d heading styles to document %s",
+                        headings_applied,
+                        document_id,
+                    )
+        except Exception as e:
+            logger.warning("Failed to apply heading styles to document %s: %s", document_id, e)
+
     comments_added = 0
     if preserve_mermaid_source and mermaid_sources:
         for diagram_num, source_code in mermaid_sources:
@@ -416,6 +530,7 @@ async def _publish_markdown_to_doc(svc: BaseService, arguments: dict[str, Any]) 
         "mermaid_source_comments_added": comments_added,
         "mermaid_theme": mermaid_theme if render_mermaid else None,
         "mermaid_background": mermaid_background if render_mermaid else None,
+        "headings_applied": headings_applied,
     }
 
 
