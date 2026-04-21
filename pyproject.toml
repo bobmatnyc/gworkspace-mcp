@@ -141,8 +141,3 @@ dev = [
 ]
 
 [tool.pyright]
-reportUnusedParameter = "none"
-reportUnusedVariable = "none"
-reportUnusedImport = "none"
-reportUnusedClass = "none"
-reportUnusedFunction = "none"

@@ -430,6 +430,9 @@ class OAuthManager:
         # Exchange code for tokens, supplying PKCE verifier to complete the challenge
         flow.fetch_token(code=auth_code[0], code_verifier=code_verifier)
 
+        # google_auth_oauthlib.Flow always returns google.oauth2.credentials.Credentials
+        # after fetch_token; cast to satisfy Pyright's union-type inference.
+        assert isinstance(flow.credentials, Credentials)  # nosec B101
         return flow.credentials
 
     async def refresh_if_needed(self) -> OAuthToken | None:
