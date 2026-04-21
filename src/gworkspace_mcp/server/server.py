@@ -10,13 +10,23 @@ from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
 from gworkspace_mcp.server.base import BaseService, _active_account
-from gworkspace_mcp.server.services import calendar, docs, drive, gmail, sheets, slides, tasks
+from gworkspace_mcp.server.services import (
+    accounts,
+    calendar,
+    docs,
+    drive,
+    gmail,
+    sheets,
+    slides,
+    tasks,
+)
 
 logger = logging.getLogger(__name__)
 
 # Aggregate all tools from every service module
 ALL_TOOLS: list[Tool] = (
-    calendar.TOOLS
+    accounts.TOOLS
+    + calendar.TOOLS
     + gmail.TOOLS
     + drive.TOOLS
     + docs.TOOLS
@@ -63,6 +73,7 @@ class GoogleWorkspaceServer(BaseService):
     def _all_handlers(self) -> dict[str, Any]:
         """Return merged handler dict from all service modules."""
         handlers: dict[str, Any] = {}
+        handlers.update(accounts.get_handlers(self))
         handlers.update(calendar.get_handlers(self))
         handlers.update(gmail.get_handlers(self))
         handlers.update(drive.get_handlers(self))
