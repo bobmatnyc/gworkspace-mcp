@@ -9,7 +9,7 @@ Connect Claude to Google Workspace APIs through the Model Context Protocol (MCP)
 
 ## Features
 
-**115 MCP tools** across 7 Google Workspace APIs:
+**116 MCP tools** across 7 Google Workspace APIs:
 
 | Service | Tools | Capabilities |
 |---------|-------|--------------|
@@ -142,6 +142,78 @@ Add to your Claude Desktop configuration file:
 ```
 
 Restart Claude Desktop to activate.
+
+## Multi-Account Support
+
+Multiple Google accounts can be configured as named profiles, letting you switch between personal and work accounts without re-authenticating.
+
+### Setting Up Multiple Accounts
+
+```bash
+# Set up a named profile (opens browser for each account)
+workspace setup --account personal@gmail.com
+workspace setup --account work@company.com
+
+# List all configured profiles
+workspace accounts list
+
+# Switch the default profile
+workspace accounts default work@company.com
+
+# Remove a profile
+workspace accounts remove personal@gmail.com
+
+# Check authentication status for a specific account
+workspace doctor --account work@company.com
+```
+
+### Using Accounts Per Tool Call
+
+Every MCP tool accepts an optional `account` parameter:
+
+```
+search_gmail_messages(query="budget", account="work@company.com")
+get_events(calendar_id="primary", account="personal@gmail.com")
+```
+
+### Account Resolution Order
+
+When `account` is not specified, the server selects the account in this order:
+
+1. `account` parameter in the tool call (explicit, highest priority)
+2. `GWORKSPACE_ACCOUNT` environment variable (session-wide override)
+3. Default profile set via `workspace accounts default`
+4. Fallback to `"gworkspace-mcp"` (backward compatible with existing tokens)
+
+### Session-Wide Account Override
+
+Set `GWORKSPACE_ACCOUNT` to make all tool calls in a session use a specific account without passing `account` each time:
+
+```bash
+export GWORKSPACE_ACCOUNT=work@company.com
+workspace mcp
+```
+
+### Listing Configured Accounts
+
+The `list_accounts` MCP tool returns all configured profiles:
+
+```
+list_accounts()
+# → [{email, is_default, created_at}, ...]
+```
+
+### Storage Format
+
+All profiles are stored in `~/.gworkspace-mcp/tokens.json`. The format is backward compatible — existing single-account tokens continue to work without any changes:
+
+```json
+{
+  "gworkspace-mcp": { ... },
+  "work@company.com": { ... },
+  "personal@gmail.com": { ... }
+}
+```
 
 ## Authentication
 
@@ -303,6 +375,12 @@ This file contains your OAuth tokens. Keep it secure and do not share it.
 | `set_document_margins` | Configure document margins |
 | `publish_markdown_to_doc` | Publish markdown content as Google Doc |
 
+### Accounts (1 tool)
+
+| Tool | Description |
+|------|-------------|
+| `list_accounts` | List all configured profiles with email, is_default, and created_at |
+
 ### Tasks (13 tools)
 
 | Tool | Description |
@@ -324,11 +402,22 @@ This file contains your OAuth tokens. Keep it secure and do not share it.
 ## CLI Commands
 
 ```bash
-# Authenticate with Google
+# Authenticate with Google (default profile)
 workspace setup
+
+# Authenticate a named profile
+workspace setup --account NAME
 
 # Check authentication status and dependencies
 workspace doctor
+
+# Check status for a specific account
+workspace doctor --account NAME
+
+# Manage named profiles
+workspace accounts list          # show all profiles with default marker
+workspace accounts default NAME  # switch the default profile
+workspace accounts remove NAME   # remove a profile
 
 # Start the MCP server (for Claude Desktop)
 workspace mcp
@@ -346,7 +435,7 @@ For detailed documentation, see the [docs/](docs/) directory:
 
 - **[Getting Started](docs/getting-started/)** - Installation, authentication, quickstart
 - **[User Guides](docs/guides/)** - Claude Desktop integration, CLI reference
-- **[API Reference](docs/api/)** - Complete tool documentation for all 114 tools
+- **[API Reference](docs/api/)** - Complete tool documentation for all 116 tools
 - **[Development](docs/development/)** - Contributing, testing, releasing
 
 ## Development

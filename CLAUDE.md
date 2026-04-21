@@ -28,13 +28,21 @@
   - Rich formatting capabilities across all services
   - Expanded from 65 → 114 tools
   - Added `add_sheet` tool (Sheets) → 115 tools total
-
-### Current Phase 🔄
-- **Phase 6**: Documentation + PyPI publish (IN PROGRESS)
+- **Phase 6**: Documentation + PyPI publish (COMPLETED ✅)
   - Comprehensive README and docs update
-  - API reference for all 115 tools
+  - API reference for all 116 tools
   - Publishing setup for PyPI
   - Claude Desktop integration guide
+
+### Current Phase 🔄
+- **Phase 7**: Multi-account named profile support (COMPLETED ✅)
+  - Named account profiles with `workspace setup --account NAME`
+  - Account management CLI: `accounts list`, `accounts default`, `accounts remove`
+  - `workspace doctor --account NAME` for per-account health checks
+  - `list_accounts` MCP tool (116th tool)
+  - All 116 MCP tools accept optional `account` parameter
+  - `GWORKSPACE_ACCOUNT` env var for session-wide account selection
+  - Backward-compatible storage format in `~/.gworkspace-mcp/tokens.json`
 
 ## Git Commits
 - `a3726a6`: Initial project scaffolding
@@ -59,8 +67,13 @@ pip install -e .
 
 ### Authentication Setup
 ```bash
-workspace setup   # Opens browser for OAuth
-workspace doctor  # Check auth status
+workspace setup                        # Opens browser for OAuth (default profile)
+workspace setup --account NAME         # Set up a named account profile
+workspace doctor                       # Check auth status
+workspace doctor --account NAME        # Check specific account
+workspace accounts list                # Show all profiles
+workspace accounts default NAME        # Switch default profile
+workspace accounts remove NAME         # Remove a profile
 ```
 
 ### Running MCP Server
@@ -84,7 +97,7 @@ src/google_workspace_mcp/
     └── google_workspace_server.py (MCP server, 4,595 lines)
 ```
 
-## MCP Tools (114 Total)
+## MCP Tools (116 Total)
 
 ### Gmail (26 tools)
 - search_gmail_messages, get_gmail_message_content
@@ -139,6 +152,13 @@ src/google_workspace_mcp/
 - list_tasks, get_task, search_tasks
 - create/update/complete/delete_task, move_task
 
+### Accounts (1 tool)
+- list_accounts — lists all configured named profiles with email, is_default, created_at
+
+### Multi-Account Support
+All 116 tools accept an optional `account` parameter for per-call account selection.
+Account resolution order: explicit `account` param → `GWORKSPACE_ACCOUNT` env var → default profile → `"gworkspace-mcp"` fallback.
+
 ## Session Resume Context
 
 **Previous Session**: claude-mpm project (session-20260210-194921)
@@ -149,11 +169,10 @@ src/google_workspace_mcp/
 - Added Google Sheets and Slides APIs with rich formatting
 - Complete testing infrastructure and CI/CD
 
-**Current Work** (Phase 6):
-1. Update documentation for new services and formatting capabilities
-2. API reference for all 115 tools
-3. Prepare for version 0.2.0 release with new features
-4. Update Claude Desktop integration examples
+**Current Work** (Phase 7):
+- Multi-account named profile support shipped
+- 116 tools total (added list_accounts)
+- All tools accept optional account parameter
 
 **Key Files to Review**:
 - `src/google_workspace_mcp/server/google_workspace_server.py` (main MCP server)
@@ -170,5 +189,4 @@ src/google_workspace_mcp/
 ---
 
 *Generated during gworkspace-mcp extraction project*
-*Last updated: 2026-02-27 - Documentation update for formatting expansion*
-*Session paused: 2026-02-10 19:49:21*
+*Last updated: 2026-04-20 - Multi-account named profile support*

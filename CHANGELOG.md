@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Multi-account named profile support** — configure and switch between multiple Google accounts
+- `workspace setup --account NAME` — set up a named account profile via OAuth
+- `workspace accounts list` — list all configured profiles with default marker
+- `workspace accounts default NAME` — switch the active default profile
+- `workspace accounts remove NAME` — remove a named profile and its tokens
+- `workspace doctor --account NAME` — check authentication status for a specific account
+- `list_accounts` MCP tool — returns all configured profiles with email, is_default, and created_at fields
+- `account` parameter on all 116 MCP tools — select account per tool call (e.g. `search_gmail_messages(query="...", account="work@company.com")`)
+- `GWORKSPACE_ACCOUNT` environment variable — set a session-wide account override for the MCP server
+
+### Changed
+
+- Token storage format extended to support multiple named profiles; existing single-account tokens remain fully backward compatible
+- Account resolution order: explicit `account` param > `GWORKSPACE_ACCOUNT` env var > default profile > `"gworkspace-mcp"` fallback
+
+---
 
 ### Added
 
