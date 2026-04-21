@@ -271,7 +271,8 @@ class BaseService:
             refreshed = await self.manager.refresh_if_needed()
             if refreshed is None:
                 response.raise_for_status()
-            access_token = refreshed.access_token  # type: ignore[union-attr]
+                raise RuntimeError("Token refresh failed unexpectedly")
+            access_token = refreshed.access_token
             response = await client.request(
                 method=method,
                 url=url,
@@ -312,7 +313,8 @@ class BaseService:
             refreshed = await self.manager.refresh_if_needed()
             if refreshed is None:
                 response.raise_for_status()
-            access_token = refreshed.access_token  # type: ignore[union-attr]
+                raise RuntimeError("Token refresh failed unexpectedly")
+            access_token = refreshed.access_token
             response = await client.delete(
                 url,
                 headers={"Authorization": f"Bearer {access_token}"},
@@ -369,7 +371,8 @@ class BaseService:
             refreshed = await self.manager.refresh_if_needed()
             if refreshed is None:
                 response.raise_for_status()
-            access_token = refreshed.access_token  # type: ignore[union-attr]
+                raise RuntimeError("Token refresh failed unexpectedly")
+            access_token = refreshed.access_token
             request_headers = {"Authorization": f"Bearer {access_token}"}
             if headers:
                 request_headers.update(headers)
