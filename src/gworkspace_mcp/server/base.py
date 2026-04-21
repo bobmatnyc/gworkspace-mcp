@@ -269,9 +269,7 @@ class BaseService:
         if response.status_code == 401:
             logger.info("Received 401, refreshing token and retrying...")
             refreshed = await self.manager.refresh_if_needed()
-            if refreshed is None:
-                response.raise_for_status()
-                raise RuntimeError("Token refresh failed unexpectedly")
+            assert refreshed is not None, "Token refresh failed — please run: gworkspace-mcp setup"  # nosec B101
             access_token = refreshed.access_token
             response = await client.request(
                 method=method,
@@ -311,9 +309,7 @@ class BaseService:
         if response.status_code == 401:
             logger.info("Received 401, refreshing token and retrying...")
             refreshed = await self.manager.refresh_if_needed()
-            if refreshed is None:
-                response.raise_for_status()
-                raise RuntimeError("Token refresh failed unexpectedly")
+            assert refreshed is not None, "Token refresh failed — please run: gworkspace-mcp setup"  # nosec B101
             access_token = refreshed.access_token
             response = await client.delete(
                 url,
@@ -369,9 +365,7 @@ class BaseService:
         if response.status_code == 401:
             logger.info("Received 401, refreshing token and retrying...")
             refreshed = await self.manager.refresh_if_needed()
-            if refreshed is None:
-                response.raise_for_status()
-                raise RuntimeError("Token refresh failed unexpectedly")
+            assert refreshed is not None, "Token refresh failed — please run: gworkspace-mcp setup"  # nosec B101
             access_token = refreshed.access_token
             request_headers = {"Authorization": f"Bearer {access_token}"}
             if headers:
