@@ -9,7 +9,7 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
-from gworkspace_mcp.server.base import BaseService
+from gworkspace_mcp.server.base import BaseService, _active_account
 from gworkspace_mcp.server.services import calendar, docs, drive, gmail, sheets, slides, tasks
 
 logger = logging.getLogger(__name__)
@@ -73,11 +73,22 @@ class GoogleWorkspaceServer(BaseService):
         return handlers
 
     async def _dispatch_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Dispatch a tool call to the appropriate service handler."""
+        """Dispatch a tool call to the appropriate service handler.
+
+        Extracts the optional ``account`` parameter before invoking the handler
+        and sets it as a ContextVar so that ``_get_access_token`` can resolve
+        the correct profile without requiring every handler to pass it explicitly.
+        """
         handler = self._all_handlers().get(name)
         if handler is None:
             raise ValueError(f"Unknown tool: {name}")
-        return await handler(arguments)
+        # Extract account from arguments and set ContextVar for this call
+        account = arguments.pop("account", None)
+        token = _active_account.set(account)
+        try:
+            return await handler(arguments)
+        finally:
+            _active_account.reset(token)
 
     # Backward-compatibility aliases: map old private method names to new action-based handlers.
     # Each entry is (old_attr_name_without_underscore, new_tool_name, action_value_or_None).

@@ -125,6 +125,10 @@ TOOLS: list[Tool] = [
                     "description": "Auto-resize columns to fit content (set_column_width only)",
                     "default": False,
                 },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
+                },
             },
             "required": ["action", "spreadsheet_id", "sheet_name"],
         },
@@ -165,6 +169,10 @@ TOOLS: list[Tool] = [
                     "type": "integer",
                     "description": "Column to position the chart (0-based, optional)",
                     "default": 0,
+                },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
                 },
             },
             "required": [

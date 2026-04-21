@@ -44,6 +44,10 @@ TOOLS: list[Tool] = [
                     "type": "string",
                     "description": "Calendar timezone (e.g., 'America/New_York', optional)",
                 },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
+                },
             },
             "required": ["action"],
         },
@@ -121,6 +125,10 @@ TOOLS: list[Tool] = [
                     "description": "Maximum number of events to return (list only, default: 10)",
                     "default": 10,
                 },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
+                },
             },
             "required": ["action"],
         },
@@ -147,6 +155,10 @@ TOOLS: list[Tool] = [
                 "timezone": {
                     "type": "string",
                     "description": "Timezone for the query (default: 'UTC')",
+                },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
                 },
             },
             "required": ["time_min", "time_max"],

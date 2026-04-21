@@ -43,6 +43,10 @@ TOOLS: list[Tool] = [
                     "description": "Maximum recursion depth (requires recursive=true, -1 for unlimited)",
                     "default": -1,
                 },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
+                },
             },
             "required": [],
         },
@@ -117,6 +121,10 @@ TOOLS: list[Tool] = [
                     "type": "array",
                     "items": {"type": "string"},
                     "description": "Patterns to include — only matching files are synced (sync action only)",
+                },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
                 },
             },
             "required": ["action"],

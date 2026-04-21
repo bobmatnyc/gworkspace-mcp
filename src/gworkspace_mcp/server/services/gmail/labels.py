@@ -44,6 +44,10 @@ TOOLS: list[Tool] = [
                     "enum": ["show", "hide"],
                     "description": "Visibility in message list for action=create (default: show)",
                 },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
+                },
             },
             "required": ["action"],
         },
@@ -107,6 +111,10 @@ TOOLS: list[Tool] = [
                 "forward_to": {
                     "type": "string",
                     "description": "Forward matching messages to this email address (for action=create)",
+                },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
                 },
             },
             "required": ["action"],

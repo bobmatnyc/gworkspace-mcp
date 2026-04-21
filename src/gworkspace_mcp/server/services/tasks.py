@@ -42,6 +42,10 @@ TOOLS: list[Tool] = [
                     "description": "Maximum number of task lists to return (list only, default: 100)",
                     "default": 100,
                 },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
+                },
             },
             "required": ["action"],
         },
@@ -135,6 +139,10 @@ TOOLS: list[Tool] = [
                     "type": "integer",
                     "description": "Maximum number of tasks to return (list only, default: 100)",
                     "default": 100,
+                },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
                 },
             },
             "required": ["action"],

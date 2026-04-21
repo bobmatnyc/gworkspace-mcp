@@ -32,6 +32,10 @@ TOOLS: list[Tool] = [
                     "description": "Maximum number of files to return (default: 10)",
                     "default": 10,
                 },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
+                },
             },
             "required": ["query"],
         },
@@ -64,6 +68,10 @@ TOOLS: list[Tool] = [
                         "(Google Docs/docx/pdf/pptx -> markdown, Google Sheets/xls/xlsx -> csv). "
                         "'raw' returns original bytes/text without conversion."
                     ),
+                },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
                 },
             },
             "required": ["file_id"],
@@ -112,6 +120,10 @@ TOOLS: list[Tool] = [
                     "description": "Output format. Defaults to 'md' (markdown).",
                     "default": "md",
                 },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
+                },
             },
             "required": ["input_path"],
         },
@@ -159,6 +171,10 @@ TOOLS: list[Tool] = [
                 "mime_type": {
                     "type": "string",
                     "description": "MIME type for upload. Auto-detected from local_path if omitted; defaults to 'text/plain' for inline content.",
+                },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
                 },
             },
             "required": ["action"],

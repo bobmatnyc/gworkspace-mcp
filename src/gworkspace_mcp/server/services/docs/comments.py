@@ -55,6 +55,10 @@ TOOLS: list[Tool] = [
                     "default": 100,
                     "description": "Maximum number of comments to return (list action only)",
                 },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
+                },
             },
             "required": ["action", "file_id"],
         },

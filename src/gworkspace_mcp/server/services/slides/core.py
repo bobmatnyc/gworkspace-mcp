@@ -50,6 +50,10 @@ TOOLS: list[Tool] = [
                     "description": "Maximum number of presentations to return (list only, default: 10)",
                     "default": 10,
                 },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
+                },
             },
             "required": ["action"],
         },
@@ -111,6 +115,10 @@ TOOLS: list[Tool] = [
                 "text": {
                     "type": "string",
                     "description": "New text content to set in the shape (required for update_text)",
+                },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
                 },
             },
             "required": ["action"],

@@ -58,6 +58,10 @@ TOOLS: list[Tool] = [
                         "required": ["start", "end"],
                     },
                 },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
+                },
             },
             "required": ["content"],
         },
@@ -113,6 +117,10 @@ TOOLS: list[Tool] = [
                 "signature_html": {
                     "type": "string",
                     "description": "HTML signature content (required for action=set_signature)",
+                },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
                 },
             },
             "required": ["action"],

@@ -113,6 +113,10 @@ TOOLS: list[Tool] = [
                     "description": "Bullet point font size in points (default: 16; bulleted_list only)",
                     "default": 16,
                 },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
+                },
             },
             "required": ["type", "presentation_id"],
         },
@@ -208,6 +212,10 @@ TOOLS: list[Tool] = [
                         "MAIN_POINT",
                         "BIG_NUMBER",
                     ],
+                },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
                 },
             },
             "required": ["action", "presentation_id", "slide_id"],

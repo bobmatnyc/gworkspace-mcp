@@ -60,6 +60,10 @@ TOOLS: list[Tool] = [
                     "description": "Background color: 'white', 'transparent', or any CSS color",
                     "default": "white",
                 },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
+                },
             },
             "required": ["document_id", "mermaid_code"],
         },
@@ -117,6 +121,10 @@ TOOLS: list[Tool] = [
                     "type": "boolean",
                     "description": "After upload, detect markdown headings and apply Google Docs heading styles (H1–H6) via batchUpdate. Default true.",
                     "default": True,
+                },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
                 },
             },
             "required": ["markdown_content", "title"],

@@ -131,6 +131,10 @@ TOOLS: list[Tool] = [
                         "HEADING_6",
                     ],
                 },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
+                },
             },
             "required": ["document_id", "start_index", "end_index"],
         },
@@ -153,6 +157,10 @@ TOOLS: list[Tool] = [
                 "items": {
                     "type": "array",
                     "items": {"type": "string"},
+                },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
                 },
             },
             "required": ["document_id", "insert_index", "list_type", "items"],
@@ -228,6 +236,10 @@ TOOLS: list[Tool] = [
                         },
                         "bold": {"type": "boolean"},
                     },
+                },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
                 },
             },
             "required": ["document_id", "insert_index", "rows", "columns"],
@@ -316,6 +328,10 @@ TOOLS: list[Tool] = [
                     "enum": ["TOP", "MIDDLE", "BOTTOM"],
                     "description": "Vertical alignment of cell content",
                 },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
+                },
             },
             "required": ["document_id", "table_start_index", "row_index", "column_index"],
         },
@@ -370,6 +386,10 @@ TOOLS: list[Tool] = [
                     "enum": ["equalize", "sqrt", "proportional"],
                     "default": "equalize",
                     "description": "Balance algorithm to use when auto_balance=true",
+                },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
                 },
             },
             "required": ["document_id", "table_start_index"],
@@ -461,6 +481,10 @@ TOOLS: list[Tool] = [
                         },
                     },
                 },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
+                },
             },
             "required": ["document_id", "table_start_index", "num_rows", "num_columns"],
         },
@@ -488,6 +512,10 @@ TOOLS: list[Tool] = [
                 "margin_bottom": {"type": "number", "description": "Bottom margin in PT"},
                 "margin_left": {"type": "number", "description": "Left margin in PT"},
                 "margin_right": {"type": "number", "description": "Right margin in PT"},
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
+                },
             },
             "required": ["document_id"],
         },

@@ -47,6 +47,10 @@ TOOLS: list[Tool] = [
                     "description": "Max rows per sheet (get_all only, default 1000)",
                     "default": 1000,
                 },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
+                },
             },
             "required": ["action", "spreadsheet_id"],
         },
@@ -93,6 +97,10 @@ TOOLS: list[Tool] = [
                         "blue": {"type": "number", "minimum": 0, "maximum": 1},
                     },
                 },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
+                },
             },
             "required": ["action", "title"],
         },
@@ -129,6 +137,10 @@ TOOLS: list[Tool] = [
                     "type": "array",
                     "items": {"type": "array", "items": {}},
                     "description": "2D array of values (rows of cells) — required for update and append",
+                },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
                 },
             },
             "required": ["action", "spreadsheet_id", "sheet_name"],

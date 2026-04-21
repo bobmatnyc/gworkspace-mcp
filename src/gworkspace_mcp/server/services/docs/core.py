@@ -26,6 +26,10 @@ TOOLS: list[Tool] = [
                     "type": "string",
                     "description": "Document title",
                 },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
+                },
             },
             "required": ["title"],
         },
@@ -43,6 +47,10 @@ TOOLS: list[Tool] = [
                 "text": {
                     "type": "string",
                     "description": "Text to append",
+                },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
                 },
             },
             "required": ["document_id", "text"],
@@ -62,6 +70,10 @@ TOOLS: list[Tool] = [
                     "type": "boolean",
                     "description": "Whether to include tab content (default: False). Set to True for documents with tabs.",
                     "default": False,
+                },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
                 },
             },
             "required": ["document_id"],
@@ -117,6 +129,10 @@ TOOLS: list[Tool] = [
                     "type": "integer",
                     "description": "New position index for move action",
                 },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
+                },
             },
             "required": ["action", "document_id"],
         },
@@ -146,6 +162,10 @@ TOOLS: list[Tool] = [
                 "index": {
                     "type": "integer",
                     "description": "Position index for the tab (optional)",
+                },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
                 },
             },
             "required": ["document_id", "title"],

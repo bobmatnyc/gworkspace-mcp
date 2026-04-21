@@ -1,5 +1,6 @@
 """BaseService with shared HTTP helpers for Google Workspace MCP server."""
 
+import contextvars
 import json
 import logging
 import os
@@ -18,6 +19,11 @@ from gworkspace_mcp.server.constants import (
 )
 
 logger = logging.getLogger(__name__)
+
+# ContextVar for per-request account override (set by _dispatch_tool before handler invocation)
+_active_account: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "_active_account", default=None
+)
 
 
 class BaseService:
@@ -180,7 +186,8 @@ class BaseService:
         Raises:
             RuntimeError: If no token is available or refresh fails.
         """
-        service_name = profile if profile is not None else self._resolve_profile()
+        resolved = profile or _active_account.get() or None
+        service_name = resolved if resolved is not None else self._resolve_profile()
 
         status = self.storage.get_status(service_name)
 

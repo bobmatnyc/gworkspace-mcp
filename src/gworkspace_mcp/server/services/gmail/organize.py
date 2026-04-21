@@ -56,6 +56,10 @@ TOOLS: list[Tool] = [
                     "items": {"type": "string"},
                     "description": "Label IDs to remove (used with action=label)",
                 },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
+                },
             },
             "required": ["action", "message_ids"],
         },

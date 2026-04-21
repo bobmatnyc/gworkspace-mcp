@@ -31,6 +31,10 @@ TOOLS: list[Tool] = [
                     "description": "Maximum number of messages to return (default: 10)",
                     "default": 10,
                 },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
+                },
             },
             "required": ["query"],
         },
@@ -44,6 +48,10 @@ TOOLS: list[Tool] = [
                 "message_id": {
                     "type": "string",
                     "description": "Gmail message ID",
+                },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
                 },
             },
             "required": ["message_id"],
@@ -66,6 +74,10 @@ TOOLS: list[Tool] = [
                 "save_path": {
                     "type": "string",
                     "description": "Absolute local path to save the attachment",
+                },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
                 },
             },
             "required": ["message_id", "attachment_id", "save_path"],
@@ -130,6 +142,10 @@ TOOLS: list[Tool] = [
                 "thread_id": {
                     "type": "string",
                     "description": "Gmail thread ID to associate the draft with (used with action=draft)",
+                },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
                 },
             },
             "required": ["action"],
