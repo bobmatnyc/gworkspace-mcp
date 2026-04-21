@@ -3,6 +3,9 @@
 # Service name for token storage - matches gworkspace-mcp convention
 SERVICE_NAME = "gworkspace-mcp"
 
+# Default profile name (alias for backward compatibility)
+DEFAULT_PROFILE = "gworkspace-mcp"
+
 # Google API base URLs
 CALENDAR_API_BASE = "https://www.googleapis.com/calendar/v3"
 GMAIL_API_BASE = "https://gmail.googleapis.com/gmail/v1"

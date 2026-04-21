@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 import subprocess  # nosec B404
 import tempfile
 from pathlib import Path
@@ -10,7 +11,11 @@ from typing import Any
 import httpx
 
 from gworkspace_mcp.auth import OAuthManager, TokenStatus, TokenStorage
-from gworkspace_mcp.server.constants import MERMAID_CLI_VERSION, MERMAID_TIMEOUT, SERVICE_NAME
+from gworkspace_mcp.server.constants import (
+    DEFAULT_PROFILE,
+    MERMAID_CLI_VERSION,
+    MERMAID_TIMEOUT,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -136,8 +141,38 @@ class BaseService:
             logger.info("Rendered Mermaid diagram: %d bytes (%s)", len(image_bytes), output_format)
             return image_bytes
 
-    async def _get_access_token(self) -> str:
+    def _resolve_profile(self) -> str:
+        """Resolve the active profile name using the standard priority order.
+
+        Resolution order:
+        1. ``GWORKSPACE_ACCOUNT`` environment variable.
+        2. Default profile from token storage (profile marked ``is_default=True``
+           or the only stored profile).
+        3. ``DEFAULT_PROFILE`` constant ("gworkspace-mcp").
+
+        Returns:
+            Profile name (token storage key) to use for authentication.
+        """
+        # 1. Environment variable override
+        env_account = os.environ.get("GWORKSPACE_ACCOUNT")
+        if env_account:
+            return env_account
+
+        # 2. Default profile from storage
+        try:
+            return self.storage.get_default_profile()
+        except Exception as exc:  # nosec B110 - non-fatal, falls through to DEFAULT_PROFILE
+            logger.debug("get_default_profile() raised %s; using fallback", exc)
+
+        # 3. Hardcoded fallback
+        return DEFAULT_PROFILE
+
+    async def _get_access_token(self, profile: str | None = None) -> str:
         """Get a valid access token, refreshing if necessary.
+
+        Args:
+            profile: Explicit profile name to use. When omitted, the active
+                profile is resolved via ``_resolve_profile()``.
 
         Returns:
             Valid access token string.
@@ -145,32 +180,42 @@ class BaseService:
         Raises:
             RuntimeError: If no token is available or refresh fails.
         """
-        status = self.storage.get_status(SERVICE_NAME)
+        service_name = profile if profile is not None else self._resolve_profile()
+
+        status = self.storage.get_status(service_name)
 
         if status == TokenStatus.MISSING:
             raise RuntimeError(
-                f"No OAuth token found for service '{SERVICE_NAME}'. "
-                "Please authenticate first using: workspace setup"
+                f"No OAuth token found for profile '{service_name}'. "
+                "Please authenticate first using: gworkspace-mcp setup"
             )
 
         if status == TokenStatus.INVALID:
             raise RuntimeError(
-                f"OAuth token for service '{SERVICE_NAME}' is invalid or corrupted. "
-                "Please re-authenticate using: workspace setup"
+                f"OAuth token for profile '{service_name}' is invalid or corrupted. "
+                "Please re-authenticate using: gworkspace-mcp setup"
             )
 
         # Try to refresh if expired
         if status == TokenStatus.EXPIRED:
-            logger.info("Token expired, attempting refresh...")
-            token = await self.manager.refresh_if_needed()
+            logger.info("Token expired for profile '%s', attempting refresh...", service_name)
+            # Use self.manager when no explicit profile override was provided.
+            # This preserves backward compatibility and keeps self.manager injectable
+            # for testing (mock injection on self.manager continues to work).
+            if profile is None:
+                refresh_manager = self.manager
+            else:
+                refresh_manager = OAuthManager(storage=self.storage, profile=service_name)
+            token = await refresh_manager.refresh_if_needed()
             if token is None:
                 raise RuntimeError(
-                    "Token refresh failed. Please re-authenticate using: workspace setup"
+                    f"Token refresh failed for profile '{service_name}'. "
+                    "Please re-authenticate using: gworkspace-mcp setup"
                 )
             return token.access_token
 
         # Token is valid
-        stored = self.storage.retrieve(SERVICE_NAME)
+        stored = self.storage.retrieve(service_name)
         if stored is None:
             raise RuntimeError("Unexpected error: token retrieval failed")
 

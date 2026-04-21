@@ -54,6 +54,10 @@ class OAuthManager:
     challenge method to protect against authorization code
     interception attacks.
 
+    Supports named profiles so multiple Google accounts can be stored
+    and used simultaneously. Pass ``profile`` to target a specific
+    account; omit it to use the default profile ("gworkspace-mcp").
+
     Attributes:
         storage: Token storage instance for persisting credentials.
 
@@ -64,6 +68,10 @@ class OAuthManager:
         # Authenticate with Google (uses PKCE internally)
         token = await manager.authenticate(scopes=GOOGLE_WORKSPACE_SCOPES)
 
+        # Authenticate a second account under a named profile
+        manager2 = OAuthManager(profile="work")
+        token2 = await manager2.authenticate(scopes=GOOGLE_WORKSPACE_SCOPES)
+
         # Check token status
         status, stored = manager.get_status()
         if status == TokenStatus.EXPIRED:
@@ -71,14 +79,18 @@ class OAuthManager:
         ```
     """
 
-    def __init__(self, storage: TokenStorage | None = None) -> None:
+    def __init__(
+        self, storage: TokenStorage | None = None, profile: str = "gworkspace-mcp"
+    ) -> None:
         """Initialize OAuth manager.
 
         Args:
             storage: Token storage instance. Creates default if not provided.
+            profile: Named profile (account key) for token storage.
+                Defaults to "gworkspace-mcp" for backward compatibility.
         """
         self.storage = storage or TokenStorage()
-        self._service_name = "gworkspace-mcp"
+        self._service_name = profile
 
     def has_valid_tokens(self) -> bool:
         """Check if valid tokens exist.
@@ -146,6 +158,33 @@ class OAuthManager:
             scopes=token.scopes,
         )
 
+    async def _fetch_user_email(self, access_token: str) -> str | None:
+        """Fetch the authenticated user's email from Google userinfo endpoint.
+
+        Args:
+            access_token: Valid Google OAuth access token.
+
+        Returns:
+            User's email address, or None if the request fails.
+        """
+        import urllib.request
+
+        try:
+            req = urllib.request.Request(
+                "https://www.googleapis.com/oauth2/v2/userinfo",
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310
+                import json
+
+                data = json.loads(resp.read().decode())
+                return data.get("email")
+        except Exception as exc:
+            import logging as _logging
+
+            _logging.getLogger(__name__).warning("Failed to fetch user email: %s", exc)
+            return None
+
     async def authenticate(
         self,
         scopes: list[str] | None = None,
@@ -156,6 +195,10 @@ class OAuthManager:
 
         Uses google-auth-oauthlib Flow for Web Application OAuth with local server.
         Supports custom redirect URIs like http://127.0.0.1:8789/callback.
+
+        After a successful token exchange the authenticated user's email is
+        fetched from the Google userinfo endpoint and stored in ``TokenMetadata``.
+        The first profile stored is automatically marked as the default.
 
         Args:
             scopes: OAuth scopes to request. Uses GOOGLE_WORKSPACE_SCOPES if not specified.
@@ -201,10 +244,26 @@ class OAuthManager:
         # Convert to our token model
         token = self._credentials_to_token(credentials, scopes)
 
+        # Fetch user email from userinfo endpoint
+        email = await self._fetch_user_email(token.access_token)
+
+        # Determine whether this should be the default profile.
+        # Mark as default if it is the first profile being stored OR this profile
+        # replaces the only existing one (same name) and no explicit default is set.
+        existing_profiles = self.storage.list_profiles()
+        has_explicit_default = any(p["is_default"] for p in existing_profiles)
+        is_same_profile = any(p["profile_name"] == self._service_name for p in existing_profiles)
+        should_be_default = (
+            len(existing_profiles) == 0  # First profile ever
+            or (is_same_profile and not has_explicit_default)  # Re-auth of only profile
+        )
+
         # Store token
         metadata = TokenMetadata(
             service_name=self._service_name,
             provider="google",
+            email=email,
+            is_default=should_be_default,
         )
         self.storage.store(self._service_name, token, metadata)
 

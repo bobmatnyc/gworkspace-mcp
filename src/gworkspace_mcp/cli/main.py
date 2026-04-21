@@ -112,7 +112,18 @@ def _add_to_gitignore(entry: str) -> bool:
     default=False,
     help="Store tokens at user-level (~/.gworkspace-mcp/) instead of project-level.",
 )
-def setup(client_id: str | None, client_secret: str | None, user_level: bool) -> None:
+@click.option(
+    "--account",
+    "account",
+    default=None,
+    help="Named profile to store credentials under (default: gworkspace-mcp).",
+)
+def setup(
+    client_id: str | None,
+    client_secret: str | None,
+    user_level: bool,
+    account: str | None,
+) -> None:
     """Set up Google Workspace OAuth authentication.
 
     This will:
@@ -121,6 +132,7 @@ def setup(client_id: str | None, client_secret: str | None, user_level: bool) ->
     3. Validate API access
 
     Use --user to store tokens at ~/.gworkspace-mcp/ (user-level) instead.
+    Use --account NAME to store credentials under a named profile.
 
     Note: Run this command from your project directory. Each project needs
     its own authentication for isolation.
@@ -132,16 +144,18 @@ def setup(client_id: str | None, client_secret: str | None, user_level: bool) ->
     from gworkspace_mcp.auth import OAuthManager
     from gworkspace_mcp.auth.token_storage import CREDENTIALS_DIR, TokenStorage
 
+    profile = account or "gworkspace-mcp"
+
     if user_level:
         user_token_path = CREDENTIALS_DIR / "tokens.json"
         storage = TokenStorage(token_path=user_token_path)
-        manager = OAuthManager(storage=storage)
+        manager = OAuthManager(storage=storage, profile=profile)
     else:
-        manager = OAuthManager()
+        manager = OAuthManager(profile=profile)
 
-    # Check if already authenticated
+    # Check if already authenticated for this profile
     if manager.has_valid_tokens():
-        click.echo("✓ Already authenticated!")
+        click.echo(f"✓ Already authenticated! (profile: {profile})")
         click.echo(f"Token stored at: {manager.token_path}")
         click.echo("")
 
@@ -163,7 +177,7 @@ def setup(client_id: str | None, client_secret: str | None, user_level: bool) ->
         sys.exit(1)
 
     # Run authentication
-    click.echo("Starting OAuth authentication flow...")
+    click.echo(f"Starting OAuth authentication flow (profile: {profile})...")
     click.echo("Browser will open for Google consent...")
     click.echo("")
 
@@ -176,6 +190,7 @@ def setup(client_id: str | None, client_secret: str | None, user_level: bool) ->
         )
         click.echo("✓ Authentication successful!")
         click.echo(f"Token stored at: {manager.token_path}")
+        click.echo(f"Profile: {profile}")
 
         # Add .gworkspace-mcp/ to .gitignore
         if _add_to_gitignore(".gworkspace-mcp/"):
@@ -189,6 +204,98 @@ def setup(client_id: str | None, client_secret: str | None, user_level: bool) ->
         click.echo("Run 'gworkspace-mcp doctor' to verify setup.")
     except Exception as e:
         click.echo(f"❌ Authentication failed: {e}")
+        sys.exit(1)
+
+
+@main.group()
+def accounts() -> None:
+    """Manage multiple Google account profiles.
+
+    Named profiles allow multiple Google accounts to be stored and used
+    simultaneously. Use GWORKSPACE_ACCOUNT=<name> to select a profile
+    for a session, or set a default with 'accounts default'.
+    """
+    pass
+
+
+@accounts.command("list")
+def accounts_list() -> None:
+    """List all stored account profiles."""
+    from gworkspace_mcp.auth.token_storage import TokenStorage
+
+    storage = TokenStorage()
+    profiles = storage.list_profiles()
+
+    if not profiles:
+        click.echo("No profiles found. Run 'gworkspace-mcp setup' to authenticate.")
+        return
+
+    click.echo("Stored profiles:")
+    click.echo("")
+    for p in profiles:
+        default_marker = " (default)" if p["is_default"] else ""
+        email_str = f" <{p['email']}>" if p["email"] else ""
+        click.echo(f"  {p['profile_name']}{email_str}{default_marker}")
+    click.echo("")
+    click.echo("Use GWORKSPACE_ACCOUNT=<name> to select a profile for a session.")
+
+
+@accounts.command("default")
+@click.argument("profile_name")
+def accounts_default(profile_name: str) -> None:
+    """Set the default account profile.
+
+    PROFILE_NAME is the name of the profile to mark as default.
+    """
+    from gworkspace_mcp.auth.token_storage import TokenStorage
+
+    storage = TokenStorage()
+    success = storage.set_default_profile(profile_name)
+
+    if success:
+        click.echo(f"✓ Default profile set to: {profile_name}")
+    else:
+        click.echo(f"❌ Profile '{profile_name}' not found.")
+        profiles = storage.list_profiles()
+        if profiles:
+            click.echo("")
+            click.echo("Available profiles:")
+            for p in profiles:
+                click.echo(f"  {p['profile_name']}")
+        sys.exit(1)
+
+
+@accounts.command("remove")
+@click.argument("profile_name")
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt.")
+def accounts_remove(profile_name: str, yes: bool) -> None:
+    """Remove a stored account profile.
+
+    PROFILE_NAME is the name of the profile to remove.
+    """
+    from gworkspace_mcp.auth.token_storage import TokenStorage
+
+    storage = TokenStorage()
+    profiles = storage.list_profiles()
+    names = [p["profile_name"] for p in profiles]
+
+    if profile_name not in names:
+        click.echo(f"❌ Profile '{profile_name}' not found.")
+        if names:
+            click.echo("")
+            click.echo("Available profiles:")
+            for name in names:
+                click.echo(f"  {name}")
+        sys.exit(1)
+
+    if not yes:
+        click.confirm(f"Remove profile '{profile_name}'? This cannot be undone.", abort=True)
+
+    deleted = storage.delete(profile_name)
+    if deleted:
+        click.echo(f"✓ Profile '{profile_name}' removed.")
+    else:
+        click.echo(f"❌ Failed to remove profile '{profile_name}'.")
         sys.exit(1)
 
 
@@ -315,7 +422,13 @@ def migration_status() -> None:
 
 
 @main.command()
-def doctor() -> None:
+@click.option(
+    "--account",
+    "account",
+    default=None,
+    help="Named profile to check (default: active/default profile).",
+)
+def doctor(account: str | None) -> None:
     """Check installation and authentication status.
 
     Verifies:
@@ -325,11 +438,13 @@ def doctor() -> None:
 
     Shows both project-level and user-level token paths and which one
     is active (being used for authentication).
+
+    Use --account NAME to check a specific named profile.
     """
     from pathlib import Path
 
     from gworkspace_mcp.auth import OAuthManager, TokenStatus
-    from gworkspace_mcp.auth.token_storage import CREDENTIALS_DIR, PROJECT_TOKEN_FILE
+    from gworkspace_mcp.auth.token_storage import CREDENTIALS_DIR, PROJECT_TOKEN_FILE, TokenStorage
 
     click.echo("Google Workspace MCP Status:")
     click.echo("")
@@ -365,15 +480,21 @@ def doctor() -> None:
     click.echo(f"  User:    {user_path}")
     click.echo(f"           {'exists' if user_exists else 'missing'}")
 
-    # Check authentication (uses two-tier lookup)
-    manager = OAuthManager()
+    # Resolve which profile to check
+    if account:
+        profile = account
+    else:
+        storage = TokenStorage()
+        profile = storage.get_default_profile()
+
+    manager = OAuthManager(profile=profile)
     status, stored = manager.get_status()
 
     active_path = manager.token_path
     click.echo(f"  Active:  {active_path}")
     click.echo("")
 
-    click.echo("Authentication:")
+    click.echo(f"Authentication (profile: {profile}):")
 
     if status == TokenStatus.MISSING:
         click.echo("  ❌ Not authenticated")
@@ -398,6 +519,8 @@ def doctor() -> None:
                 f"  Token expires: {stored.token.expires_at.strftime('%Y-%m-%d %H:%M:%S UTC')}"
             )
             click.echo(f"  Scopes: {len(stored.token.scopes)} configured")
+            if stored.metadata.email:
+                click.echo(f"  Account: {stored.metadata.email}")
 
     click.echo("")
 

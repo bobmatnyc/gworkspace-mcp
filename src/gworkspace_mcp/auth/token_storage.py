@@ -348,3 +348,147 @@ class TokenStorage:
         """
         if self.token_path.exists():
             self.token_path.unlink()
+
+    # ------------------------------------------------------------------
+    # Multi-profile API
+    # ------------------------------------------------------------------
+
+    def list_profiles(self) -> list[dict]:
+        """List all stored profiles with their metadata.
+
+        In two-tier mode, profiles from both project-level and user-level
+        files are merged, with project-level taking precedence.
+
+        Returns:
+            List of dicts with keys: profile_name, email, is_default,
+            created_at, last_refreshed.
+        """
+        if self._has_fallback and self.token_path != self.user_token_path:
+            merged = self._load_tokens_from(self.user_token_path)
+            merged.update(self._load_tokens_from(self.token_path))
+        else:
+            merged = self._load_tokens()
+
+        profiles = []
+        for profile_name, data in merged.items():
+            try:
+                stored = StoredToken.model_validate(data)
+                profiles.append(
+                    {
+                        "profile_name": profile_name,
+                        "email": stored.metadata.email,
+                        "is_default": stored.metadata.is_default,
+                        "created_at": stored.metadata.created_at,
+                        "last_refreshed": stored.metadata.last_refreshed,
+                    }
+                )
+            except (ValueError, KeyError):
+                # Skip corrupted entries
+                continue
+
+        return profiles
+
+    def get_default_profile(self) -> str:
+        """Get the name of the default profile.
+
+        Resolution order:
+        1. Profile explicitly marked as default (is_default=True).
+        2. If exactly one profile exists, return its name (implicit default).
+        3. Fall back to DEFAULT_PROFILE constant ("gworkspace-mcp").
+
+        Returns:
+            Profile name to use as the default.
+        """
+        from gworkspace_mcp.server.constants import DEFAULT_PROFILE
+
+        profiles = self.list_profiles()
+
+        if not profiles:
+            return DEFAULT_PROFILE
+
+        # Return explicitly marked default
+        for p in profiles:
+            if p["is_default"]:
+                return p["profile_name"]
+
+        # Single profile — implicit default
+        if len(profiles) == 1:
+            return profiles[0]["profile_name"]
+
+        return DEFAULT_PROFILE
+
+    def set_default_profile(self, profile_name: str) -> bool:
+        """Mark a profile as the default, clearing the flag on all others.
+
+        Args:
+            profile_name: The profile to mark as default.
+
+        Returns:
+            True if the profile was found and updated, False otherwise.
+        """
+        stored = self.retrieve(profile_name)
+        if stored is None:
+            return False
+
+        # Load ALL profiles from write target and update is_default flags
+        tokens = self._load_tokens()
+
+        # Also pull from user-level if in two-tier mode (to update cross-tier)
+        if self._has_fallback and self.token_path != self.user_token_path:
+            user_tokens = self._load_tokens_from(self.user_token_path)
+            # Merge: project-level overrides user-level
+            all_tokens = {**user_tokens, **tokens}
+        else:
+            all_tokens = tokens
+
+        if profile_name not in all_tokens:
+            return False
+
+        # Update is_default for all profiles in the merged view
+        import json as _json
+
+        for name in all_tokens:
+            try:
+                entry = StoredToken.model_validate(all_tokens[name])
+                entry.metadata.is_default = name == profile_name
+                all_tokens[name] = _json.loads(entry.model_dump_json())
+            except (ValueError, KeyError):
+                continue
+
+        # Write back — only to the primary write target (project-level)
+        # We only persist what belongs in this file
+        write_tokens: dict[str, dict] = {}
+        primary_names = set(self._load_tokens().keys())
+
+        if self._has_fallback and self.token_path != self.user_token_path:
+            user_names = set(self._load_tokens_from(self.user_token_path).keys())
+        else:
+            user_names = set()
+
+        # Include profile_name regardless of which file it came from (move to primary)
+        names_to_write = primary_names | {profile_name}
+        for name in names_to_write:
+            if name in all_tokens:
+                write_tokens[name] = all_tokens[name]
+
+        self._save_tokens(write_tokens)
+
+        # Also update user-level file if the profile lives there
+        if self._has_fallback and profile_name in user_names and profile_name not in primary_names:
+            import json as _json2
+
+            user_data = self._load_tokens_from(self.user_token_path)
+            for name in user_data:
+                try:
+                    entry = StoredToken.model_validate(user_data[name])
+                    entry.metadata.is_default = name == profile_name
+                    user_data[name] = _json2.loads(entry.model_dump_json())
+                except (ValueError, KeyError):
+                    continue
+            with open(self.user_token_path, "w") as f:
+                import json as _json3
+
+                _json3.dump(user_data, f, indent=2, default=str)
+            self.user_token_path.chmod(0o600)
+
+        return True

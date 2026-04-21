@@ -69,6 +69,8 @@ class TokenMetadata(BaseModel):
         provider: OAuth provider identifier (always "google").
         created_at: When the token was first stored.
         last_refreshed: When the token was last refreshed, if applicable.
+        email: Google account email fetched after OAuth (used for profile display).
+        is_default: Whether this is the default profile for account resolution.
     """
 
     service_name: str = Field(..., description="Service name")
@@ -80,6 +82,8 @@ class TokenMetadata(BaseModel):
     last_refreshed: datetime | None = Field(
         default=None, description="Last token refresh timestamp"
     )
+    email: str | None = Field(default=None, description="Google account email address")
+    is_default: bool = Field(default=False, description="Whether this is the default profile")
 
 
 class StoredToken(BaseModel):
