@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import secrets
 from typing import TYPE_CHECKING, Any
 
@@ -15,6 +16,22 @@ if TYPE_CHECKING:
     from gworkspace_mcp.server.base import BaseService
 
 logger = logging.getLogger(__name__)
+
+_SHARED_DRIVE_ID_RE = re.compile(r"^0A[A-Za-z0-9_-]{10,}$")
+
+
+def _is_shared_drive_id(id_str: str) -> bool:
+    """Return True if the ID looks like a Shared Drive root (0AI... format).
+
+    Why: Shared Drive root IDs are drive IDs, not file IDs; the files.get endpoint
+    returns 404 for them and listing their contents requires corpora=drive+driveId
+    rather than "<id>' in parents".
+    What: Matches the canonical 0A-prefixed Shared Drive ID format.
+    Test: Assert True for '0AIabcdefghijk', False for regular file IDs like
+    '1BxyzABC...' and empty strings.
+    """
+    return bool(_SHARED_DRIVE_ID_RE.match(id_str))
+
 
 TOOLS: list[Tool] = [
     Tool(
@@ -32,12 +49,35 @@ TOOLS: list[Tool] = [
                     "description": "Maximum number of files to return (default: 10)",
                     "default": 10,
                 },
+                "folder_id": {
+                    "type": "string",
+                    "description": "Optional folder or Shared Drive ID to restrict results to. For Shared Drive roots (IDs starting with '0A'), pass the drive ID here.",
+                },
                 "account": {
                     "type": "string",
                     "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
                 },
             },
             "required": ["query"],
+        },
+    ),
+    Tool(
+        name="list_shared_drives",
+        description="List all Shared Drives (Team Drives) accessible to the authenticated user. Returns drive IDs, names, and creation times. Use the returned ID with search_drive_files(folder_id=...) to browse Shared Drive contents.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "max_results": {
+                    "type": "integer",
+                    "description": "Maximum number of drives to return (default: 20)",
+                    "default": 20,
+                },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
+                },
+            },
+            "required": [],
         },
     ),
     Tool(
@@ -207,23 +247,57 @@ def _normalize_drive_query(query: str) -> str:
 
 
 async def _search_drive_files(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
-    """Search Google Drive files."""
+    """Search Google Drive files.
+
+    Why: Supports My Drive, regular folder scoping, and Shared Drive roots in one tool.
+    What: Normalizes the query, applies folder/Shared Drive scoping, and returns a
+    list of file metadata including driveId.
+    Test: Call with folder_id='0AI...'; verify params contain corpora=drive/driveId.
+    Call with a regular folder_id; verify query is wrapped with "'id' in parents".
+    """
     query = arguments.get("query", "")
     max_results = arguments.get("max_results", 10)
+    folder_id = arguments.get("folder_id")
 
     normalized_query = _normalize_drive_query(query)
 
     _FIELDS = (
-        "files(id,name,mimeType,size,modifiedTime,parents,webViewLink,thumbnailLink),nextPageToken"
+        "files(id,name,mimeType,size,modifiedTime,parents,driveId,"
+        "webViewLink,thumbnailLink),nextPageToken"
     )
     url = f"{DRIVE_API_BASE}/files"
-    params = {
-        "q": normalized_query,
-        "pageSize": max_results,
-        "fields": _FIELDS,
-        "includeItemsFromAllDrives": "true",
-        "supportsAllDrives": "true",
-    }
+
+    if folder_id and _is_shared_drive_id(folder_id):
+        params: dict[str, Any] = {
+            "q": normalized_query,
+            "pageSize": max_results,
+            "fields": _FIELDS,
+            "includeItemsFromAllDrives": "true",
+            "supportsAllDrives": "true",
+            "corpora": "drive",
+            "driveId": folder_id,
+        }
+    elif folder_id:
+        folder_filter = f"'{folder_id}' in parents"
+        if normalized_query:
+            normalized_query = f"({normalized_query}) and {folder_filter}"
+        else:
+            normalized_query = folder_filter
+        params = {
+            "q": normalized_query,
+            "pageSize": max_results,
+            "fields": _FIELDS,
+            "includeItemsFromAllDrives": "true",
+            "supportsAllDrives": "true",
+        }
+    else:
+        params = {
+            "q": normalized_query,
+            "pageSize": max_results,
+            "fields": _FIELDS,
+            "includeItemsFromAllDrives": "true",
+            "supportsAllDrives": "true",
+        }
 
     response = await svc._make_request("GET", url, params=params)
 
@@ -237,12 +311,41 @@ async def _search_drive_files(svc: BaseService, arguments: dict[str, Any]) -> di
                 "modifiedTime": item.get("modifiedTime"),
                 "size": item.get("size"),
                 "parents": item.get("parents", []),
+                "driveId": item.get("driveId"),
                 "webViewLink": item.get("webViewLink"),
                 "thumbnailLink": item.get("thumbnailLink"),
             }
         )
 
     return {"files": files, "count": len(files)}
+
+
+async def _list_shared_drives(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
+    """List all Shared Drives accessible to the user.
+
+    Why: Users need a way to discover Shared Drive IDs (the 0A... format) to pass to
+    search_drive_files(folder_id=...) — these IDs aren't shown in normal searches.
+    What: Calls the Drive API /drives endpoint and returns id/name/createdTime/hidden.
+    Test: Invoke the handler with mocked _make_request returning a sample drives
+    payload; assert the returned dict has the expected shape and count.
+    """
+    max_results = arguments.get("max_results", 20)
+    url = "https://www.googleapis.com/drive/v3/drives"
+    params = {
+        "pageSize": min(max_results, 100),
+        "fields": "drives(id,name,createdTime,hidden),nextPageToken",
+    }
+    response = await svc._make_request("GET", url, params=params)
+    drives = [
+        {
+            "id": d.get("id"),
+            "name": d.get("name"),
+            "createdTime": d.get("createdTime"),
+            "hidden": d.get("hidden", False),
+        }
+        for d in response.get("drives", [])
+    ]
+    return {"drives": drives, "count": len(drives)}
 
 
 async def _get_drive_file_content(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -261,6 +364,15 @@ async def _get_drive_file_content(svc: BaseService, arguments: dict[str, Any]) -
     file_id = arguments["file_id"]
     save_path = arguments.get("save_path")
     output_format = arguments.get("output_format", "auto").lower()
+
+    if _is_shared_drive_id(file_id):
+        return {
+            "error": (
+                f"'{file_id}' is a Shared Drive root ID, not a file. "
+                f"Use search_drive_files with folder_id='{file_id}' to list its contents, "
+                "or list_shared_drives to see all available Shared Drives."
+            )
+        }
 
     meta_url = f"{DRIVE_API_BASE}/files/{file_id}"
     metadata = await svc._make_request(
@@ -687,6 +799,7 @@ def get_handlers(svc: BaseService) -> dict[str, Any]:
     """Return name->callable mapping for Drive file handlers."""
     return {
         "search_drive_files": lambda args: _search_drive_files(svc, args),
+        "list_shared_drives": lambda args: _list_shared_drives(svc, args),
         "get_drive_file_content": lambda args: _get_drive_file_content(svc, args),
         "convert_document": lambda args: _convert_document(svc, args),
         "manage_drive_file": lambda args: _manage_drive_file(svc, args),
