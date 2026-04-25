@@ -42,7 +42,14 @@ TOOLS: list[Tool] = [
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "Search query - can be simple terms (auto-wrapped) or Drive API syntax (e.g., 'name contains \"report\"')",
+                    "description": (
+                        "Search query — can be simple terms (auto-wrapped as fullText) or "
+                        "Drive v3 API query syntax. Valid v3 fields: name, mimeType, "
+                        "modifiedTime, createdTime, parents, trashed, fullText, owners, "
+                        "starred, sharedWithMe. "
+                        "WARNING: Do NOT use 'title' — that is a Drive v2 field. "
+                        "Drive v3 uses 'name' instead (e.g., \"name contains 'report'\")."
+                    ),
                 },
                 "max_results": {
                     "type": "integer",
@@ -258,6 +265,15 @@ async def _search_drive_files(svc: BaseService, arguments: dict[str, Any]) -> di
     query = arguments.get("query", "")
     max_results = arguments.get("max_results", 10)
     folder_id = arguments.get("folder_id")
+
+    # Reject Drive v2 'title' field — Drive v3 uses 'name'. Catching this early
+    # produces a clearer error than the opaque 400 the API would otherwise return.
+    if re.search(r"\btitle\b", query):
+        raise ValueError(
+            "Drive v3 API does not support 'title' field. Use 'name' instead. "
+            "Valid fields: name, mimeType, modifiedTime, createdTime, parents, "
+            "trashed, fullText."
+        )
 
     normalized_query = _normalize_drive_query(query)
 

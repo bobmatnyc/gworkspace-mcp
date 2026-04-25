@@ -158,12 +158,9 @@ class TestGmailTools:
             },
         }
 
-        async def mock_request(**kwargs):  # pyright: ignore[reportUnusedParameter]
-            return create_mock_response(message_response)
-
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
-            mock_client.request = mock_request
+            mock_client.request = AsyncMock(return_value=create_mock_response(message_response))
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=None)
             mock_client_class.return_value = mock_client
@@ -188,12 +185,9 @@ class TestGmailTools:
             "labelIds": ["SENT"],
         }
 
-        async def mock_request(**kwargs):  # pyright: ignore[reportUnusedParameter]
-            return create_mock_response(send_response)
-
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
-            mock_client.request = mock_request
+            mock_client.request = AsyncMock(return_value=create_mock_response(send_response))
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=None)
             mock_client_class.return_value = mock_client
@@ -221,12 +215,9 @@ class TestGmailTools:
             "message": {"id": "msg_draft_001", "threadId": "thread_draft_001"},
         }
 
-        async def mock_request(**kwargs):  # pyright: ignore[reportUnusedParameter]
-            return create_mock_response(draft_response)
-
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
-            mock_client.request = mock_request
+            mock_client.request = AsyncMock(return_value=create_mock_response(draft_response))
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=None)
             mock_client_class.return_value = mock_client
@@ -297,12 +288,9 @@ class TestGmailTools:
             "labelIds": ["SENT"],
         }
 
-        async def mock_request(**kwargs):  # pyright: ignore[reportUnusedParameter]
-            return create_mock_response(send_response)
-
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
-            mock_client.request = mock_request
+            mock_client.request = AsyncMock(return_value=create_mock_response(send_response))
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=None)
             mock_client_class.return_value = mock_client
@@ -348,12 +336,9 @@ class TestGmailTools:
         """Test searching Gmail with no matches returns empty list."""
         list_response = {"messages": []}
 
-        async def mock_request(**_kwargs):
-            return create_mock_response(list_response)
-
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
-            mock_client.request = mock_request
+            mock_client.request = AsyncMock(return_value=create_mock_response(list_response))
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=None)
             mock_client_class.return_value = mock_client
@@ -398,12 +383,11 @@ class TestCalendarTools:
             ]
         }
 
-        async def mock_request(**_kwargs):
-            return create_mock_response(calendar_list_response)
-
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
-            mock_client.request = mock_request
+            mock_client.request = AsyncMock(
+                return_value=create_mock_response(calendar_list_response)
+            )
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=None)
             mock_client_class.return_value = mock_client
@@ -430,12 +414,9 @@ class TestCalendarTools:
             "htmlLink": "https://calendar.google.com/event?eid=event_001",
         }
 
-        async def mock_request(method, url, **kwargs):
-            return create_mock_response(create_response)
-
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
-            mock_client.request = mock_request
+            mock_client.request = AsyncMock(return_value=create_mock_response(create_response))
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=None)
             mock_client_class.return_value = mock_client
@@ -474,6 +455,7 @@ class TestCalendarTools:
         captured_body = {}
 
         async def mock_request(method, url, **kwargs):
+            del method, url  # unused in this mock
             if kwargs.get("json"):
                 captured_body.update(kwargs["json"])
             return create_mock_response(create_response)
@@ -537,12 +519,9 @@ class TestDriveTools:
             ]
         }
 
-        async def mock_request(method, url, **kwargs):
-            return create_mock_response(search_response)
-
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
-            mock_client.request = mock_request
+            mock_client.request = AsyncMock(return_value=create_mock_response(search_response))
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=None)
             mock_client_class.return_value = mock_client
@@ -571,6 +550,7 @@ class TestDriveTools:
         call_urls = []
 
         async def mock_request(method, url, **kwargs):
+            del method, kwargs
             call_urls.append(url)
             # Return metadata for metadata request, export content for export request
             if "/export" in url:
@@ -599,12 +579,9 @@ class TestDriveTools:
         """Test Drive search with no matches returns empty list."""
         search_response = {"files": []}
 
-        async def mock_request(method, url, **kwargs):
-            return create_mock_response(search_response)
-
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
-            mock_client.request = mock_request
+            mock_client.request = AsyncMock(return_value=create_mock_response(search_response))
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=None)
             mock_client_class.return_value = mock_client
@@ -636,12 +613,9 @@ class TestDocsTools:
             "revisionId": "rev_001",
         }
 
-        async def mock_request(method, url, **kwargs):
-            return create_mock_response(create_response)
-
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
-            mock_client.request = mock_request
+            mock_client.request = AsyncMock(return_value=create_mock_response(create_response))
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=None)
             mock_client_class.return_value = mock_client
@@ -683,12 +657,9 @@ class TestDocsTools:
             },
         }
 
-        async def mock_request(method, url, **kwargs):
-            return create_mock_response(doc_response)
-
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
-            mock_client.request = mock_request
+            mock_client.request = AsyncMock(return_value=create_mock_response(doc_response))
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=None)
             mock_client_class.return_value = mock_client
@@ -733,12 +704,9 @@ class TestTasksTools:
             ]
         }
 
-        async def mock_request(method, url, **kwargs):
-            return create_mock_response(tasklists_response)
-
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
-            mock_client.request = mock_request
+            mock_client.request = AsyncMock(return_value=create_mock_response(tasklists_response))
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=None)
             mock_client_class.return_value = mock_client
@@ -765,12 +733,9 @@ class TestTasksTools:
             "updated": "2025-02-10T14:00:00Z",
         }
 
-        async def mock_request(method, url, **kwargs):
-            return create_mock_response(create_response)
-
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
-            mock_client.request = mock_request
+            mock_client.request = AsyncMock(return_value=create_mock_response(create_response))
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=None)
             mock_client_class.return_value = mock_client
@@ -800,12 +765,9 @@ class TestTasksTools:
             "updated": "2025-02-10T14:00:00Z",
         }
 
-        async def mock_request(method, url, **kwargs):
-            return create_mock_response(create_response)
-
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
-            mock_client.request = mock_request
+            mock_client.request = AsyncMock(return_value=create_mock_response(create_response))
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=None)
             mock_client_class.return_value = mock_client
@@ -832,7 +794,7 @@ class TestSheetsTools:
         """Test listing sheets in a spreadsheet returns sheet properties."""
         # Arrange
         spreadsheet_response = {
-            "spreadsheetId": "spreadsheet_001",
+            "spreadsheetId": "spreadsheet_001_abc1234567890XYZ",
             "properties": {"title": "Sales Report 2025"},
             "sheets": [
                 {
@@ -865,19 +827,18 @@ class TestSheetsTools:
             ],
         }
 
-        async def mock_request(method, url, **kwargs):
-            return create_mock_response(spreadsheet_response)
-
         with patch.object(server, "_get_http_client") as mock_get_client:
             mock_client = AsyncMock()
-            mock_client.request = mock_request
+            mock_client.request = AsyncMock(return_value=create_mock_response(spreadsheet_response))
             mock_get_client.return_value = mock_client
 
             # Act
-            result = await server._list_spreadsheet_sheets({"spreadsheet_id": "spreadsheet_001"})
+            result = await server._list_spreadsheet_sheets(
+                {"spreadsheet_id": "spreadsheet_001_abc1234567890XYZ"}
+            )
 
             # Assert
-            assert result["spreadsheet_id"] == "spreadsheet_001"
+            assert result["spreadsheet_id"] == "spreadsheet_001_abc1234567890XYZ"
             assert result["title"] == "Sales Report 2025"
             assert result["count"] == 3
             assert len(result["sheets"]) == 3
@@ -901,25 +862,22 @@ class TestSheetsTools:
             ],
         }
 
-        async def mock_request(method, url, **kwargs):
-            return create_mock_response(values_response)
-
         with patch.object(server, "_get_http_client") as mock_get_client:
             mock_client = AsyncMock()
-            mock_client.request = mock_request
+            mock_client.request = AsyncMock(return_value=create_mock_response(values_response))
             mock_get_client.return_value = mock_client
 
             # Act
             result = await server._get_sheet_values(
                 {
-                    "spreadsheet_id": "spreadsheet_001",
+                    "spreadsheet_id": "spreadsheet_001_abc1234567890XYZ",
                     "sheet_name": "Q1 Sales",
                     "range": "A1:C4",
                 }
             )
 
             # Assert
-            assert result["spreadsheet_id"] == "spreadsheet_001"
+            assert result["spreadsheet_id"] == "spreadsheet_001_abc1234567890XYZ"
             assert result["sheet_name"] == "Q1 Sales"
             assert result["row_count"] == 4
             assert result["column_count"] == 3
@@ -939,17 +897,14 @@ class TestSheetsTools:
             ],
         }
 
-        async def mock_request(method, url, **kwargs):
-            return create_mock_response(values_response)
-
         with patch.object(server, "_get_http_client") as mock_get_client:
             mock_client = AsyncMock()
-            mock_client.request = mock_request
+            mock_client.request = AsyncMock(return_value=create_mock_response(values_response))
             mock_get_client.return_value = mock_client
 
             # Act
             result = await server._get_sheet_values(
-                {"spreadsheet_id": "spreadsheet_001", "sheet_name": "Data"}
+                {"spreadsheet_id": "spreadsheet_001_abc1234567890XYZ", "sheet_name": "Data"}
             )
 
             # Assert
@@ -965,17 +920,14 @@ class TestSheetsTools:
         # Arrange
         values_response = {"range": "'Empty Sheet'!A:ZZ"}
 
-        async def mock_request(method, url, **kwargs):
-            return create_mock_response(values_response)
-
         with patch.object(server, "_get_http_client") as mock_get_client:
             mock_client = AsyncMock()
-            mock_client.request = mock_request
+            mock_client.request = AsyncMock(return_value=create_mock_response(values_response))
             mock_get_client.return_value = mock_client
 
             # Act
             result = await server._get_sheet_values(
-                {"spreadsheet_id": "spreadsheet_001", "sheet_name": "Empty Sheet"}
+                {"spreadsheet_id": "spreadsheet_001_abc1234567890XYZ", "sheet_name": "Empty Sheet"}
             )
 
             # Assert
@@ -988,7 +940,7 @@ class TestSheetsTools:
         """Test getting all sheets data uses a single includeGridData request."""
         # Arrange — new implementation uses includeGridData=true (single call)
         grid_response = {
-            "spreadsheetId": "spreadsheet_001",
+            "spreadsheetId": "spreadsheet_001_abc1234567890XYZ",
             "properties": {"title": "Multi-Tab Spreadsheet"},
             "sheets": [
                 {
@@ -1031,6 +983,7 @@ class TestSheetsTools:
         call_count = [0]
 
         async def mock_request(method, url, **kwargs):
+            del method, url, kwargs
             call_count[0] += 1
             return create_mock_response(grid_response)
 
@@ -1040,10 +993,12 @@ class TestSheetsTools:
             mock_get_client.return_value = mock_client
 
             # Act
-            result = await server._get_spreadsheet_data({"spreadsheet_id": "spreadsheet_001"})
+            result = await server._get_spreadsheet_data(
+                {"spreadsheet_id": "spreadsheet_001_abc1234567890XYZ"}
+            )
 
             # Assert
-            assert result["spreadsheet_id"] == "spreadsheet_001"
+            assert result["spreadsheet_id"] == "spreadsheet_001_abc1234567890XYZ"
             assert result["title"] == "Multi-Tab Spreadsheet"
             assert result["count"] == 2
             assert "Sheet1" in result["sheets"]
@@ -1059,7 +1014,7 @@ class TestSheetsTools:
         """Test creating a new spreadsheet returns spreadsheet details."""
         # Arrange
         create_response = {
-            "spreadsheetId": "new_spreadsheet_001",
+            "spreadsheetId": "new_spreadsheet_001_abc1234567890XYZ_abc1234567890XYZ",  # pragma: allowlist secret
             "properties": {"title": "New Budget"},
             "sheets": [
                 {"properties": {"title": "Sheet1"}},
@@ -1067,12 +1022,9 @@ class TestSheetsTools:
             ],
         }
 
-        async def mock_request(method, url, **kwargs):
-            return create_mock_response(create_response)
-
         with patch.object(server, "_get_http_client") as mock_get_client:
             mock_client = AsyncMock()
-            mock_client.request = mock_request
+            mock_client.request = AsyncMock(return_value=create_mock_response(create_response))
             mock_get_client.return_value = mock_client
 
             # Act
@@ -1081,7 +1033,9 @@ class TestSheetsTools:
             )
 
             # Assert
-            assert result["spreadsheet_id"] == "new_spreadsheet_001"
+            assert (
+                result["spreadsheet_id"] == "new_spreadsheet_001_abc1234567890XYZ_abc1234567890XYZ"
+            )
             assert result["title"] == "New Budget"
             assert "docs.google.com/spreadsheets" in result["url"]
             assert len(result["sheets"]) == 2
@@ -1093,7 +1047,7 @@ class TestSheetsTools:
         """Test updating sheet values returns update details."""
         # Arrange
         update_response = {
-            "spreadsheetId": "spreadsheet_001",
+            "spreadsheetId": "spreadsheet_001_abc1234567890XYZ",
             "updatedRange": "'Sheet1'!A1:B2",
             "updatedRows": 2,
             "updatedColumns": 2,
@@ -1103,6 +1057,7 @@ class TestSheetsTools:
         captured_body = {}
 
         async def mock_request(method, url, **kwargs):
+            del method, url  # unused in this mock
             if kwargs.get("json"):
                 captured_body.update(kwargs["json"])
             return create_mock_response(update_response)
@@ -1115,7 +1070,7 @@ class TestSheetsTools:
             # Act
             result = await server._update_sheet_values(
                 {
-                    "spreadsheet_id": "spreadsheet_001",
+                    "spreadsheet_id": "spreadsheet_001_abc1234567890XYZ",
                     "sheet_name": "Sheet1",
                     "range": "A1:B2",
                     "values": [["Header1", "Header2"], ["Value1", "Value2"]],
@@ -1123,7 +1078,7 @@ class TestSheetsTools:
             )
 
             # Assert
-            assert result["spreadsheet_id"] == "spreadsheet_001"
+            assert result["spreadsheet_id"] == "spreadsheet_001_abc1234567890XYZ"
             assert result["updated_range"] == "'Sheet1'!A1:B2"
             assert result["updated_rows"] == 2
             assert result["updated_columns"] == 2
@@ -1135,10 +1090,10 @@ class TestSheetsTools:
         """Test appending sheet values returns append details."""
         # Arrange
         append_response = {
-            "spreadsheetId": "spreadsheet_001",
+            "spreadsheetId": "spreadsheet_001_abc1234567890XYZ",
             "tableRange": "'Sheet1'!A1:B3",
             "updates": {
-                "spreadsheetId": "spreadsheet_001",
+                "spreadsheetId": "spreadsheet_001_abc1234567890XYZ",
                 "updatedRange": "'Sheet1'!A4:B5",
                 "updatedRows": 2,
                 "updatedColumns": 2,
@@ -1146,25 +1101,22 @@ class TestSheetsTools:
             },
         }
 
-        async def mock_request(method, url, **kwargs):
-            return create_mock_response(append_response)
-
         with patch.object(server, "_get_http_client") as mock_get_client:
             mock_client = AsyncMock()
-            mock_client.request = mock_request
+            mock_client.request = AsyncMock(return_value=create_mock_response(append_response))
             mock_get_client.return_value = mock_client
 
             # Act
             result = await server._append_sheet_values(
                 {
-                    "spreadsheet_id": "spreadsheet_001",
+                    "spreadsheet_id": "spreadsheet_001_abc1234567890XYZ",
                     "sheet_name": "Sheet1",
                     "values": [["New1", "New2"], ["New3", "New4"]],
                 }
             )
 
             # Assert
-            assert result["spreadsheet_id"] == "spreadsheet_001"
+            assert result["spreadsheet_id"] == "spreadsheet_001_abc1234567890XYZ"
             assert result["updated_range"] == "'Sheet1'!A4:B5"
             assert result["updated_rows"] == 2
             assert result["updated_cells"] == 4
@@ -1173,27 +1125,27 @@ class TestSheetsTools:
     async def test_clear_sheet_values_success(self, server):
         """Test clearing sheet values returns cleared range."""
         # Arrange
-        clear_response = {"spreadsheetId": "spreadsheet_001", "clearedRange": "'Sheet1'!A1:C10"}
-
-        async def mock_request(method, url, **kwargs):
-            return create_mock_response(clear_response)
+        clear_response = {
+            "spreadsheetId": "spreadsheet_001_abc1234567890XYZ",
+            "clearedRange": "'Sheet1'!A1:C10",
+        }
 
         with patch.object(server, "_get_http_client") as mock_get_client:
             mock_client = AsyncMock()
-            mock_client.request = mock_request
+            mock_client.request = AsyncMock(return_value=create_mock_response(clear_response))
             mock_get_client.return_value = mock_client
 
             # Act
             result = await server._clear_sheet_values(
                 {
-                    "spreadsheet_id": "spreadsheet_001",
+                    "spreadsheet_id": "spreadsheet_001_abc1234567890XYZ",
                     "sheet_name": "Sheet1",
                     "range": "A1:C10",
                 }
             )
 
             # Assert
-            assert result["spreadsheet_id"] == "spreadsheet_001"
+            assert result["spreadsheet_id"] == "spreadsheet_001_abc1234567890XYZ"
             assert result["cleared_range"] == "'Sheet1'!A1:C10"
 
 
@@ -1211,6 +1163,7 @@ class TestErrorHandling:
         """Test that HTTP errors from the API are properly raised."""
 
         async def mock_request(method, url, **kwargs):
+            del method, url, kwargs
             mock_resp = MagicMock()
             mock_resp.status_code = 404
             mock_resp.raise_for_status.side_effect = httpx.HTTPStatusError(
@@ -1301,7 +1254,7 @@ class TestSlidesTools:
         drive_response = {
             "files": [
                 {
-                    "id": "pres_001",
+                    "id": "pres_001_abc1234567890XYZ",
                     "name": "Q1 Report",
                     "mimeType": "application/vnd.google-apps.presentation",
                     "modifiedTime": "2025-02-10T12:00:00Z",
@@ -1319,12 +1272,9 @@ class TestSlidesTools:
             ]
         }
 
-        async def mock_request(method, url, **kwargs):
-            return create_mock_response(drive_response)
-
         with patch.object(server, "_get_http_client") as mock_get_client:
             mock_client = AsyncMock()
-            mock_client.request = mock_request
+            mock_client.request = AsyncMock(return_value=create_mock_response(drive_response))
             mock_get_client.return_value = mock_client
 
             # Act
@@ -1333,7 +1283,7 @@ class TestSlidesTools:
             # Assert
             assert result["count"] == 2
             assert len(result["presentations"]) == 2
-            assert result["presentations"][0]["id"] == "pres_001"
+            assert result["presentations"][0]["id"] == "pres_001_abc1234567890XYZ"
             assert result["presentations"][0]["name"] == "Q1 Report"
             assert result["presentations"][0]["owners"] == ["owner@example.com"]
 
@@ -1342,7 +1292,7 @@ class TestSlidesTools:
         """Test getting presentation metadata returns structure info."""
         # Arrange
         presentation_response = {
-            "presentationId": "pres_001",
+            "presentationId": "pres_001_abc1234567890XYZ",
             "title": "Q1 Report",
             "pageSize": {"width": {"magnitude": 9144000, "unit": "EMU"}},
             "locale": "en",
@@ -1365,19 +1315,20 @@ class TestSlidesTools:
             ],
         }
 
-        async def mock_request(method, url, **kwargs):
-            return create_mock_response(presentation_response)
-
         with patch.object(server, "_get_http_client") as mock_get_client:
             mock_client = AsyncMock()
-            mock_client.request = mock_request
+            mock_client.request = AsyncMock(
+                return_value=create_mock_response(presentation_response)
+            )
             mock_get_client.return_value = mock_client
 
             # Act
-            result = await server._get_presentation({"presentation_id": "pres_001"})
+            result = await server._get_presentation(
+                {"presentation_id": "pres_001_abc1234567890XYZ"}
+            )
 
             # Assert
-            assert result["presentation_id"] == "pres_001"
+            assert result["presentation_id"] == "pres_001_abc1234567890XYZ"
             assert result["title"] == "Q1 Report"
             assert result["slide_count"] == 2
             assert len(result["slides"]) == 2
@@ -1388,7 +1339,7 @@ class TestSlidesTools:
         """Test getting slide content returns elements."""
         # Arrange
         presentation_response = {
-            "presentationId": "pres_001",
+            "presentationId": "pres_001_abc1234567890XYZ",
             "slides": [
                 {
                     "objectId": "slide_001",
@@ -1411,19 +1362,20 @@ class TestSlidesTools:
             ],
         }
 
-        async def mock_request(method, url, **kwargs):
-            return create_mock_response(presentation_response)
-
         with patch.object(server, "_get_http_client") as mock_get_client:
             mock_client = AsyncMock()
-            mock_client.request = mock_request
+            mock_client.request = AsyncMock(
+                return_value=create_mock_response(presentation_response)
+            )
             mock_get_client.return_value = mock_client
 
             # Act
-            result = await server._get_slide({"presentation_id": "pres_001", "slide_index": 0})
+            result = await server._get_slide(
+                {"presentation_id": "pres_001_abc1234567890XYZ", "slide_index": 0}
+            )
 
             # Assert
-            assert result["presentation_id"] == "pres_001"
+            assert result["presentation_id"] == "pres_001_abc1234567890XYZ"
             assert result["slide_index"] == 0
             assert result["slide_id"] == "slide_001"
             assert result["element_count"] == 2
@@ -1436,21 +1388,22 @@ class TestSlidesTools:
         """Test getting slide with invalid index raises error."""
         # Arrange
         presentation_response = {
-            "presentationId": "pres_001",
+            "presentationId": "pres_001_abc1234567890XYZ",
             "slides": [{"objectId": "slide_001", "pageElements": []}],
         }
 
-        async def mock_request(method, url, **kwargs):
-            return create_mock_response(presentation_response)
-
         with patch.object(server, "_get_http_client") as mock_get_client:
             mock_client = AsyncMock()
-            mock_client.request = mock_request
+            mock_client.request = AsyncMock(
+                return_value=create_mock_response(presentation_response)
+            )
             mock_get_client.return_value = mock_client
 
             # Act & Assert
             with pytest.raises(ValueError) as exc_info:
-                await server._get_slide({"presentation_id": "pres_001", "slide_index": 5})
+                await server._get_slide(
+                    {"presentation_id": "pres_001_abc1234567890XYZ", "slide_index": 5}
+                )
 
             assert "out of range" in str(exc_info.value)
 
@@ -1459,7 +1412,7 @@ class TestSlidesTools:
         """Test extracting all text from presentation."""
         # Arrange
         presentation_response = {
-            "presentationId": "pres_001",
+            "presentationId": "pres_001_abc1234567890XYZ",
             "title": "Test Presentation",
             "slides": [
                 {
@@ -1489,19 +1442,20 @@ class TestSlidesTools:
             ],
         }
 
-        async def mock_request(method, url, **kwargs):
-            return create_mock_response(presentation_response)
-
         with patch.object(server, "_get_http_client") as mock_get_client:
             mock_client = AsyncMock()
-            mock_client.request = mock_request
+            mock_client.request = AsyncMock(
+                return_value=create_mock_response(presentation_response)
+            )
             mock_get_client.return_value = mock_client
 
             # Act
-            result = await server._get_presentation_text({"presentation_id": "pres_001"})
+            result = await server._get_presentation_text(
+                {"presentation_id": "pres_001_abc1234567890XYZ"}
+            )
 
             # Assert
-            assert result["presentation_id"] == "pres_001"
+            assert result["presentation_id"] == "pres_001_abc1234567890XYZ"
             assert result["title"] == "Test Presentation"
             assert result["slide_count"] == 2
             assert "Slide 1 Title" in result["combined_text"]
@@ -1512,16 +1466,13 @@ class TestSlidesTools:
         """Test creating a new presentation returns details."""
         # Arrange
         create_response = {
-            "presentationId": "new_pres_001",
+            "presentationId": "new_pres_001_abc1234567890XYZ",
             "title": "New Presentation",
         }
 
-        async def mock_request(method, url, **kwargs):
-            return create_mock_response(create_response)
-
         with patch.object(server, "_get_http_client") as mock_get_client:
             mock_client = AsyncMock()
-            mock_client.request = mock_request
+            mock_client.request = AsyncMock(return_value=create_mock_response(create_response))
             mock_get_client.return_value = mock_client
 
             # Act
@@ -1529,7 +1480,7 @@ class TestSlidesTools:
 
             # Assert
             assert result["status"] == "created"
-            assert result["presentation_id"] == "new_pres_001"
+            assert result["presentation_id"] == "new_pres_001_abc1234567890XYZ"
             assert result["title"] == "New Presentation"
             assert "docs.google.com/presentation" in result["url"]
 
@@ -1538,13 +1489,14 @@ class TestSlidesTools:
         """Test adding a slide returns created slide details."""
         # Arrange
         batch_response = {
-            "presentationId": "pres_001",
+            "presentationId": "pres_001_abc1234567890XYZ",
             "replies": [{"createSlide": {"objectId": "new_slide_001"}}],
         }
 
         captured_body = {}
 
         async def mock_request(method, url, **kwargs):
+            del method, url  # unused in this mock
             if kwargs.get("json"):
                 captured_body.update(kwargs["json"])
             return create_mock_response(batch_response)
@@ -1556,12 +1508,12 @@ class TestSlidesTools:
 
             # Act
             result = await server._add_slide(
-                {"presentation_id": "pres_001", "layout": "TITLE_AND_BODY"}
+                {"presentation_id": "pres_001_abc1234567890XYZ", "layout": "TITLE_AND_BODY"}
             )
 
             # Assert
             assert result["status"] == "created"
-            assert result["presentation_id"] == "pres_001"
+            assert result["presentation_id"] == "pres_001_abc1234567890XYZ"
             assert result["layout"] == "TITLE_AND_BODY"
             assert "createSlide" in captured_body["requests"][0]
 
@@ -1569,35 +1521,33 @@ class TestSlidesTools:
     async def test_delete_slide_success(self, server):
         """Test deleting a slide returns confirmation."""
         # Arrange
-        batch_response = {"presentationId": "pres_001", "replies": [{}]}
-
-        async def mock_request(method, url, **kwargs):
-            return create_mock_response(batch_response)
+        batch_response = {"presentationId": "pres_001_abc1234567890XYZ", "replies": [{}]}
 
         with patch.object(server, "_get_http_client") as mock_get_client:
             mock_client = AsyncMock()
-            mock_client.request = mock_request
+            mock_client.request = AsyncMock(return_value=create_mock_response(batch_response))
             mock_get_client.return_value = mock_client
 
             # Act
             result = await server._delete_slide(
-                {"presentation_id": "pres_001", "slide_id": "slide_001"}
+                {"presentation_id": "pres_001_abc1234567890XYZ", "slide_id": "slide_001"}
             )
 
             # Assert
             assert result["status"] == "deleted"
-            assert result["presentation_id"] == "pres_001"
+            assert result["presentation_id"] == "pres_001_abc1234567890XYZ"
             assert result["slide_id"] == "slide_001"
 
     @pytest.mark.asyncio
     async def test_update_slide_text_success(self, server):
         """Test updating text in a shape returns confirmation."""
         # Arrange
-        batch_response = {"presentationId": "pres_001", "replies": [{}, {}]}
+        batch_response = {"presentationId": "pres_001_abc1234567890XYZ", "replies": [{}, {}]}
 
         captured_body = {}
 
         async def mock_request(method, url, **kwargs):
+            del method, url  # unused in this mock
             if kwargs.get("json"):
                 captured_body.update(kwargs["json"])
             return create_mock_response(batch_response)
@@ -1610,7 +1560,7 @@ class TestSlidesTools:
             # Act
             result = await server._update_slide_text(
                 {
-                    "presentation_id": "pres_001",
+                    "presentation_id": "pres_001_abc1234567890XYZ",
                     "slide_id": "slide_001",
                     "shape_id": "shape_001",
                     "text": "Updated text content",
@@ -1619,7 +1569,7 @@ class TestSlidesTools:
 
             # Assert
             assert result["status"] == "updated"
-            assert result["presentation_id"] == "pres_001"
+            assert result["presentation_id"] == "pres_001_abc1234567890XYZ"
             assert result["shape_id"] == "shape_001"
             assert result["text_length"] == len("Updated text content")
             # Verify deleteText and insertText requests
@@ -1631,11 +1581,12 @@ class TestSlidesTools:
     async def test_add_text_box_success(self, server):
         """Test adding a text box returns created element details."""
         # Arrange
-        batch_response = {"presentationId": "pres_001", "replies": [{}, {}]}
+        batch_response = {"presentationId": "pres_001_abc1234567890XYZ", "replies": [{}, {}]}
 
         captured_body = {}
 
         async def mock_request(method, url, **kwargs):
+            del method, url  # unused in this mock
             if kwargs.get("json"):
                 captured_body.update(kwargs["json"])
             return create_mock_response(batch_response)
@@ -1648,7 +1599,7 @@ class TestSlidesTools:
             # Act
             result = await server._add_text_box(
                 {
-                    "presentation_id": "pres_001",
+                    "presentation_id": "pres_001_abc1234567890XYZ",
                     "slide_id": "slide_001",
                     "text": "New text box content",
                     "x_pt": 150,
@@ -1660,7 +1611,7 @@ class TestSlidesTools:
 
             # Assert
             assert result["status"] == "created"
-            assert result["presentation_id"] == "pres_001"
+            assert result["presentation_id"] == "pres_001_abc1234567890XYZ"
             assert result["slide_id"] == "slide_001"
             assert result["text_length"] == len("New text box content")
             assert result["position"]["x_pt"] == 150
@@ -1673,11 +1624,12 @@ class TestSlidesTools:
     async def test_add_image_success(self, server):
         """Test adding an image returns created element details."""
         # Arrange
-        batch_response = {"presentationId": "pres_001", "replies": [{}]}
+        batch_response = {"presentationId": "pres_001_abc1234567890XYZ", "replies": [{}]}
 
         captured_body = {}
 
         async def mock_request(method, url, **kwargs):
+            del method, url  # unused in this mock
             if kwargs.get("json"):
                 captured_body.update(kwargs["json"])
             return create_mock_response(batch_response)
@@ -1690,7 +1642,7 @@ class TestSlidesTools:
             # Act
             result = await server._add_image(
                 {
-                    "presentation_id": "pres_001",
+                    "presentation_id": "pres_001_abc1234567890XYZ",
                     "slide_id": "slide_001",
                     "image_url": "https://example.com/image.png",
                     "x_pt": 100,
@@ -1702,7 +1654,7 @@ class TestSlidesTools:
 
             # Assert
             assert result["status"] == "created"
-            assert result["presentation_id"] == "pres_001"
+            assert result["presentation_id"] == "pres_001_abc1234567890XYZ"
             assert result["slide_id"] == "slide_001"
             assert result["image_url"] == "https://example.com/image.png"
             assert result["position"]["x_pt"] == 100

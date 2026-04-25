@@ -9,7 +9,7 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
-from gworkspace_mcp.server.base import BaseService, _active_account
+from gworkspace_mcp.server.base import BaseService, _active_account, is_operational_error
 from gworkspace_mcp.server.services import (
     accounts,
     calendar,
@@ -62,6 +62,18 @@ class GoogleWorkspaceServer(BaseService):
                 result = await self._dispatch_tool(name, arguments)
                 return [TextContent(type="text", text=json.dumps(result, indent=2))]
             except Exception as e:
+                # Operational errors (403/404) are normal states (no permission,
+                # not found) and must NOT be auto-reported as bugs. Log them at
+                # info-level without a stack trace so downstream bug-filing
+                # handlers can distinguish them from genuine unexpected failures.
+                if is_operational_error(e):
+                    logger.info("Operational error calling tool %s: %s", name, e)
+                    return [
+                        TextContent(
+                            type="text",
+                            text=json.dumps({"error": str(e), "operational": True}, indent=2),
+                        )
+                    ]
                 logger.exception("Error calling tool %s", name)
                 return [
                     TextContent(

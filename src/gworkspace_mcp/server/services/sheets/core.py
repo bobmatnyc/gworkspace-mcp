@@ -5,12 +5,65 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any
 
+import httpx
 from mcp.types import Tool
 
 from gworkspace_mcp.server.constants import SHEETS_API_BASE
 
 if TYPE_CHECKING:
     from gworkspace_mcp.server.base import BaseService
+
+# Google document IDs (Spreadsheets, Presentations) are typically 44 characters of
+# alphanumeric characters and -/_; legacy Apps spreadsheet IDs (33 chars) reach
+# the API but produce opaque 400s, so we reject anything shorter than 20 chars
+# at the boundary to give a useful error message.
+_DOC_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{20,}$")
+
+
+def _validate_spreadsheet_id(spreadsheet_id: str) -> None:
+    """Validate spreadsheet ID format before hitting the API.
+
+    Why: Legacy 33-character Google Apps spreadsheet IDs and copy-paste typos
+    trigger opaque 400s with no diagnostic context. Surfacing a clear error
+    here saves the caller a round-trip and a confusing log message.
+    What: Raises ``ValueError`` if ``spreadsheet_id`` is empty or does not match
+    the expected 20+ character alphanumeric/hyphen/underscore pattern.
+    Test: Assert raises for '', 'short', '1abc' (<20 chars); does not raise for
+    '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms' (44 chars).  # pragma: allowlist secret
+    """
+    if not spreadsheet_id or not _DOC_ID_RE.match(spreadsheet_id):
+        raise ValueError(
+            "Invalid spreadsheet ID format. Google Spreadsheet IDs are typically "
+            "44 characters of alphanumeric characters and hyphens/underscores. "
+            "Please verify the ID from the spreadsheet URL."
+        )
+
+
+def _wrap_sheets_http_error(exc: httpx.HTTPStatusError) -> Exception:
+    """Wrap a 400 from the Sheets API with diagnostic guidance.
+
+    Why: Sheets 400s usually mean a bad tab name or malformed range, but the
+    raw API error doesn't say so. This helper rewrites the message with the
+    typical fix (call ``sheets_list_sheets``/``get_spreadsheet`` action='list_sheets'
+    first) so the caller has actionable next steps.
+    What: For status 400 returns a new ``RuntimeError`` with guidance plus the
+    original error text; otherwise re-returns the input untouched.
+    Test: Construct a 400 HTTPStatusError; assert wrapped message contains
+    'sheets_list_sheets' and 'TabName!A1:Z100'.
+    """
+    if exc.response.status_code == 400:
+        try:
+            original = exc.response.text
+        except Exception:
+            original = str(exc)
+        return RuntimeError(
+            "HTTP 400 error - the sheet tab name or range may be invalid. "
+            "Call sheets_list_sheets first to get valid tab names. "
+            "Range format: 'TabName!A1:Z100'. "
+            f"Error: {original}"
+        )
+    return exc
+
 
 TOOLS: list[Tool] = [
     Tool(
@@ -39,7 +92,11 @@ TOOLS: list[Tool] = [
                 },
                 "range": {
                     "type": "string",
-                    "description": "A1 notation range (get_sheet only, default 'A:ZZ')",
+                    "description": (
+                        "A1 notation range (get_sheet only, default 'A:ZZ'). "
+                        "Do not assume 'Sheet1' — call sheets_list_sheets "
+                        "(action='list_sheets') first to get actual tab names."
+                    ),
                     "default": "A:ZZ",
                 },
                 "max_rows": {
@@ -131,7 +188,11 @@ TOOLS: list[Tool] = [
                 },
                 "range": {
                     "type": "string",
-                    "description": "A1 notation range — required for update and clear",
+                    "description": (
+                        "A1 notation range — required for update and clear. "
+                        "Do not assume 'Sheet1' — call sheets_list_sheets "
+                        "(action='list_sheets') first to get actual tab names."
+                    ),
                 },
                 "values": {
                     "type": "array",
@@ -478,20 +539,24 @@ async def _get_spreadsheet(svc: BaseService, arguments: dict[str, Any]) -> dict[
     """Dispatch get_spreadsheet actions."""
     action = arguments["action"]
     spreadsheet_id = arguments["spreadsheet_id"]
+    _validate_spreadsheet_id(spreadsheet_id)
 
-    if action == "list_sheets":
-        return await _list_spreadsheet_sheets(svc, spreadsheet_id)
+    try:
+        if action == "list_sheets":
+            return await _list_spreadsheet_sheets(svc, spreadsheet_id)
 
-    if action == "get_sheet":
-        sheet_name = arguments.get("sheet_name")
-        if not sheet_name:
-            raise ValueError("sheet_name is required for action='get_sheet'")
-        cell_range = arguments.get("range", "A:ZZ")
-        return await _get_sheet_values(svc, spreadsheet_id, sheet_name, cell_range)
+        if action == "get_sheet":
+            sheet_name = arguments.get("sheet_name")
+            if not sheet_name:
+                raise ValueError("sheet_name is required for action='get_sheet'")
+            cell_range = arguments.get("range", "A:ZZ")
+            return await _get_sheet_values(svc, spreadsheet_id, sheet_name, cell_range)
 
-    if action == "get_all":
-        max_rows = arguments.get("max_rows", 1000)
-        return await _get_spreadsheet_data(svc, spreadsheet_id, max_rows)
+        if action == "get_all":
+            max_rows = arguments.get("max_rows", 1000)
+            return await _get_spreadsheet_data(svc, spreadsheet_id, max_rows)
+    except httpx.HTTPStatusError as exc:
+        raise _wrap_sheets_http_error(exc) from exc
 
     raise ValueError(f"Unknown action: {action!r}")
 
@@ -509,9 +574,13 @@ async def _manage_spreadsheet(svc: BaseService, arguments: dict[str, Any]) -> di
         spreadsheet_id = arguments.get("spreadsheet_id")
         if not spreadsheet_id:
             raise ValueError("spreadsheet_id is required for action='add_sheet'")
+        _validate_spreadsheet_id(spreadsheet_id)
         index = arguments.get("index")
         tab_color = arguments.get("tab_color")
-        return await _add_sheet(svc, spreadsheet_id, title, index, tab_color)
+        try:
+            return await _add_sheet(svc, spreadsheet_id, title, index, tab_color)
+        except httpx.HTTPStatusError as exc:
+            raise _wrap_sheets_http_error(exc) from exc
 
     raise ValueError(f"Unknown action: {action!r}")
 
@@ -521,27 +590,31 @@ async def _modify_sheet_values(svc: BaseService, arguments: dict[str, Any]) -> d
     action = arguments["action"]
     spreadsheet_id = arguments["spreadsheet_id"]
     sheet_name = arguments["sheet_name"]
+    _validate_spreadsheet_id(spreadsheet_id)
 
-    if action == "update":
-        cell_range = arguments.get("range")
-        values = arguments.get("values")
-        if not cell_range:
-            raise ValueError("range is required for action='update'")
-        if values is None:
-            raise ValueError("values is required for action='update'")
-        return await _update_sheet_values(svc, spreadsheet_id, sheet_name, cell_range, values)
+    try:
+        if action == "update":
+            cell_range = arguments.get("range")
+            values = arguments.get("values")
+            if not cell_range:
+                raise ValueError("range is required for action='update'")
+            if values is None:
+                raise ValueError("values is required for action='update'")
+            return await _update_sheet_values(svc, spreadsheet_id, sheet_name, cell_range, values)
 
-    if action == "append":
-        values = arguments.get("values")
-        if values is None:
-            raise ValueError("values is required for action='append'")
-        return await _append_sheet_values(svc, spreadsheet_id, sheet_name, values)
+        if action == "append":
+            values = arguments.get("values")
+            if values is None:
+                raise ValueError("values is required for action='append'")
+            return await _append_sheet_values(svc, spreadsheet_id, sheet_name, values)
 
-    if action == "clear":
-        cell_range = arguments.get("range")
-        if not cell_range:
-            raise ValueError("range is required for action='clear'")
-        return await _clear_sheet_values(svc, spreadsheet_id, sheet_name, cell_range)
+        if action == "clear":
+            cell_range = arguments.get("range")
+            if not cell_range:
+                raise ValueError("range is required for action='clear'")
+            return await _clear_sheet_values(svc, spreadsheet_id, sheet_name, cell_range)
+    except httpx.HTTPStatusError as exc:
+        raise _wrap_sheets_http_error(exc) from exc
 
     raise ValueError(f"Unknown action: {action!r}")
 

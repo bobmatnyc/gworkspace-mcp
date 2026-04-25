@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import uuid
 from typing import TYPE_CHECKING, Any
 
@@ -13,6 +14,28 @@ if TYPE_CHECKING:
     from gworkspace_mcp.server.base import BaseService
 
 EMU_PER_PT = 12700  # English Metric Units per point
+
+# Google Slides presentation IDs match the same shape as Spreadsheet IDs:
+# 20+ chars of alphanumeric/hyphen/underscore. Reject malformed IDs early.
+_PRESENTATION_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{20,}$")
+
+
+def _validate_presentation_id(presentation_id: str) -> None:
+    """Validate presentation ID format before hitting the API.
+
+    Why: Malformed presentation IDs trigger opaque 400s. Catching them at the
+    boundary gives a clear, actionable error.
+    What: Raises ``ValueError`` if ``presentation_id`` is missing or shorter
+    than 20 characters / has invalid characters.
+    Test: Assert raises for '', 'short'; does not raise for a 44-char ID.
+    """
+    if not presentation_id or not _PRESENTATION_ID_RE.match(presentation_id):
+        raise ValueError(
+            "Invalid presentation ID format. Google Slides presentation IDs are "
+            "typically 44 characters of alphanumeric characters and hyphens/underscores. "
+            "Please verify the ID from the presentation URL."
+        )
+
 
 TOOLS: list[Tool] = [
     Tool(
@@ -231,6 +254,7 @@ async def _get_slide(svc: BaseService, arguments: dict[str, Any]) -> dict[str, A
     # omit masters and layouts which are not used by this handler.
     _FIELDS = "slides(objectId,slideProperties,pageElements)"
     presentation_id = arguments["presentation_id"]
+    _validate_presentation_id(presentation_id)
     slide_index = arguments["slide_index"]
 
     url = f"{SLIDES_API_BASE}/presentations/{presentation_id}"
@@ -298,6 +322,7 @@ async def _get_slide(svc: BaseService, arguments: dict[str, Any]) -> dict[str, A
 async def _get_presentation_text(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
     """Extract all text from a presentation."""
     presentation_id = arguments["presentation_id"]
+    _validate_presentation_id(presentation_id)
     url = f"{SLIDES_API_BASE}/presentations/{presentation_id}"
     response = await svc._make_request("GET", url)
 

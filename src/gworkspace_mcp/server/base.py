@@ -26,6 +26,52 @@ _active_account: contextvars.ContextVar[str | None] = contextvars.ContextVar(
 )
 
 
+def _looks_like_synthetic_identity(name: str) -> bool:
+    """Return True when ``name`` looks like a synthetic service identity.
+
+    Why: When the MCP endpoint is hit with a service API key, auth resolves to
+    a synthetic identifier (e.g. ``gworkspace@system``) that has no OAuth
+    tokens. Detecting this lets us surface a friendly "please authenticate"
+    message instead of a confusing internal error.
+    What: Treats the value as synthetic when it contains '@system', has no '@'
+    while still containing characters atypical of profile names, or matches
+    common synthetic patterns. Real Google account emails (``user@domain.tld``)
+    and normal profile slugs return False.
+    Test: Assert True for 'gworkspace@system', 'svc@system', 'service-bot';
+    False for 'user@example.com', 'work', 'gworkspace-mcp'.
+    """
+    if not isinstance(name, str) or not name:
+        return False
+    lowered = name.lower()
+    if "@system" in lowered:
+        return True
+    # Typical service identity markers
+    if lowered.startswith("svc@") or lowered.startswith("service@"):
+        return True
+    return False
+
+
+def is_operational_error(exc: BaseException) -> bool:
+    """Return True for operational errors that should NOT trigger auto bug reports.
+
+    Why: 403 (permission denied) and 404 (not found) responses from Google APIs
+    are normal operational states (file is private, file deleted, wrong ID, etc.)
+    and must not be filed as bugs. Genuine bugs are 5xx responses, network
+    failures, and unexpected exceptions.
+    What: Returns True for ``httpx.HTTPStatusError`` with status 403 or 404;
+    False otherwise.
+    Test: Assert True for an HTTPStatusError with response.status_code in {403, 404};
+    False for 500, ValueError, RuntimeError.
+    """
+    if isinstance(exc, httpx.HTTPStatusError):
+        try:
+            status = exc.response.status_code
+        except AttributeError:
+            return False
+        return status in (403, 404)
+    return False
+
+
 class BaseService:
     """Shared infrastructure for Google Workspace service operations.
 
@@ -192,6 +238,19 @@ class BaseService:
         status = self.storage.get_status(service_name)
 
         if status == TokenStatus.MISSING:
+            # If the resolved profile looks like a synthetic/service identity
+            # (e.g. "gworkspace@system", anything with "@system" suffix or
+            # a non-Google-account-shaped string) the caller is almost certainly
+            # invoking the MCP endpoint with a service API key rather than via
+            # an OAuth-authenticated account. Surface a user-facing message
+            # instead of a generic internal error so callers don't auto-file
+            # this as a bug.
+            if _looks_like_synthetic_identity(service_name):
+                raise RuntimeError(
+                    "This tool requires Google OAuth authentication. "
+                    "Please connect your Google Workspace account via the "
+                    "workspace setup command before using this tool."
+                )
             raise RuntimeError(
                 f"No OAuth token found for profile '{service_name}'. "
                 "Please authenticate first using: gworkspace-mcp setup"

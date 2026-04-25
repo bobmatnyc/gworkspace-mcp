@@ -6,8 +6,6 @@ from typing import TYPE_CHECKING, Any
 
 from mcp.types import Tool
 
-from gworkspace_mcp.server.constants import SERVICE_NAME
-
 if TYPE_CHECKING:
     from gworkspace_mcp.server.base import BaseService
 
@@ -153,10 +151,18 @@ def _get_rclone_manager(svc: BaseService) -> Any:
             "- sync_drive"
         ) from e
 
+    # Use the dynamically resolved profile name so rclone operations target the
+    # active account profile (set via GWORKSPACE_ACCOUNT, the per-call ``account``
+    # parameter, or the default profile) rather than the hardcoded constant.
+    from gworkspace_mcp.server.base import _active_account
+
+    active = _active_account.get()
+    profile_name = active if active is not None else svc._resolve_profile()
+
     try:
         return RcloneManager(
             storage=svc.storage,
-            service_name=SERVICE_NAME,
+            service_name=profile_name,
         )
     except RcloneNotInstalledError as e:
         raise RuntimeError(
