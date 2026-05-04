@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import secrets
 from typing import TYPE_CHECKING, Any
 
-from mcp.types import Tool
+from mcp.types import ImageContent, TextContent, Tool
 
 from gworkspace_mcp.server.constants import DOCS_API_BASE, DRIVE_API_BASE
+from gworkspace_mcp.server.result_types import image_result
 
 if TYPE_CHECKING:
     from gworkspace_mcp.server.base import BaseService
@@ -208,7 +210,9 @@ def _extract_paragraph_text(paragraph: dict) -> str:  # type: ignore[type-arg]
 # =============================================================================
 
 
-async def _render_mermaid_to_doc(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
+async def _render_mermaid_to_doc(
+    svc: BaseService, arguments: dict[str, Any]
+) -> list[TextContent | ImageContent]:
     document_id = arguments["document_id"]
     mermaid_code = arguments["mermaid_code"]
     insert_index = arguments.get("insert_index")
@@ -290,14 +294,17 @@ async def _render_mermaid_to_doc(svc: BaseService, arguments: dict[str, Any]) ->
     body = {"requests": [image_request]}
     await svc._make_request("POST", update_url, json_data=body)
 
-    return {
-        "status": "success",
-        "imageUrl": public_url,
-        "fileId": file_id,
-        "insertIndex": insert_index,
-        "documentId": document_id,
-        "format": image_format,
-    }
+    # Return the rendered image as binary MCP content alongside a caption.
+    # The metadata (file id, public URL, etc.) is encoded into the caption
+    # text so callers retain access to it.
+    mime_type = "image/svg+xml" if image_format == "svg" else f"image/{image_format}"
+    encoded = base64.b64encode(image_content).decode()
+    caption = (
+        f"Mermaid diagram rendered and inserted into document {document_id} "
+        f"(fileId={file_id}, format={image_format}, insertIndex={insert_index}, "
+        f"imageUrl={public_url})"
+    )
+    return image_result(encoded, mime_type, caption=caption)
 
 
 async def _publish_markdown_to_doc(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:

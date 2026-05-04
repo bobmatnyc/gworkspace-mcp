@@ -7,9 +7,10 @@ from typing import Any
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import TextContent, Tool
+from mcp.types import ImageContent, TextContent, Tool
 
 from gworkspace_mcp.server.base import BaseService, _active_account, is_operational_error
+from gworkspace_mcp.server.result_types import text_result
 from gworkspace_mcp.server.services import (
     accounts,
     calendar,
@@ -57,10 +58,16 @@ class GoogleWorkspaceServer(BaseService):
             return ALL_TOOLS
 
         @self.server.call_tool()
-        async def handle_call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
+        async def handle_call_tool(
+            name: str, arguments: dict[str, Any]
+        ) -> list[TextContent | ImageContent]:
             try:
                 result = await self._dispatch_tool(name, arguments)
-                return [TextContent(type="text", text=json.dumps(result, indent=2))]
+                # If a tool returned pre-built MCP content blocks, pass through unchanged.
+                # Otherwise JSON-serialize the dict result as TextContent.
+                if isinstance(result, list):
+                    return result
+                return text_result(result)
             except Exception as e:
                 # Operational errors (403/404) are normal states (no permission,
                 # not found) and must NOT be auto-reported as bugs. Log them at
@@ -95,7 +102,7 @@ class GoogleWorkspaceServer(BaseService):
         handlers.update(tasks.get_handlers(self))
         return handlers
 
-    async def _dispatch_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    async def _dispatch_tool(self, name: str, arguments: dict[str, Any]) -> Any:
         """Dispatch a tool call to the appropriate service handler.
 
         Extracts the optional ``account`` parameter before invoking the handler
