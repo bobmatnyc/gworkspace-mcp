@@ -53,11 +53,11 @@ class GoogleWorkspaceServer(BaseService):
         """Register MCP tool handlers."""
 
         @self.server.list_tools()
-        async def list_tools() -> list[Tool]:  # pyright: ignore[reportUnusedVariable]
+        async def handle_list_tools() -> list[Tool]:
             return ALL_TOOLS
 
         @self.server.call_tool()
-        async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:  # pyright: ignore[reportUnusedVariable]
+        async def handle_call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             try:
                 result = await self._dispatch_tool(name, arguments)
                 return [TextContent(type="text", text=json.dumps(result, indent=2))]

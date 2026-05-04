@@ -15,6 +15,7 @@ import base64
 import hashlib
 import os
 import secrets
+import socket
 import webbrowser
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -43,6 +44,52 @@ GOOGLE_WORKSPACE_SCOPES = [
 DEFAULT_OAUTH_HOST = "127.0.0.1"
 DEFAULT_OAUTH_PORT = 8789
 DEFAULT_REDIRECT_URI = "http://127.0.0.1:8789/callback"
+
+
+def _find_free_port(preferred: int, host: str = DEFAULT_OAUTH_HOST) -> int:
+    """Find an available local port, preferring ``preferred`` if free.
+
+    Why: macOS keeps ports in TIME_WAIT after a failed/timed-out OAuth callback,
+    so a hard-coded 8789 leaves users with `[Errno 48] Address already in use`
+    and no way forward. Probing with SO_REUSEADDR and falling back to an
+    OS-assigned port lets `workspace setup` recover automatically (issue #18).
+
+    What: Tries to bind to ``(host, preferred)`` with SO_REUSEADDR set on the
+    probe socket; if that raises OSError (port busy/blocked), rebinds to
+    ``(host, 0)`` and returns the kernel-assigned port.
+
+    Test: Bind a blocker socket to a chosen port, then call
+    ``_find_free_port(that_port)`` and assert the returned port differs from
+    the blocked one and is non-zero. Also call with a known-free port and
+    assert it returns the same port.
+
+    Args:
+        preferred: Port to try first.
+        host: Host/interface to bind on. Defaults to 127.0.0.1.
+
+    Returns:
+        An available port number on the given host.
+    """
+    # Try the preferred port first with SO_REUSEADDR so a stale TIME_WAIT
+    # binding from a prior failed flow does not block recovery.
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind((host, preferred))
+        return preferred
+    except OSError:
+        # Preferred port is unavailable — let the kernel assign any free port.
+        pass
+    finally:
+        sock.close()
+
+    fallback = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        fallback.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        fallback.bind((host, 0))
+        return fallback.getsockname()[1]
+    finally:
+        fallback.close()
 
 
 class OAuthManager:
@@ -308,6 +355,41 @@ class OAuthManager:
         Returns:
             Google OAuth2 credentials.
         """
+        # Parse redirect URI to get host, port, and path
+        parsed = urlparse(redirect_uri)
+        host = parsed.hostname or DEFAULT_OAUTH_HOST
+        requested_port = parsed.port or DEFAULT_OAUTH_PORT
+        callback_path = parsed.path or "/callback"
+
+        # Resolve the actual port BEFORE constructing the auth URL so the
+        # redirect_uri sent to Google matches the port we'll actually listen on.
+        # If the preferred port is taken (e.g. stale TIME_WAIT on macOS), we
+        # transparently fall back to an OS-assigned free port. See issue #18.
+        actual_port = _find_free_port(requested_port, host)
+        if actual_port != requested_port:
+            # Rebuild redirect_uri with the actual port. Note: this URI must
+            # also be registered in the Google Cloud Console OAuth client for
+            # the auth exchange to succeed. The user may need to add the
+            # fallback URI (or a localhost redirect) in their console.
+            scheme = parsed.scheme or "http"
+            redirect_uri = f"{scheme}://{host}:{actual_port}{callback_path}"
+            print(
+                f"Port {requested_port} unavailable; using fallback port {actual_port}. "
+                f"Ensure {redirect_uri} is registered in your Google Cloud Console "
+                f"OAuth client (or use a port range registered there)."
+            )
+
+        port = actual_port
+
+        # Update client_config redirect_uris to match the resolved redirect_uri
+        # so Flow advertises the correct URI in the token exchange.
+        client_config = {
+            "web": {
+                **client_config["web"],
+                "redirect_uris": [redirect_uri],
+            }
+        }
+
         # Create flow for web application
         flow = Flow.from_client_config(
             client_config,
@@ -330,12 +412,6 @@ class OAuthManager:
             code_challenge_method="S256",
         )
 
-        # Parse redirect URI to get host, port, and path
-        parsed = urlparse(redirect_uri)
-        host = parsed.hostname or DEFAULT_OAUTH_HOST
-        port = parsed.port or DEFAULT_OAUTH_PORT
-        callback_path = parsed.path or "/callback"
-
         # Create callback handler
         auth_code: list[str | None] = [None]
         error_message: list[str | None] = [None]
@@ -345,7 +421,7 @@ class OAuthManager:
 
             def log_message(self, format: str, *args) -> None:
                 """Suppress HTTP server logs."""
-                pass
+                del format, args
 
             def do_GET(self) -> None:
                 """Handle GET request from OAuth redirect."""
@@ -407,8 +483,15 @@ class OAuthManager:
                         b"<p>No authorization code received.</p></body></html>"
                     )
 
-        # Start local server
+        # Start local server.
+        # Set SO_REUSEADDR so the socket can rebind even if a prior failed
+        # flow left the port in TIME_WAIT (issue #18). HTTPServer's
+        # allow_reuse_address class attr is True on most platforms but we
+        # also set it explicitly on the underlying socket to be defensive
+        # across macOS/Linux/Windows.
+        HTTPServer.allow_reuse_address = True
         server = HTTPServer((host, port), OAuthCallbackHandler)
+        server.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server.timeout = 300  # 5 minute timeout
 
         # Open browser with authorization URL

@@ -5,6 +5,7 @@ Tests cover authentication flow, token refresh, and credential management.
 
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -177,7 +178,7 @@ class TestOAuthManagerAuthenticate:
             )  # pragma: allowlist secret
 
             # Verify _run_oauth_flow was called with default scopes
-            call_args = oauth_manager._run_oauth_flow.call_args
+            call_args = cast(MagicMock, oauth_manager._run_oauth_flow).call_args
             assert call_args[0][1] == GOOGLE_WORKSPACE_SCOPES
 
     @pytest.mark.asyncio
@@ -194,7 +195,7 @@ class TestOAuthManagerAuthenticate:
                 client_secret="test_secret",  # pragma: allowlist secret
             )
 
-            call_args = oauth_manager._run_oauth_flow.call_args
+            call_args = cast(MagicMock, oauth_manager._run_oauth_flow).call_args
             assert call_args[0][1] == custom_scopes
 
     @pytest.mark.asyncio
@@ -313,6 +314,7 @@ class TestOAuthManagerRefreshIfNeeded:
                 await oauth_manager.refresh_if_needed()
 
                 stored = oauth_manager.storage.retrieve("gworkspace-mcp")
+                assert stored is not None
                 assert stored.token.access_token == "refreshed_access_token"
 
 
@@ -420,7 +422,9 @@ class TestOAuthManagerRunOAuthFlow:
         }
 
     def _setup_mock_server_with_auth_code(
-        self, mock_server_class: MagicMock, auth_code: str = "test_auth_code"
+        self,
+        mock_server_class: MagicMock,
+        _auth_code: str = "test_auth_code",
     ) -> MagicMock:
         """Setup mock server that simulates receiving an auth code.
 
@@ -431,7 +435,7 @@ class TestOAuthManagerRunOAuthFlow:
         mock_server = MagicMock()
         captured_handler_class: list = []
 
-        def capture_handler(addr_tuple, handler_class):
+        def capture_handler(_addr_tuple, handler_class):
             captured_handler_class.append(handler_class)
             return mock_server
 
@@ -453,10 +457,19 @@ class TestOAuthManagerRunOAuthFlow:
 
         mock_flow = self._create_mock_flow()
 
-        with patch(
-            "gworkspace_mcp.auth.oauth_manager.Flow.from_client_config",
-            return_value=mock_flow,
-        ) as mock_from_config:
+        with (
+            patch(
+                "gworkspace_mcp.auth.oauth_manager.Flow.from_client_config",
+                return_value=mock_flow,
+            ) as mock_from_config,
+            patch(
+                # Force the preferred port to be used so the redirect_uri is not
+                # rewritten, keeping this test deterministic regardless of which
+                # local ports happen to be busy at test time (issue #18).
+                "gworkspace_mcp.auth.oauth_manager._find_free_port",
+                return_value=8789,
+            ),
+        ):
             with patch("gworkspace_mcp.auth.oauth_manager.HTTPServer") as mock_server_class:
                 with patch("gworkspace_mcp.auth.oauth_manager.webbrowser.open"):
                     mock_server = MagicMock()
@@ -693,3 +706,57 @@ class TestOAuthDefaults:
         """Verify default redirect URI uses default host and port."""
         expected = f"http://{DEFAULT_OAUTH_HOST}:{DEFAULT_OAUTH_PORT}/callback"
         assert DEFAULT_REDIRECT_URI == expected
+
+
+@pytest.mark.unit
+class TestFindFreePort:
+    """Tests for the _find_free_port helper (issue #18 fix).
+
+    Why: The OAuth callback server previously hard-coded port 8789 and
+    failed with "[Errno 48] Address already in use" when the port was
+    held by a stale TIME_WAIT socket from a previous failed flow. The
+    helper must (a) reuse the preferred port when free, (b) fall back
+    to an OS-assigned port when busy, and (c) set SO_REUSEADDR so it
+    survives macOS TIME_WAIT.
+    """
+
+    def test_should_return_preferred_port_when_free(self) -> None:
+        """Why: Normal happy path — the preferred port should be used.
+        What: Pick a likely-free high port and assert _find_free_port
+        returns that exact port.
+        Test: Bind a probe socket to port 0 to discover a free port,
+        close it, then call _find_free_port with that port.
+        """
+        import socket as _socket
+
+        from gworkspace_mcp.auth.oauth_manager import _find_free_port
+
+        probe = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+        probe.bind(("127.0.0.1", 0))
+        free_port = probe.getsockname()[1]
+        probe.close()
+
+        result = _find_free_port(free_port)
+        assert result == free_port
+
+    def test_should_fall_back_when_preferred_port_busy(self) -> None:
+        """Why: Issue #18 — when preferred port is held, must not raise.
+        What: Block a port with a real listening socket, then verify
+        _find_free_port returns a different non-zero port.
+        Test: Listen on a port, call _find_free_port with it, assert
+        the returned port differs and is a valid port number.
+        """
+        import socket as _socket
+
+        from gworkspace_mcp.auth.oauth_manager import _find_free_port
+
+        blocker = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+        blocker.bind(("127.0.0.1", 0))
+        blocker.listen(1)
+        blocked_port = blocker.getsockname()[1]
+        try:
+            result = _find_free_port(blocked_port)
+            assert result != blocked_port
+            assert 1024 <= result <= 65535
+        finally:
+            blocker.close()
