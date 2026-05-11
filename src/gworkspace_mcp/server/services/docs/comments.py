@@ -19,14 +19,18 @@ TOOLS: list[Tool] = [
             "Manage comments on a Google Docs, Sheets, or Slides file. Actions: "
             "'list' — list all comments with author, timestamps, resolved status, and replies; "
             "'add' — add a new comment to the file; "
-            "'reply' — reply to an existing comment."
+            "'reply' — reply to an existing comment; "
+            "'resolve' — mark a comment as resolved; "
+            "'unresolve' — mark a resolved comment as unresolved; "
+            "'update' — update the content of an existing comment; "
+            "'delete' — delete a comment."
         ),
         inputSchema={
             "type": "object",
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["list", "add", "reply"],
+                    "enum": ["list", "add", "reply", "resolve", "unresolve", "update", "delete"],
                     "description": "Operation to perform on document comments",
                 },
                 "file_id": {
@@ -35,11 +39,11 @@ TOOLS: list[Tool] = [
                 },
                 "content": {
                     "type": "string",
-                    "description": "Comment or reply text (required for add and reply actions)",
+                    "description": "Comment or reply text (required for add, reply, and update actions)",
                 },
                 "comment_id": {
                     "type": "string",
-                    "description": "ID of the comment to reply to (required for reply action)",
+                    "description": "ID of the comment to act on (required for reply, resolve, unresolve, update, and delete actions)",
                 },
                 "anchor": {
                     "type": "string",
@@ -198,7 +202,74 @@ async def _manage_document_comments(svc: BaseService, arguments: dict[str, Any])
             "message": "Reply added successfully.",
         }
 
-    return {"error": f"Unknown action '{action}'. Valid actions: list, add, reply"}
+    if action in ("resolve", "unresolve"):
+        comment_id = arguments.get("comment_id")
+        if not comment_id:
+            return {"error": f"comment_id is required for {action} action"}
+
+        url = f"{DRIVE_API_BASE}/files/{file_id}/comments/{comment_id}"
+        params = {"fields": "id,content,resolved"}
+        body = {"resolved": action == "resolve"}
+
+        response = await svc._make_request("PATCH", url, params=params, json_data=body)
+
+        return {
+            "id": response.get("id"),
+            "content": response.get("content", ""),
+            "resolved": response.get("resolved", False),
+            "comment_id": comment_id,
+            "message": f"Comment {action}d successfully.",
+        }
+
+    if action == "update":
+        comment_id = arguments.get("comment_id")
+        content = arguments.get("content")
+        if not comment_id:
+            return {"error": "comment_id is required for update action"}
+        if not content:
+            return {"error": "content is required for update action"}
+
+        url = f"{DRIVE_API_BASE}/files/{file_id}/comments/{comment_id}"
+        params = {
+            "fields": "id,content,author(displayName,emailAddress),modifiedTime,resolved",
+        }
+        body = {"content": content}
+
+        response = await svc._make_request("PATCH", url, params=params, json_data=body)
+
+        author = response.get("author", {})
+        return {
+            "id": response.get("id"),
+            "content": response.get("content", ""),
+            "author_name": author.get("displayName", "Unknown"),
+            "author_email": author.get("emailAddress", ""),
+            "modified_time": response.get("modifiedTime", ""),
+            "resolved": response.get("resolved", False),
+            "comment_id": comment_id,
+            "message": "Comment updated successfully.",
+        }
+
+    if action == "delete":
+        comment_id = arguments.get("comment_id")
+        if not comment_id:
+            return {"error": "comment_id is required for delete action"}
+
+        url = f"{DRIVE_API_BASE}/files/{file_id}/comments/{comment_id}"
+        await svc._make_delete_request(url)
+
+        return {
+            "status": "deleted",
+            "comment_id": comment_id,
+            "file_id": file_id,
+            "message": "Comment deleted successfully.",
+        }
+
+    return {
+        "error": (
+            f"Unknown action '{action}'. Valid actions: "
+            "list, add, reply, resolve, unresolve, update, delete"
+        )
+    }
 
 
 def get_handlers(svc: BaseService) -> dict[str, Any]:

@@ -83,6 +83,12 @@ TOOLS: list[Tool] = [
                         "bold": {"type": "boolean"},
                         "italic": {"type": "boolean"},
                         "underline": {"type": "boolean"},
+                        "strikethrough": {"type": "boolean"},
+                        "baseline_offset": {
+                            "type": "string",
+                            "enum": ["NONE", "SUPERSCRIPT", "SUBSCRIPT"],
+                            "description": "Vertical baseline offset (super/sub-script)",
+                        },
                         "font_size": {"type": "number", "description": "Font size in points"},
                         "font_family": {"type": "string"},
                         "text_color": {
@@ -93,6 +99,19 @@ TOOLS: list[Tool] = [
                                 "green": {"type": "number", "minimum": 0, "maximum": 1},
                                 "blue": {"type": "number", "minimum": 0, "maximum": 1},
                             },
+                        },
+                        "highlight_color": {
+                            "type": "object",
+                            "description": "RGB highlight (background) color for the text",
+                            "properties": {
+                                "red": {"type": "number", "minimum": 0, "maximum": 1},
+                                "green": {"type": "number", "minimum": 0, "maximum": 1},
+                                "blue": {"type": "number", "minimum": 0, "maximum": 1},
+                            },
+                        },
+                        "link": {
+                            "type": "string",
+                            "description": "URL to make this range a hyperlink",
                         },
                     },
                 },
@@ -114,6 +133,46 @@ TOOLS: list[Tool] = [
                         },
                         "indent_start": {"type": "number", "description": "Left indent in points"},
                         "indent_end": {"type": "number", "description": "Right indent in points"},
+                        "space_above": {
+                            "type": "number",
+                            "description": "Space above the paragraph in points",
+                        },
+                        "space_below": {
+                            "type": "number",
+                            "description": "Space below the paragraph in points",
+                        },
+                        "keep_with_next": {
+                            "type": "boolean",
+                            "description": "Whether to keep this paragraph with the next on the same page",
+                        },
+                        "keep_lines_together": {
+                            "type": "boolean",
+                            "description": "Whether to keep all lines of this paragraph on the same page",
+                        },
+                        "avoid_widow_and_orphan": {
+                            "type": "boolean",
+                            "description": "Whether to avoid widows and orphans for this paragraph",
+                        },
+                        "border_between": {
+                            "type": "object",
+                            "description": "Paragraph border (applied to all sides). color: rgb dict, width: pt, padding: pt, dash_style: SOLID/DOT/DASH",
+                            "properties": {
+                                "color": {
+                                    "type": "object",
+                                    "properties": {
+                                        "red": {"type": "number"},
+                                        "green": {"type": "number"},
+                                        "blue": {"type": "number"},
+                                    },
+                                },
+                                "width": {"type": "number"},
+                                "padding": {"type": "number"},
+                                "dash_style": {
+                                    "type": "string",
+                                    "enum": ["SOLID", "DOT", "DASH"],
+                                },
+                            },
+                        },
                     },
                 },
                 "heading_style": {
@@ -490,6 +549,41 @@ TOOLS: list[Tool] = [
         },
     ),
     Tool(
+        name="insert_image_in_document",
+        description=(
+            "Insert an inline image at a given location in a Google Doc. "
+            "Image URI must be a publicly accessible URL (https://...). "
+            "Optional width_pt and height_pt control the rendered size in points."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "document_id": {"type": "string"},
+                "insert_index": {
+                    "type": "integer",
+                    "description": "Character index where to insert the image",
+                },
+                "image_uri": {
+                    "type": "string",
+                    "description": "Publicly accessible URL to the image",
+                },
+                "width_pt": {
+                    "type": "number",
+                    "description": "Image width in points (optional)",
+                },
+                "height_pt": {
+                    "type": "number",
+                    "description": "Image height in points (optional)",
+                },
+                "account": {
+                    "type": "string",
+                    "description": "Google account profile to use. Omit to use the default account. Use 'workspace accounts list' to see available profiles.",
+                },
+            },
+            "required": ["document_id", "insert_index", "image_uri"],
+        },
+    ),
+    Tool(
         name="set_document_style",
         description=(
             "Set page size and/or margins for a Google Doc. "
@@ -769,6 +863,16 @@ async def _format_document_range(svc: BaseService, arguments: dict[str, Any]) ->
             text_style["weightedFontFamily"] = {"fontFamily": text_style_args["font_family"]}
         if "text_color" in text_style_args:
             text_style["foregroundColor"] = {"color": {"rgbColor": text_style_args["text_color"]}}
+        if "strikethrough" in text_style_args:
+            text_style["strikethrough"] = text_style_args["strikethrough"]
+        if "baseline_offset" in text_style_args:
+            text_style["baselineOffset"] = text_style_args["baseline_offset"]
+        if "highlight_color" in text_style_args:
+            text_style["backgroundColor"] = {
+                "color": {"rgbColor": text_style_args["highlight_color"]}
+            }
+        if "link" in text_style_args:
+            text_style["link"] = {"url": text_style_args["link"]}
         if text_style:
             requests.append(
                 {
@@ -803,6 +907,35 @@ async def _format_document_range(svc: BaseService, arguments: dict[str, Any]) ->
                 "magnitude": paragraph_style_args["indent_end"],
                 "unit": "PT",
             }
+        if "space_above" in paragraph_style_args:
+            paragraph_style["spaceAbove"] = {
+                "magnitude": paragraph_style_args["space_above"],
+                "unit": "PT",
+            }
+        if "space_below" in paragraph_style_args:
+            paragraph_style["spaceBelow"] = {
+                "magnitude": paragraph_style_args["space_below"],
+                "unit": "PT",
+            }
+        if "keep_with_next" in paragraph_style_args:
+            paragraph_style["keepWithNext"] = paragraph_style_args["keep_with_next"]
+        if "keep_lines_together" in paragraph_style_args:
+            paragraph_style["keepLinesTogether"] = paragraph_style_args["keep_lines_together"]
+        if "avoid_widow_and_orphan" in paragraph_style_args:
+            paragraph_style["avoidWidowAndOrphan"] = paragraph_style_args["avoid_widow_and_orphan"]
+        if "border_between" in paragraph_style_args:
+            b = paragraph_style_args["border_between"]
+            border_obj = {
+                "color": {"color": {"rgbColor": b.get("color", {})}},
+                "width": {"magnitude": b.get("width", 1.0), "unit": "PT"},
+                "padding": {"magnitude": b.get("padding", 0.0), "unit": "PT"},
+                "dashStyle": b.get("dash_style", "SOLID"),
+            }
+            paragraph_style["borderBetween"] = border_obj
+            paragraph_style["borderTop"] = border_obj
+            paragraph_style["borderBottom"] = border_obj
+            paragraph_style["borderLeft"] = border_obj
+            paragraph_style["borderRight"] = border_obj
         if paragraph_style:
             requests.append(
                 {
@@ -1302,6 +1435,42 @@ async def _apply_table_style(svc: BaseService, arguments: dict[str, Any]) -> dic
     }
 
 
+async def _insert_image_in_document(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
+    document_id = arguments["document_id"]
+    insert_index = arguments["insert_index"]
+    image_uri = arguments["image_uri"]
+    width_pt = arguments.get("width_pt")
+    height_pt = arguments.get("height_pt")
+
+    insert_request: dict[str, Any] = {
+        "location": {"index": insert_index},
+        "uri": image_uri,
+    }
+    if width_pt is not None or height_pt is not None:
+        object_size: dict[str, Any] = {}
+        if width_pt is not None:
+            object_size["width"] = {"magnitude": float(width_pt), "unit": "PT"}
+        if height_pt is not None:
+            object_size["height"] = {"magnitude": float(height_pt), "unit": "PT"}
+        insert_request["objectSize"] = object_size
+
+    url = f"{DOCS_API_BASE}/documents/{document_id}:batchUpdate"
+    await svc._make_request(
+        "POST",
+        url,
+        json_data={"requests": [{"insertInlineImage": insert_request}]},
+    )
+
+    return {
+        "status": "inserted",
+        "document_id": document_id,
+        "insert_index": insert_index,
+        "image_uri": image_uri,
+        "width_pt": width_pt,
+        "height_pt": height_pt,
+    }
+
+
 async def _set_document_style(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
     document_id = arguments["document_id"]
     url = f"{DOCS_API_BASE}/documents/{document_id}:batchUpdate"
@@ -1381,5 +1550,6 @@ def get_handlers(svc: BaseService) -> dict[str, Any]:
         "format_table_cells": lambda args: _format_table_cells(svc, args),
         "set_table_column_widths": lambda args: _set_table_column_widths(svc, args),
         "apply_table_style": lambda args: _apply_table_style(svc, args),
+        "insert_image_in_document": lambda args: _insert_image_in_document(svc, args),
         "set_document_style": lambda args: _set_document_style(svc, args),
     }
