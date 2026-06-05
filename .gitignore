@@ -94,3 +94,4 @@ docs/research/
 kuzu-memories/
 .kuzu-memory/
 .kuzu_memory.db
+.trusty-search/

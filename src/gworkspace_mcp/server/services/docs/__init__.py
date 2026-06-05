@@ -12,6 +12,7 @@ from gworkspace_mcp.server.services.docs import (
     formatting,
     headers_footers,
     markdown,
+    markdown_file,
     table_ops,
     templates,
 )
@@ -23,6 +24,7 @@ TOOLS: list[Tool] = (
     comments.TOOLS
     + core.TOOLS
     + markdown.TOOLS
+    + markdown_file.TOOLS
     + formatting.TOOLS
     + table_ops.TOOLS
     + templates.TOOLS
@@ -33,6 +35,15 @@ TOOLS: list[Tool] = (
 def get_handlers(svc: BaseService) -> dict[str, Any]:
     """Return name->callable mapping for all Docs handlers."""
     handlers: dict[str, Any] = {}
-    for mod in [comments, core, markdown, formatting, table_ops, templates, headers_footers]:
+    for mod in [
+        comments,
+        core,
+        markdown,
+        markdown_file,
+        formatting,
+        table_ops,
+        templates,
+        headers_footers,
+    ]:
         handlers.update(mod.get_handlers(svc))
     return handlers

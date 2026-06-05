@@ -155,7 +155,7 @@ has:attachment larger:5M is:unread label:important
 
 **Drive query syntax:** `name contains 'report' and mimeType = 'application/pdf' and modifiedTime > '2024-01-01'`
 
-### Docs (16 tools)
+### Docs (17 tools)
 
 | Tool | Key Parameters | Description |
 |------|---------------|-------------|
@@ -164,6 +164,7 @@ has:attachment larger:5M is:unread label:important
 | `append_to_document` | `document_id`, `content` | Add text at end |
 | `upload_markdown_as_doc` | `markdown_content`, `title`, `folder_id` | Markdown → Google Doc |
 | `publish_markdown_to_doc` | `document_id`, `markdown_content` | Replace doc with markdown |
+| `markdown_file_to_doc` | `markdown_file_path`, `title`, `document_id?`, `folder_id?`, `account?` | **Robust** Markdown file → Google Doc; fixes truncation on large docs, adds real table borders, supports in-place update via `document_id` |
 | `list_document_comments` | `document_id` | All comments |
 | `add_document_comment` | `document_id`, `content`, `anchor` | New comment |
 | `reply_to_comment` | `document_id`, `comment_id`, `content` | Reply to comment |

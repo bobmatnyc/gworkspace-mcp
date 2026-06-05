@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`markdown_file_to_doc`** — new MCP tool that converts a Markdown file to a fully-formatted
+  Google Doc, fixing three failure modes of `publish_markdown_to_doc`:
+  1. **No inline-content truncation**: reads the file server-side via `markdown_file_path` so
+     large documents (700+ lines / 70 KB+) are never cut off by context or output-token limits.
+  2. **Real table borders**: uses `updateTableCellStyle` directly after table insertion, guaranteeing
+     visible borders even after Drive import (which strips DOCX table borders).
+  3. **In-place update**: supply `document_id` to clear and rewrite an existing document body
+     while preserving the shareable link and document ID.
+  - Parameters: `markdown_file_path` (absolute path), `markdown_content` (inline fallback),
+    `title`, `document_id` (optional, for in-place update), `folder_id`, `account`.
+  - Supports headings H1–H6, paragraphs, fenced code blocks, GFM pipe tables, unordered and
+    ordered lists (depth-aware), horizontal rules, and inline bold/italic/code/links.
+
 - **Multi-account named profile support** — configure and switch between multiple Google accounts
 - `workspace setup --account NAME` — set up a named account profile via OAuth
 - `workspace accounts list` — list all configured profiles with default marker
