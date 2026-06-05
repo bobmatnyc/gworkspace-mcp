@@ -22,6 +22,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Supports headings H1–H6, paragraphs, fenced code blocks, GFM pipe tables, unordered and
     ordered lists (depth-aware), horizontal rules, and inline bold/italic/code/links.
 
+### Fixed
+
+- **`markdown_file_to_doc` — table cells scrambled**: table cell `insertText` requests are now
+  issued in **reverse document order** (last cell first) so each insertion does not shift the
+  indices of cells yet to be filled. Previously, forward-order insertion caused every subsequent
+  cell's index to be off by the cumulative characters already inserted, producing garbled or
+  transposed cell content (e.g. a 5-column table rendering as "MeMaFeRaDatCo52…").
+- **`markdown_file_to_doc` — hard line breaks collapsed**: lines ending in two trailing spaces
+  (Markdown hard break) now produce a literal `\n` run within the paragraph block instead of
+  being joined with a space. The 3-line status/date title block now renders as three separate
+  lines rather than one run-on paragraph.
+- **`markdown_file_to_doc` — emphasis over-matching**: `*italic*` and `**bold**` patterns now
+  require the content to start and end with a non-whitespace character (`\S`), preventing
+  stray `*` characters (e.g. `~49.7%*` footnote markers) and space-padded asterisks from
+  being incorrectly parsed as italic spans.
+- **`markdown_file_to_doc` — no font override on body text**: confirmed that `weightedFontFamily`
+  is only applied to inline code spans (Courier New) and never to plain body text or headings;
+  headings continue to use named heading styles so the document theme font is respected.
+
 - **Multi-account named profile support** — configure and switch between multiple Google accounts
 - `workspace setup --account NAME` — set up a named account profile via OAuth
 - `workspace accounts list` — list all configured profiles with default marker

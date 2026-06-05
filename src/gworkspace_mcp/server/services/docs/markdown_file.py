@@ -141,17 +141,29 @@ def _parse_inline_runs(text: str) -> list[dict[str, Any]]:
       - ``link``: URL string if this run is a hyperlink, else None
 
     Nested emphasis is not supported; the first matching token wins.
+
+    Emphasis rules (to avoid over-matching stray * and ~):
+    - ``*italic*`` / ``_italic_``: only when * or _ is adjacent to a
+      non-whitespace character on both sides (i.e. cannot start/end with space).
+    - ``~~strikethrough~~``: treated as literal (no Docs equivalent).
+    - ``~text~``: treated as literal.
     """
     runs: list[dict[str, Any]] = []
 
     # Pattern order matters: links before bold/italic so [text](...) is parsed
     # as a link rather than an italic fragment.
+    #
+    # Italic patterns use word-boundary-like anchors:
+    #   (?<!\s) before the closing delimiter — ensures the italic span does not
+    #   end with whitespace (prevents matching "* stray star").
+    #   (?!\s) after the opening delimiter — ensures the italic span does not
+    #   start with whitespace.
     pattern = re.compile(
         r"(?P<link>\[(?P<link_text>[^\]]+)\]\((?P<link_url>[^)]+)\))"
-        r"|(?P<bold>\*\*(?P<bold_text>.+?)\*\*)"
-        r"|(?P<bold2>__(?P<bold2_text>.+?)__)"
-        r"|(?P<italic>\*(?P<italic_text>.+?)\*)"
-        r"|(?P<italic2>_(?P<italic2_text>.+?)_)"
+        r"|(?P<bold>\*\*(?P<bold_text>\S.*?\S|\S)\*\*)"
+        r"|(?P<bold2>__(?P<bold2_text>\S.*?\S|\S)__)"
+        r"|(?P<italic>\*(?P<italic_text>\S.*?\S|\S)\*)"
+        r"|(?P<italic2>_(?P<italic2_text>\S.*?\S|\S)_)"
         r"|(?P<code>`(?P<code_text>[^`]+)`)"
     )
 
@@ -374,27 +386,56 @@ def parse_markdown(content: str) -> list[dict[str, Any]]:
             continue
 
         # ---- Paragraph (catch-all) ----
-        # Collect continuation lines (non-blank, not a new block)
-        para_lines: list[str] = [stripped]
+        # Collect continuation lines (non-blank, not a new block).
+        # Hard line breaks: a line ending in two or more spaces (or backslash)
+        # before its newline is a "hard break".  We split the paragraph into
+        # sub-lines at those boundaries and emit a "\n" within the paragraph
+        # rather than joining with a space.
+        # We accumulate (line_text, hard_break) pairs.
+        def _is_hard_break(raw_line: str) -> bool:
+            return raw_line.endswith("  ") or raw_line.endswith("\\")
+
+        para_raw_lines: list[tuple[str, bool]] = [(raw, _is_hard_break(raw))]
         i += 1
         while i < n:
-            next_raw = lines[i].rstrip()
-            if not next_raw:
+            next_raw = lines[i]
+            next_stripped = next_raw.rstrip()
+            if not next_stripped:
                 break
-            if re.match(r"^#{1,6}\s", next_raw):
+            if re.match(r"^#{1,6}\s", next_stripped):
                 break
-            if re.match(r"^(```|~~~)", next_raw):
+            if re.match(r"^(```|~~~)", next_stripped):
                 break
-            if re.match(r"^(\s*)[-*+]\s", next_raw):
+            if re.match(r"^(\s*)[-*+]\s", next_stripped):
                 break
-            if re.match(r"^(\s*)\d+[.)]\s", next_raw):
+            if re.match(r"^(\s*)\d+[.)]\s", next_stripped):
                 break
-            if re.match(r"^\s*[-*_]{3,}\s*$", next_raw):
+            if re.match(r"^\s*[-*_]{3,}\s*$", next_stripped):
                 break
-            para_lines.append(next_raw)
+            para_raw_lines.append((next_raw, _is_hard_break(next_raw)))
             i += 1
-        paragraph_text = " ".join(para_lines)
-        blocks.append({"type": "paragraph", "runs": _parse_inline_runs(paragraph_text)})
+
+        # Build paragraph runs, honouring hard breaks.
+        # A hard break inserts a literal "\n" run between sub-lines so the
+        # DocBuilder emits separate line-break characters in the same paragraph.
+        para_runs: list[dict[str, Any]] = []
+        for idx, (raw_line, is_hard) in enumerate(para_raw_lines):
+            line_text = raw_line.rstrip()  # strip trailing spaces / backslash
+            if line_text.endswith("\\"):
+                line_text = line_text[:-1]
+            para_runs.extend(_parse_inline_runs(line_text))
+            if is_hard and idx < len(para_raw_lines) - 1:
+                # Insert a hard line-break run (literal newline within paragraph)
+                para_runs.append(
+                    {"text": "\n", "bold": False, "italic": False, "code": False, "link": None}
+                )
+            elif idx < len(para_raw_lines) - 1:
+                # Soft continuation: join with a space
+                para_runs.append(
+                    {"text": " ", "bold": False, "italic": False, "code": False, "link": None}
+                )
+
+        blocks.append({"type": "paragraph", "runs": para_runs})
 
     return blocks
 
@@ -546,17 +587,33 @@ class _DocBuilder:
         _, end = self._insert_runs(runs)
         self._insert_text("\n")
         para_end = self.index
-        # Apply bullet list style
-        nesting_level = min(depth, 5)
+        # Apply bullet list style.
+        # Note: createParagraphBullets only accepts range + bulletPreset;
+        # nestingLevel is NOT a valid field and causes a 400 Bad Request.
+        # Indentation for nested bullets uses updateParagraphStyle below.
         self.requests.append(
             {
                 "createParagraphBullets": {
                     "range": {"startIndex": start, "endIndex": para_end},
                     "bulletPreset": "BULLET_DISC_CIRCLE_SQUARE",
-                    "nestingLevel": nesting_level,
                 }
             }
         )
+        # Indent nested bullets via paragraph indentation (18pt per level)
+        if depth > 0:
+            indent_pts = depth * 18.0
+            self.requests.append(
+                {
+                    "updateParagraphStyle": {
+                        "range": {"startIndex": start, "endIndex": para_end},
+                        "paragraphStyle": {
+                            "indentStart": {"magnitude": indent_pts, "unit": "PT"},
+                            "indentFirstLine": {"magnitude": indent_pts, "unit": "PT"},
+                        },
+                        "fields": "indentStart,indentFirstLine",
+                    }
+                }
+            )
         _ = end  # suppress unused warning
 
     def add_ordered(self, runs: list[dict[str, Any]], depth: int = 0) -> None:
@@ -564,16 +621,30 @@ class _DocBuilder:
         self._insert_runs(runs)
         self._insert_text("\n")
         para_end = self.index
-        nesting_level = min(depth, 5)
+        # Note: createParagraphBullets only accepts range + bulletPreset.
         self.requests.append(
             {
                 "createParagraphBullets": {
                     "range": {"startIndex": start, "endIndex": para_end},
                     "bulletPreset": "NUMBERED_DECIMAL_ALPHA_ROMAN",
-                    "nestingLevel": nesting_level,
                 }
             }
         )
+        # Indent nested ordered lists
+        if depth > 0:
+            indent_pts = depth * 18.0
+            self.requests.append(
+                {
+                    "updateParagraphStyle": {
+                        "range": {"startIndex": start, "endIndex": para_end},
+                        "paragraphStyle": {
+                            "indentStart": {"magnitude": indent_pts, "unit": "PT"},
+                            "indentFirstLine": {"magnitude": indent_pts, "unit": "PT"},
+                        },
+                        "fields": "indentStart,indentFirstLine",
+                    }
+                }
+            )
 
     def add_blank(self) -> None:
         self._insert_text("\n")
@@ -617,14 +688,14 @@ class _DocBuilder:
         insertText requests referencing the cell content locations by tracking
         index arithmetic.
 
-        Google Docs insertTable inserts characters as follows (simplified):
-        - The table node itself counts as 1 index unit at table_start_index
-        - Each row node counts as 1 index unit
-        - Each cell node counts as 1 index unit
-        - Each cell's paragraph counts as 1 index unit (for the empty paragraph
-          placeholder)
-        The total insertion is: 1 + rows*(1 + cols*(2)) for an empty table
-        where each cell contains 1 empty paragraph (2 = cell open + paragraph).
+        Google Docs insertTable inserts characters as follows (empirically verified):
+        - A pre-table paragraph is inserted before the table: 1 index unit
+        - The table node itself: 2 index units (open + structural close)
+        - Each row node: 1 index unit
+        - Each cell: 2 index units (cell open + cell paragraph)
+        Total structural advance = 1 + 2 + rows*(1 + cols*2)
+                                  = 3 + rows*(1 + cols*2)
+        Verified for: 1x1→6, 1x2→8, 2x2→13, 2x3→17, 3x4→30, 4x5→47.
 
         Rather than replicate this brittle arithmetic we emit insertTable with
         the full cell text in a single pass using the approach below.
@@ -648,10 +719,13 @@ class _DocBuilder:
             }
         )
 
-        # After insertTable the index advances by the table structural chars.
-        # Formula: 1 (table) + rows*(1 (row) + cols*(2 (cell + paragraph)))
-        # Plus a trailing newline the API appends after the table = 1
-        structural_chars = 1 + num_rows * (1 + num_cols * 2) + 1
+        # After insertTable the index advances by:
+        #   1 (pre-table paragraph the API inserts before the table)
+        #   + table_size where table_size = 2 + rows*(1 (row) + cols*(2 (cell + paragraph)))
+        # The table node itself accounts for 2 chars (open + close), not 1.
+        # Empirically verified: 2x3 table has size 16 = 2 + 2*(1 + 3*2).
+        table_size = 2 + num_rows * (1 + num_cols * 2)
+        structural_chars = 1 + table_size
         self.index += structural_chars
 
         # Now populate cells. We need to re-fetch document to get exact cell
@@ -704,29 +778,41 @@ async def _fill_tables_and_style(
     )
     body_content: list[dict[str, Any]] = doc.get("body", {}).get("content", [])
 
-    # Build a lookup: table_start_index → table element
-    table_by_start: dict[int, dict[str, Any]] = {}
-    for elem in body_content:
-        if "table" in elem:
-            si = elem.get("startIndex")
-            if si is not None:
-                table_by_start[si] = elem
+    # Collect tables in document order.  We match sentinels to tables by their
+    # sequential position (first sentinel → first table, etc.) rather than by
+    # start_index, because the stored table_start_index values come from the
+    # builder's pre-insertion estimates which do not account for the pre-table
+    # paragraph the API inserts, nor for index shifts caused by earlier inserts.
+    doc_tables: list[dict[str, Any]] = [elem for elem in body_content if "table" in elem]
 
-    for sentinel in fill_sentinels:
-        ts = sentinel["table_start_index"]
-        table_elem = table_by_start.get(ts)
-        if table_elem is None:
-            logger.warning("Could not find table at start_index=%d for cell fill", ts)
+    if len(doc_tables) != len(fill_sentinels):
+        logger.warning(
+            "Table count mismatch: doc has %d tables, builder has %d sentinels",
+            len(doc_tables),
+            len(fill_sentinels),
+        )
+
+    for sentinel_idx, sentinel in enumerate(fill_sentinels):
+        if sentinel_idx >= len(doc_tables):
+            logger.warning("No doc table for sentinel %d", sentinel_idx)
             continue
+        table_elem = doc_tables[sentinel_idx]
 
         all_rows: list[list[str]] = sentinel["all_rows"]
         num_cols: int = sentinel["num_cols"]
         num_rows: int = sentinel["num_rows"]
+        # Capture the table's actual start_index from the Phase 1 fetch.
+        table_actual_start: int = table_elem.get("startIndex", 0)
 
         table_rows: list[dict[str, Any]] = table_elem.get("table", {}).get("tableRows", [])
 
         # --- Phase 1: fill cell text ---
-        text_requests: list[dict[str, Any]] = []
+        # IMPORTANT: insertText at a given index shifts all subsequent indices
+        # forward by the length of the inserted text.  To avoid index drift we
+        # must insert cells in REVERSE document order (last cell first).  That
+        # way each insertion does not affect the indices of cells that still
+        # need to be filled.
+        cell_insertions: list[tuple[int, str]] = []  # (para_start_index, text)
         for row_i, row_data in enumerate(all_rows):
             if row_i >= len(table_rows):
                 break
@@ -742,42 +828,48 @@ async def _fill_tables_and_style(
                 # Insert into the first paragraph's start
                 para_start = cell_content[0].get("startIndex", 0)
                 if para_start:
-                    text_requests.append(
-                        {
-                            "insertText": {
-                                "location": {"index": para_start},
-                                "text": cell_text,
-                            }
-                        }
-                    )
+                    cell_insertions.append((para_start, cell_text))
+
+        # Sort descending by index so each insert does not shift later indices
+        cell_insertions.sort(key=lambda x: x[0], reverse=True)
+        text_requests: list[dict[str, Any]] = [
+            {
+                "insertText": {
+                    "location": {"index": para_start},
+                    "text": cell_text,
+                }
+            }
+            for para_start, cell_text in cell_insertions
+        ]
 
         if text_requests:
             await _batch_update(svc, document_id, text_requests)
 
         # --- Phase 2: apply borders + header styling ---
-        # Re-fetch table to get updated indices after text insertion
+        # Re-fetch the single table (by its sentinel index in doc order) to get
+        # updated cell indices after text was inserted into it.
         doc2 = await svc._make_request(
             "GET",
             f"{DOCS_API_BASE}/documents/{document_id}",
             params={"fields": "body(content(table,startIndex,endIndex))"},
         )
         body2: list[dict[str, Any]] = doc2.get("body", {}).get("content", [])
-        # Find the table again (start_index is now different due to text insertion!)
-        # We find it by row/col count match near original position
-        target_table_elem = None
-        for elem2 in body2:
-            if "table" in elem2:
-                t2 = elem2["table"]
-                if t2.get("rows") == num_rows and t2.get("columns") == num_cols:
-                    target_table_elem = elem2
-                    break
+        # Tables in doc order; pick the same sentinel_idx-th table.
+        # After inserting text into cells the table shifts forward, so we
+        # can no longer rely on startIndex.  The table's relative position
+        # (its ordinal in the document) is stable.
+        doc_tables2 = [e for e in body2 if "table" in e]
+        if sentinel_idx >= len(doc_tables2):
+            logger.warning("Could not re-locate table %d for styling after text fill", sentinel_idx)
+            continue
+        target_table_elem = doc_tables2[sentinel_idx]
         if target_table_elem is None:
             logger.warning(
                 "Could not re-locate table for styling (rows=%d, cols=%d)", num_rows, num_cols
             )
             continue
 
-        new_ts = target_table_elem.get("startIndex", ts)
+        new_ts = target_table_elem.get("startIndex", table_actual_start)
         style_requests: list[dict[str, Any]] = []
 
         for row_i in range(num_rows):
