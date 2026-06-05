@@ -9,6 +9,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`format_document_tables`** — new MCP tool that post-processes ALL tables in a Google Doc
+  in a single call, fixing the two most common import artefacts:
+  1. **Visible cell borders**: applies 1pt solid dark-grey borders to every cell on all four
+     sides via `updateTableCellStyle` batchUpdate, guaranteeing borders even after Markdown→DOCX→
+     Drive import strips them.
+  2. **Content-aware column widths**: sets each column width proportional to the maximum cell
+     text length in that column (capped at 60 chars per column to prevent one long cell from
+     dominating), so text-heavy columns like "Work Type" become wide and numeric columns like
+     "%" stay narrow. Uses `updateTableColumnProperties` with `FIXED_WIDTH`.
+  3. **Header row styling**: first row gets light-grey background + bold text.
+  - Reads `documentStyle` for usable page width; falls back to 468pt (US Letter, 1-inch margins).
+  - Idempotent — safe to call multiple times on the same document.
+  - Unit-tested: `tests/unit/test_format_document_tables.py` covers the pure width algorithm
+    with 20 tests (sum invariant, longest-column ordering, min-clamp, cap enforcement, edge cases).
+
+- **`markdown_file_to_doc`** — new MCP tool that converts a Markdown file to a fully-formatted
+  Google Doc, fixing three failure modes of `publish_markdown_to_doc`:
+  1. **No inline-content truncation**: reads the file server-side via `markdown_file_path` so
+     large documents (700+ lines / 70 KB+) are never cut off by context or output-token limits.
+  2. **Real table borders**: uses `updateTableCellStyle` directly after table insertion, guaranteeing
+     visible borders even after Drive import (which strips DOCX table borders).
+  3. **In-place update**: supply `document_id` to clear and rewrite an existing document body
+     while preserving the shareable link and document ID.
+  - Parameters: `markdown_file_path` (absolute path), `markdown_content` (inline fallback),
+    `title`, `document_id` (optional, for in-place update), `folder_id`, `account`.
+  - Supports headings H1–H6, paragraphs, fenced code blocks, GFM pipe tables, unordered and
+    ordered lists (depth-aware), horizontal rules, and inline bold/italic/code/links.
+
+### Fixed
+
+- **`markdown_file_to_doc` — table cells scrambled**: table cell `insertText` requests are now
+  issued in **reverse document order** (last cell first) so each insertion does not shift the
+  indices of cells yet to be filled. Previously, forward-order insertion caused every subsequent
+  cell's index to be off by the cumulative characters already inserted, producing garbled or
+  transposed cell content (e.g. a 5-column table rendering as "MeMaFeRaDatCo52…").
+- **`markdown_file_to_doc` — hard line breaks collapsed**: lines ending in two trailing spaces
+  (Markdown hard break) now produce a literal `\n` run within the paragraph block instead of
+  being joined with a space. The 3-line status/date title block now renders as three separate
+  lines rather than one run-on paragraph.
+- **`markdown_file_to_doc` — emphasis over-matching**: `*italic*` and `**bold**` patterns now
+  require the content to start and end with a non-whitespace character (`\S`), preventing
+  stray `*` characters (e.g. `~49.7%*` footnote markers) and space-padded asterisks from
+  being incorrectly parsed as italic spans.
+- **`markdown_file_to_doc` — no font override on body text**: confirmed that `weightedFontFamily`
+  is only applied to inline code spans (Courier New) and never to plain body text or headings;
+  headings continue to use named heading styles so the document theme font is respected.
+
 - **Multi-account named profile support** — configure and switch between multiple Google accounts
 - `workspace setup --account NAME` — set up a named account profile via OAuth
 - `workspace accounts list` — list all configured profiles with default marker
