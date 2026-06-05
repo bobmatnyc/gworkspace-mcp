@@ -11,8 +11,11 @@ Fixes three failure modes of publish_markdown_to_doc:
 
 from __future__ import annotations
 
+import json
 import logging
 import re
+import secrets
+import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -344,12 +347,14 @@ def parse_markdown(content: str) -> list[dict[str, Any]]:
         if stripped.startswith("|") or (
             "|" in stripped and i + 1 < n and _is_separator_row(lines[i + 1])
         ):
-            # Collect consecutive table lines
+            # Collect consecutive table lines.
+            # A line is part of the table only when its stripped form starts
+            # with "|" OR matches a GFM separator row.  A blank line or any
+            # non-pipe-leading line terminates the table block, preventing
+            # greedy absorption of prose that merely contains a "|" character.
             table_lines: list[str] = []
             j = i
-            while j < n and (
-                lines[j].strip().startswith("|") or ("|" in lines[j] and not lines[j].strip() == "")
-            ):
+            while j < n and (lines[j].strip().startswith("|") or _is_separator_row(lines[j])):
                 table_lines.append(lines[j])
                 j += 1
             # Validate: need at least header + separator + 1 row
@@ -950,6 +955,28 @@ async def _batch_update(
 
 
 # ---------------------------------------------------------------------------
+# Path-traversal guard helper
+# ---------------------------------------------------------------------------
+
+
+def _is_path_under(path: Path, root: Path) -> bool:
+    """Return True if *path* is equal to or a descendant of *root*.
+
+    Why: Prevents path-traversal attacks where a caller supplies a path like
+    /etc/passwd to read arbitrary system files.
+    What: Uses Path.is_relative_to (Python 3.9+) to check containment after
+    both paths have been resolved (symlinks expanded, .. collapsed).
+    Test: Assert True for Path('/home/user/docs/file.md') under Path('/home/user');
+    assert False for Path('/etc/passwd') under Path('/home/user').
+    """
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
+# ---------------------------------------------------------------------------
 # Main handler
 # ---------------------------------------------------------------------------
 
@@ -966,8 +993,6 @@ async def _markdown_file_to_doc(svc: BaseService, arguments: dict[str, Any]) -> 
     6. Post-process: fill table cells, apply borders, heading styles.
     7. Return document id + webViewLink.
     """
-    import secrets
-
     markdown_file_path = arguments.get("markdown_file_path")
     markdown_content = arguments.get("markdown_content")
     title = arguments.get("title", "Untitled Document")
@@ -976,7 +1001,23 @@ async def _markdown_file_to_doc(svc: BaseService, arguments: dict[str, Any]) -> 
 
     # --- 1. Read markdown ---
     if markdown_file_path:
-        path = Path(markdown_file_path)
+        path = Path(markdown_file_path).resolve()
+        # Path-traversal guard: only allow reads under the current working directory,
+        # the user's home directory, or the system temp directory.
+        # This blocks /etc/passwd and other system files while keeping the tool
+        # practical for local MCP server usage (tmp files, home-dir docs, project files).
+        allowed_roots = (
+            Path.cwd().resolve(),
+            Path.home().resolve(),
+            Path(tempfile.gettempdir()).resolve(),
+        )
+        if not any(_is_path_under(path, root) for root in allowed_roots):
+            raise ValueError(
+                f"Path '{markdown_file_path}' is outside allowed directories "
+                f"({', '.join(str(r) for r in allowed_roots)}). "
+                "Only paths under the current working directory, your home directory, "
+                "or the system temp directory are permitted."
+            )
         if not path.is_file():
             raise FileNotFoundError(f"Markdown file not found: {markdown_file_path}")
         markdown_content = path.read_text(encoding="utf-8")
@@ -1016,8 +1057,6 @@ async def _markdown_file_to_doc(svc: BaseService, arguments: dict[str, Any]) -> 
     else:
         # Create new document
         if folder_id:
-            import json
-
             gdoc_metadata: dict[str, Any] = {
                 "name": title,
                 "mimeType": "application/vnd.google-apps.document",

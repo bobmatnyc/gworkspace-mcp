@@ -18,6 +18,7 @@ import pytest
 from gworkspace_mcp.server.services.docs.markdown_file import (
     TOOLS,
     _DocBuilder,
+    _is_path_under,
     _parse_inline_runs,
     get_handlers,
     parse_markdown,
@@ -327,31 +328,33 @@ class TestMarkdownFileTodocHandler:
             await handlers["markdown_file_to_doc"]({})
 
     @pytest.mark.asyncio
-    async def test_raises_file_not_found(self) -> None:
+    async def test_raises_file_not_found(self, tmp_path: Path) -> None:
         svc = _make_service()
         handlers = get_handlers(svc)
+        # Use a path under the allowed temp directory that simply doesn't exist.
+        nonexistent = tmp_path / "does_not_exist.md"
         with pytest.raises(FileNotFoundError):
             await handlers["markdown_file_to_doc"](
-                {"markdown_file_path": "/nonexistent/path/file.md", "title": "Test"}
+                {"markdown_file_path": str(nonexistent), "title": "Test"}
             )
 
     @pytest.mark.asyncio
     async def test_create_new_doc_with_inline_content(self) -> None:
         svc = _make_service()
-        # _make_request: first call creates doc, remaining are batchUpdates, last is file meta
-        svc._make_request.side_effect = [
-            # create document
-            {"documentId": "new_doc_123", "title": "Test Doc"},
-            # batchUpdate (insert requests) - may be called multiple times
-            {"writeControl": {}},
-            # file meta
-            {
-                "id": "new_doc_123",
-                "name": "Test Doc",
-                "webViewLink": "https://docs.google.com/abc",
-                "mimeType": "application/vnd.google-apps.document",
-            },
-        ]
+        # Use return_value so any number of batchUpdate/GET calls all succeed.
+        # The handler issues: POST (create doc), POST (batchUpdate inserts),
+        # optional additional POSTs for table fills, GET (file meta).
+        # A unified response dict satisfies all call shapes — only "documentId"
+        # and "id"/"webViewLink" are required by the handler.
+        svc._make_request.return_value = {
+            "documentId": "new_doc_123",
+            "title": "Test Doc",
+            "writeControl": {},
+            "id": "new_doc_123",
+            "name": "Test Doc",
+            "webViewLink": "https://docs.google.com/abc",
+            "mimeType": "application/vnd.google-apps.document",
+        }
         handlers = get_handlers(svc)
         result = await handlers["markdown_file_to_doc"](
             {"markdown_content": "# Hello\n\nWorld.\n", "title": "Test Doc"}
@@ -791,3 +794,112 @@ class TestDefaultFontBehavior:
             == "Courier New"
             for r in text_style_reqs
         ), "Inline code must use Courier New"
+
+
+# ---------------------------------------------------------------------------
+# Path-traversal guard tests (finding 2)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestPathTraversalGuard:
+    """The handler must reject paths outside the CWD or home directory."""
+
+    def test_is_path_under_true_for_home_child(self) -> None:
+        home = Path.home()
+        child = home / "some" / "file.md"
+        assert _is_path_under(child, home) is True
+
+    def test_is_path_under_false_for_etc_passwd(self) -> None:
+        home = Path.home()
+        assert _is_path_under(Path("/etc/passwd"), home) is False
+
+    def test_is_path_under_false_for_root(self) -> None:
+        home = Path.home()
+        cwd = Path.cwd()
+        assert _is_path_under(Path("/"), home) is False
+        assert _is_path_under(Path("/"), cwd) is False
+
+    def test_is_path_under_true_for_same_path(self) -> None:
+        home = Path.home()
+        assert _is_path_under(home, home) is True
+
+    @pytest.mark.asyncio
+    async def test_handler_rejects_path_outside_allowed_roots(self) -> None:
+        """Handler raises ValueError for a path outside CWD and home."""
+        svc = _make_service()
+        handlers = get_handlers(svc)
+        # /etc/passwd is never under CWD or home on any supported platform.
+        with pytest.raises(ValueError, match="outside allowed directories"):
+            await handlers["markdown_file_to_doc"](
+                {"markdown_file_path": "/etc/passwd", "title": "Hack Attempt"}
+            )
+
+    @pytest.mark.asyncio
+    async def test_handler_allows_in_tree_path(self, tmp_path: Path) -> None:
+        """Handler reads a file under the system temp dir (an allowed root)."""
+        test_file = tmp_path / "allowed_test.md"
+        test_file.write_text("# Allowed\n", encoding="utf-8")
+        svc = _make_service()
+        svc._make_request.return_value = {
+            "documentId": "allowed_doc",
+            "title": "Allowed",
+            "writeControl": {},
+            "id": "allowed_doc",
+            "name": "Allowed",
+            "webViewLink": "https://docs.google.com/allowed",
+            "mimeType": "application/vnd.google-apps.document",
+        }
+        handlers = get_handlers(svc)
+        result = await handlers["markdown_file_to_doc"](
+            {"markdown_file_path": str(test_file), "title": "Allowed"}
+        )
+        assert result["document_id"] == "allowed_doc"
+
+
+# ---------------------------------------------------------------------------
+# GFM table continuation guard tests (finding 3)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestTableContinuationGuard:
+    """The table parser must not absorb prose lines that merely contain '|'."""
+
+    def test_table_does_not_absorb_following_prose_with_pipe(self) -> None:
+        """A table immediately followed by prose containing '|' must not include
+        the prose line inside the table block."""
+        md = (
+            "| Col A | Col B |\n|-------|-------|\n| r1c1  | r1c2  |\n\nUse | to separate values.\n"
+        )
+        blocks = parse_markdown(md)
+        tables = [b for b in blocks if b["type"] == "table"]
+        assert len(tables) == 1, f"Expected 1 table, got {len(tables)}"
+        t = tables[0]
+        # The prose line must NOT appear as a row
+        assert (
+            len(t["rows"]) == 1
+        ), f"Table should have 1 data row, got {len(t['rows'])}: {t['rows']}"
+        # The prose must appear as a paragraph block
+        paras = [b for b in blocks if b["type"] == "paragraph"]
+        para_text = " ".join("".join(r["text"] for r in p["runs"]) for p in paras)
+        assert "Use" in para_text and "separate" in para_text
+
+    def test_table_does_not_absorb_prose_without_blank_line(self) -> None:
+        """Even without a blank separator, a non-pipe-leading line ends the table."""
+        md = "| A | B |\n|---|---|\n| 1 | 2 |\nThis is prose with a | pipe in it.\n"
+        blocks = parse_markdown(md)
+        tables = [b for b in blocks if b["type"] == "table"]
+        assert len(tables) == 1
+        t = tables[0]
+        assert (
+            len(t["rows"]) == 1
+        ), f"Table should have 1 data row but got {len(t['rows'])}: {t['rows']}"
+
+    def test_table_ends_at_blank_line(self) -> None:
+        """A blank line always ends the table regardless of what follows."""
+        md = "| X |\n|---|\n| v |\n\nNext paragraph.\n"
+        blocks = parse_markdown(md)
+        tables = [b for b in blocks if b["type"] == "table"]
+        assert len(tables) == 1
+        assert len(tables[0]["rows"]) == 1

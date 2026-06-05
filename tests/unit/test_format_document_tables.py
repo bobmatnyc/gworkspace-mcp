@@ -15,6 +15,8 @@ from gworkspace_mcp.server.services.docs.table_format import (
     _FALLBACK_WIDTH,
     _MIN_COL_PT,
     TOOLS,
+    _build_header_requests,
+    _find_header_cell_indices,
     compute_content_aware_widths,
 )
 
@@ -181,3 +183,93 @@ class TestComputeContentAwareWidths:
 
     def test_min_col_pt_constant(self) -> None:
         assert _MIN_COL_PT == 40.0
+
+
+# ---------------------------------------------------------------------------
+# Header bold-range tests (finding: endIndex must cover full cell text)
+# ---------------------------------------------------------------------------
+
+
+def _make_body_content(
+    table_start: int,
+    header_cells: list[tuple[int, int]],
+) -> list[dict]:
+    """Build a minimal body_content list with one table at table_start.
+
+    Each item in header_cells is (start_index, end_index) for that cell's
+    first paragraph content element.
+    """
+    cells = []
+    for start, end in header_cells:
+        cells.append(
+            {
+                "content": [
+                    {
+                        "startIndex": start,
+                        "endIndex": end,
+                        "paragraph": {"elements": []},
+                    }
+                ]
+            }
+        )
+    return [
+        {
+            "startIndex": table_start,
+            "table": {
+                "tableRows": [
+                    {"tableCells": cells},
+                ]
+            },
+        }
+    ]
+
+
+@pytest.mark.unit
+class TestHeaderBoldRange:
+    """Regression: updateTextStyle for header cells must span the full cell text.
+
+    Previously endIndex was start_idx + 1, which only bolded the first character.
+    """
+
+    def test_bold_range_spans_full_header_text(self) -> None:
+        """For a 5-char header cell the bold range endIndex must be > startIndex + 1."""
+        table_start = 10
+        # Cell with text spanning indices 12..17 (5 chars: "Hello" + trailing newline)
+        body_content = _make_body_content(table_start, [(12, 17)])
+        ranges = _find_header_cell_indices(body_content, table_start)
+        assert len(ranges) == 1
+        start, end = ranges[0]
+        assert (
+            end > start + 1
+        ), f"endIndex ({end}) must be > startIndex + 1 ({start + 1}) for a multi-char header cell"
+
+    def test_bold_request_uses_full_range(self) -> None:
+        """_build_header_requests must emit endIndex equal to the cell's endIndex."""
+        table_start = 5
+        # Two header cells: "Name" (4 chars, indices 7..12), "Value" (5 chars, 14..20)
+        cell_ranges: list[tuple[int, int]] = [(7, 12), (14, 20)]
+        requests = _build_header_requests(table_start, 2, cell_ranges)
+        bold_reqs = [
+            r
+            for r in requests
+            if "updateTextStyle" in r and r["updateTextStyle"]["textStyle"].get("bold")
+        ]
+        assert len(bold_reqs) == 2
+        # First cell: endIndex must be 12 (not 7+1=8)
+        r0 = bold_reqs[0]["updateTextStyle"]["range"]
+        assert r0["startIndex"] == 7
+        assert r0["endIndex"] == 12, f"Expected endIndex=12, got {r0['endIndex']}"
+        # Second cell: endIndex must be 20 (not 14+1=15)
+        r1 = bold_reqs[1]["updateTextStyle"]["range"]
+        assert r1["startIndex"] == 14
+        assert r1["endIndex"] == 20, f"Expected endIndex=20, got {r1['endIndex']}"
+
+    def test_two_col_table_bold_ranges_both_multichar(self) -> None:
+        """All columns in a 2-col header table must have bold endIndex > startIndex + 1."""
+        table_start = 3
+        header_cells = [(5, 13), (15, 25)]  # "ColName" (8 chars), "LongHeader" (10 chars)
+        ranges = _find_header_cell_indices(
+            _make_body_content(table_start, header_cells), table_start
+        )
+        for i, (start, end) in enumerate(ranges):
+            assert end > start + 1, f"Column {i}: endIndex={end} must be > startIndex+1={start + 1}"

@@ -260,9 +260,18 @@ def _build_border_requests(
 def _build_header_requests(
     table_start_index: int,
     num_cols: int,
-    header_cell_start_indices: list[int],
+    header_cell_ranges: list[tuple[int, int]],
 ) -> list[dict[str, Any]]:
-    """Build requests for header row: light-grey background + bold text."""
+    """Build requests for header row: light-grey background + bold text.
+
+    Why: Applies bold to the *full* text of each header cell, not just its
+    first character.  The caller provides (startIndex, endIndex) pairs that
+    span the entire paragraph element so every character is bolded.
+    What: Emits one updateTableCellStyle (background) per column and one
+    updateTextStyle (bold) per non-empty header cell.
+    Test: Construct a doc body with a 2-col table whose header cells contain
+    multi-char text; assert each bold range has endIndex > startIndex + 1.
+    """
     requests: list[dict[str, Any]] = []
 
     # Background colour on each header cell
@@ -288,13 +297,13 @@ def _build_header_requests(
             }
         )
 
-    # Bold text on first paragraph segment of each header cell
-    for start_idx in header_cell_start_indices:
-        if start_idx > 0:
+    # Bold the full text of each header cell using (startIndex, endIndex) ranges
+    for start_idx, end_idx in header_cell_ranges:
+        if start_idx > 0 and end_idx > start_idx:
             requests.append(
                 {
                     "updateTextStyle": {
-                        "range": {"startIndex": start_idx, "endIndex": start_idx + 1},
+                        "range": {"startIndex": start_idx, "endIndex": end_idx},
                         "textStyle": {"bold": True},
                         "fields": "bold",
                     }
@@ -330,8 +339,17 @@ def _build_column_width_requests(
 def _find_header_cell_indices(
     body_content: list[dict[str, Any]],
     table_start_index: int,
-) -> list[int]:
-    """Return the content start index of each cell in row 0 for the given table."""
+) -> list[tuple[int, int]]:
+    """Return (startIndex, endIndex) pairs for the first paragraph of each cell in row 0.
+
+    Why: Callers need both boundaries to bold the *full* header-cell text rather
+    than just its first character.
+    What: Walks body content to find the table at table_start_index, then for
+    each cell in the header row returns (content[0].startIndex, content[0].endIndex).
+    Test: Build a minimal body_content dict with a table at a known startIndex
+    containing 2-char and 5-char header cells; assert returned endIndex values
+    equal startIndex + len(cell_text) + 1 (the trailing newline char).
+    """
     for element in body_content:
         tbl = element.get("table")
         if tbl is None:
@@ -341,14 +359,16 @@ def _find_header_cell_indices(
         rows = tbl.get("tableRows", [])
         if not rows:
             return []
-        header_indices: list[int] = []
+        header_ranges: list[tuple[int, int]] = []
         for cell in rows[0].get("tableCells", []):
             content = cell.get("content", [])
             if content:
-                header_indices.append(content[0].get("startIndex", 0))
+                start = content[0].get("startIndex", 0)
+                end = content[0].get("endIndex", start)
+                header_ranges.append((start, end))
             else:
-                header_indices.append(0)
-        return header_indices
+                header_ranges.append((0, 0))
+        return header_ranges
     return []
 
 
@@ -421,8 +441,8 @@ async def _format_document_tables(svc: BaseService, arguments: dict[str, Any]) -
         #    For the first table pass we can reuse body_content; subsequent tables
         #    may have been modified by prior batches (but only style/width, not text
         #    positions, so indices remain stable).
-        header_start_indices = _find_header_cell_indices(body_content, tsi)
-        all_requests.extend(_build_header_requests(tsi, num_cols, header_start_indices))
+        header_cell_ranges = _find_header_cell_indices(body_content, tsi)
+        all_requests.extend(_build_header_requests(tsi, num_cols, header_cell_ranges))
 
         # 3. Content-aware column widths
         widths = compute_content_aware_widths(cell_texts, usable_width)
@@ -436,7 +456,7 @@ async def _format_document_tables(svc: BaseService, arguments: dict[str, Any]) -
 
         tables_processed += 1
         logger.debug(
-            "format_document_tables: table at index %d formatted " "(%d rows x %d cols, widths=%s)",
+            "format_document_tables: table at index %d formatted (%d rows x %d cols, widths=%s)",
             tsi,
             num_rows,
             num_cols,
