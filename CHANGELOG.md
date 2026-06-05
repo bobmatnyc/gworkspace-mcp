@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`format_document_tables`** — new MCP tool that post-processes ALL tables in a Google Doc
+  in a single call, fixing the two most common import artefacts:
+  1. **Visible cell borders**: applies 1pt solid dark-grey borders to every cell on all four
+     sides via `updateTableCellStyle` batchUpdate, guaranteeing borders even after Markdown→DOCX→
+     Drive import strips them.
+  2. **Content-aware column widths**: sets each column width proportional to the maximum cell
+     text length in that column (capped at 60 chars per column to prevent one long cell from
+     dominating), so text-heavy columns like "Work Type" become wide and numeric columns like
+     "%" stay narrow. Uses `updateTableColumnProperties` with `FIXED_WIDTH`.
+  3. **Header row styling**: first row gets light-grey background + bold text.
+  - Reads `documentStyle` for usable page width; falls back to 468pt (US Letter, 1-inch margins).
+  - Idempotent — safe to call multiple times on the same document.
+  - Unit-tested: `tests/unit/test_format_document_tables.py` covers the pure width algorithm
+    with 20 tests (sum invariant, longest-column ordering, min-clamp, cap enforcement, edge cases).
+
 - **`markdown_file_to_doc`** — new MCP tool that converts a Markdown file to a fully-formatted
   Google Doc, fixing three failure modes of `publish_markdown_to_doc`:
   1. **No inline-content truncation**: reads the file server-side via `markdown_file_path` so

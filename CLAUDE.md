@@ -121,16 +121,21 @@ src/google_workspace_mcp/
 - list_drive_contents, download_drive_folder (rclone)
 - upload_to_drive, sync_drive_folder (rclone)
 
-### Docs (17 tools)
+### Docs (18 tools)
 - create_document, append_to_document, get_document
 - upload_markdown_as_doc, publish_markdown_to_doc
 - list_document_comments, add_document_comment, reply_to_comment
 - **Document Tabs**: list_document_tabs, get_tab_content, create_document_tab, update_tab_properties, move_tab
 - **Mermaid Diagrams**: render_mermaid_to_doc (SVG/PNG conversion)
-- **Rich Formatting** (NEW):
+- **Rich Formatting**:
   - format_text_in_document, format_paragraph_in_document
   - apply_heading_style, set_document_margins
   - create_list_in_document, insert_table_in_document
+- **Table Post-Processing** (NEW):
+  - `format_document_tables(document_id, account?)` — walks all tables in a doc and applies
+    (1) 1pt solid borders on every cell, (2) bold+light-grey header row, (3) content-aware
+    column widths proportional to max cell length (cap=60, min=40pt). Reads usable width from
+    documentStyle; falls back to 468pt. Idempotent. Fixes Drive-import border/width artefacts.
 
 ### Sheets (13 tools) - NEW SERVICE
 - create_spreadsheet, get_spreadsheet_data, list_spreadsheet_sheets

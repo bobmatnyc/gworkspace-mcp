@@ -13,6 +13,7 @@ from gworkspace_mcp.server.services.docs import (
     headers_footers,
     markdown,
     markdown_file,
+    table_format,
     table_ops,
     templates,
 )
@@ -27,6 +28,7 @@ TOOLS: list[Tool] = (
     + markdown_file.TOOLS
     + formatting.TOOLS
     + table_ops.TOOLS
+    + table_format.TOOLS
     + templates.TOOLS
     + headers_footers.TOOLS
 )
@@ -42,6 +44,7 @@ def get_handlers(svc: BaseService) -> dict[str, Any]:
         markdown_file,
         formatting,
         table_ops,
+        table_format,
         templates,
         headers_footers,
     ]:
