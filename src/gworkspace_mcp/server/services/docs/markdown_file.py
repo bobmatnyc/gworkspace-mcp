@@ -1156,7 +1156,23 @@ async def _markdown_file_to_doc(svc: BaseService, arguments: dict[str, Any]) -> 
                     last_end = body_items[-1].get("endIndex", current_index + 1)
                     current_index = max(1, last_end - 1)
                 else:
-                    current_index += 1  # conservative fallback
+                    # A real Google Doc body always contains at least one structural
+                    # element (the terminal newline paragraph).  An empty body list
+                    # indicates an unexpected API response — silently fabricating an
+                    # index here would corrupt all subsequent inserts by placing them
+                    # at an arbitrary position.  Raise so the caller surfaces the
+                    # problem rather than producing a silently broken document.
+                    logger.warning(
+                        "Re-fetched document %s has no body content elements after table fill; "
+                        "cannot derive a safe insert index — aborting to prevent index corruption.",
+                        document_id,
+                    )
+                    raise RuntimeError(
+                        f"Document {document_id!r} returned an empty body content list after "
+                        "table fill.  This indicates an unexpected API state.  Cannot safely "
+                        "compute a post-table insert index; aborting to avoid corrupting "
+                        "subsequent inserts."
+                    )
                 logger.info("Re-fetched document end index after table fill: %d", current_index)
     # --- 5. Fetch webViewLink ---
     file_meta = await svc._make_request(

@@ -946,16 +946,13 @@ class TestPostTableIndexDrift:
         region — not at an index inside the table skeleton.
 
         Mock strategy:
-        - _make_request is configured with side_effect covering all calls:
-            1. POST create doc → {documentId: ...}
-            2. POST batchUpdate (heading + insertTable) → {}
-            3. GET doc for table fill (phase 1: cell text index lookup)
-            4. POST batchUpdate (cell text insertions)
-            5. GET doc after cell fill (phase 2: style re-fetch)
-            6. POST batchUpdate (cell style requests)
-            7. GET doc end-index re-fetch (current_index update)
-            8. POST batchUpdate (trailing paragraph)
-            9. GET Drive file meta
+        - _make_request uses a *callable* side_effect that dispatches on the
+          HTTP method and URL path, so the test does not break if an internal
+          call is added or reordered.  The dispatcher recognises:
+            - POST to /documents (no ":batchUpdate") → create doc
+            - POST to ":batchUpdate" → generic write-control ack
+            - GET  to "/documents/<id>" with "fields" containing "body" → doc body
+            - GET  to "/files/<id>" → Drive file metadata
         """
         # Simulated doc body after insertTable:
         # table_start=2, table has 2 rows * 2 cols (num_cols=2, num_rows=2)
@@ -989,7 +986,28 @@ class TestPostTableIndexDrift:
         # After cell fill the table is slightly larger; use a fresh GET result.
         table_elem2 = _make_table_elem(2)
 
-        # The re-fetched end index after all table processing: 30
+        # The body returned for fill phase 1 (cell text lookup): table only.
+        fill_phase1_body = {
+            "body": {
+                "content": [
+                    {"startIndex": 0, "endIndex": 1},
+                    table_elem,
+                ]
+            }
+        }
+
+        # The body returned for fill phase 2 (style re-fetch): same table.
+        fill_phase2_body = {
+            "body": {
+                "content": [
+                    {"startIndex": 0, "endIndex": 1},
+                    table_elem2,
+                ]
+            }
+        }
+
+        # The body returned for the post-table end-index re-fetch.
+        # endIndex of the last element is 30, so current_index = max(1, 30-1) = 29.
         refetch_body = {
             "body": {
                 "content": [
@@ -1000,51 +1018,52 @@ class TestPostTableIndexDrift:
             }
         }
 
+        drive_file_meta = {
+            "id": "test_doc_drift",
+            "name": "Drift Test",
+            "webViewLink": "https://docs.google.com/drift",
+            "mimeType": "application/vnd.google-apps.document",
+        }
+
+        # Counters to distinguish the two GET-doc calls inside _fill_tables_and_style
+        # (phase 1 vs phase 2 re-fetch) from the post-table end-index re-fetch.
+        # We track how many doc-body GETs have been issued so far.
+        _doc_body_get_count: list[int] = [0]
+
+        async def _request_dispatcher(method: str, url: str, **kwargs: object) -> dict:
+            """Dispatch _make_request calls by method + URL pattern.
+
+            This approach is resilient to call-order changes: it inspects the
+            actual request rather than relying on a positional sequence.
+            """
+            if method == "POST":
+                if ":batchUpdate" in url:
+                    # Any batchUpdate call — insert, fill text, style, trailing para.
+                    return {"writeControl": {}}
+                # POST to /documents without ":batchUpdate" → create document.
+                return {"documentId": "test_doc_drift", "title": "Drift Test"}
+
+            # GET requests
+            if "/files/" in url:
+                # Drive file-metadata fetch at the end of the handler.
+                return drive_file_meta
+
+            # GET /documents/<id>: doc body fetches.
+            # The handler issues these in order:
+            #   1st: fill phase 1 (cell text index lookup)
+            #   2nd: fill phase 2 (style re-fetch after cell text insert)
+            #   3rd: end-index re-fetch (current_index update)
+            _doc_body_get_count[0] += 1
+            count = _doc_body_get_count[0]
+            if count == 1:
+                return fill_phase1_body
+            if count == 2:
+                return fill_phase2_body
+            # 3rd and any later doc GETs → end-index re-fetch response.
+            return refetch_body
+
         svc = MagicMock()
-        svc._make_request = AsyncMock(
-            side_effect=[
-                # 1. POST create doc
-                {
-                    "documentId": "test_doc_drift",
-                    "title": "Drift Test",
-                },
-                # 2. POST batchUpdate: heading + insertTable
-                {"writeControl": {}},
-                # 3. GET doc for fill phase 1
-                {
-                    "body": {
-                        "content": [
-                            {"startIndex": 0, "endIndex": 1},
-                            table_elem,
-                        ]
-                    }
-                },
-                # 4. POST batchUpdate: cell text
-                {"writeControl": {}},
-                # 5. GET doc for fill phase 2 (style)
-                {
-                    "body": {
-                        "content": [
-                            {"startIndex": 0, "endIndex": 1},
-                            table_elem2,
-                        ]
-                    }
-                },
-                # 6. POST batchUpdate: cell style
-                {"writeControl": {}},
-                # 7. GET doc end-index after table fill
-                refetch_body,
-                # 8. POST batchUpdate: trailing paragraph
-                {"writeControl": {}},
-                # 9. GET Drive file meta
-                {
-                    "id": "test_doc_drift",
-                    "name": "Drift Test",
-                    "webViewLink": "https://docs.google.com/drift",
-                    "mimeType": "application/vnd.google-apps.document",
-                },
-            ]
-        )
+        svc._make_request = AsyncMock(side_effect=_request_dispatcher)
 
         handlers = get_handlers(svc)
         md = "# Heading\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\nTrailing paragraph.\n"
