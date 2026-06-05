@@ -903,3 +903,264 @@ class TestTableContinuationGuard:
         tables = [b for b in blocks if b["type"] == "table"]
         assert len(tables) == 1
         assert len(tables[0]["rows"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# Issue #22: post-table index drift regression tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestPostTableIndexDrift:
+    """#22: Content after a table must not land inside the table.
+
+    The builder no longer advances self.index after insertTable — the handler
+    re-fetches the true document end after each table fill.  We test:
+    (a) The DocBuilder does NOT advance self.index after add_table (proving
+        the estimate is no longer used to compute subsequent block positions).
+    (b) The handler correctly inserts a heading + table + trailing paragraph
+        via a mock with a realistic re-fetch response, and the trailing
+        paragraph insertText location is AFTER the table insertTable location.
+    """
+
+    def test_builder_does_not_advance_index_after_table(self) -> None:
+        """add_table must not advance self.index.
+
+        The handler is responsible for re-fetching the end index after each
+        table fill; the builder must not guess the structural size.
+        """
+        builder = _DocBuilder(start_index=1)
+        index_before = builder.index
+        builder.add_table(["H1", "H2"], [["a", "b"], ["c", "d"]])
+        # Index must remain unchanged — the table is a deferred segment break.
+        assert builder.index == index_before, (
+            f"Builder index advanced from {index_before} to {builder.index} after add_table; "
+            "it should stay fixed so the handler can re-fetch the true end index."
+        )
+
+    @pytest.mark.asyncio
+    async def test_trailing_paragraph_insert_index_after_refetch(self) -> None:
+        """Integration-style mock test: heading + table + trailing paragraph.
+
+        The trailing paragraph must be inserted at an index AFTER the table
+        region — not at an index inside the table skeleton.
+
+        Mock strategy:
+        - _make_request uses a *callable* side_effect that dispatches on the
+          HTTP method and URL path, so the test does not break if an internal
+          call is added or reordered.  The dispatcher recognises:
+            - POST to /documents (no ":batchUpdate") → create doc
+            - POST to ":batchUpdate" → generic write-control ack
+            - GET  to "/documents/<id>" with "fields" containing "body" → doc body
+            - GET  to "/files/<id>" → Drive file metadata
+        """
+        # Simulated doc body after insertTable:
+        # table_start=2, table has 2 rows * 2 cols (num_cols=2, num_rows=2)
+        # structural size = 1 + (2 + 2*(1+2*2)) = 1+2+10 = 13 → table ends at ~15
+        # But we'll return realistic Docs API shapes.
+
+        def _make_table_elem(start: int) -> dict:
+            """Minimal table element with 2 rows, 2 cols at given start index."""
+            return {
+                "startIndex": start,
+                "endIndex": start + 13,
+                "table": {
+                    "tableRows": [
+                        {
+                            "tableCells": [
+                                {"content": [{"startIndex": start + 2, "paragraph": {}}]},
+                                {"content": [{"startIndex": start + 4, "paragraph": {}}]},
+                            ]
+                        },
+                        {
+                            "tableCells": [
+                                {"content": [{"startIndex": start + 7, "paragraph": {}}]},
+                                {"content": [{"startIndex": start + 9, "paragraph": {}}]},
+                            ]
+                        },
+                    ]
+                },
+            }
+
+        table_elem = _make_table_elem(2)
+        # After cell fill the table is slightly larger; use a fresh GET result.
+        table_elem2 = _make_table_elem(2)
+
+        # The body returned for fill phase 1 (cell text lookup): table only.
+        fill_phase1_body = {
+            "body": {
+                "content": [
+                    {"startIndex": 0, "endIndex": 1},
+                    table_elem,
+                ]
+            }
+        }
+
+        # The body returned for fill phase 2 (style re-fetch): same table.
+        fill_phase2_body = {
+            "body": {
+                "content": [
+                    {"startIndex": 0, "endIndex": 1},
+                    table_elem2,
+                ]
+            }
+        }
+
+        # The body returned for the post-table end-index re-fetch.
+        # endIndex of the last element is 30, so current_index = max(1, 30-1) = 29.
+        refetch_body = {
+            "body": {
+                "content": [
+                    {"startIndex": 0, "endIndex": 1},
+                    table_elem2,
+                    {"startIndex": 15, "endIndex": 30},
+                ]
+            }
+        }
+
+        drive_file_meta = {
+            "id": "test_doc_drift",
+            "name": "Drift Test",
+            "webViewLink": "https://docs.google.com/drift",
+            "mimeType": "application/vnd.google-apps.document",
+        }
+
+        # Counters to distinguish the two GET-doc calls inside _fill_tables_and_style
+        # (phase 1 vs phase 2 re-fetch) from the post-table end-index re-fetch.
+        # We track how many doc-body GETs have been issued so far.
+        _doc_body_get_count: list[int] = [0]
+
+        async def _request_dispatcher(method: str, url: str, **kwargs: object) -> dict:
+            """Dispatch _make_request calls by method + URL pattern.
+
+            This approach is resilient to call-order changes: it inspects the
+            actual request rather than relying on a positional sequence.
+            """
+            if method == "POST":
+                if ":batchUpdate" in url:
+                    # Any batchUpdate call — insert, fill text, style, trailing para.
+                    return {"writeControl": {}}
+                # POST to /documents without ":batchUpdate" → create document.
+                return {"documentId": "test_doc_drift", "title": "Drift Test"}
+
+            # GET requests
+            if "/files/" in url:
+                # Drive file-metadata fetch at the end of the handler.
+                return drive_file_meta
+
+            # GET /documents/<id>: doc body fetches.
+            # The handler issues these in order:
+            #   1st: fill phase 1 (cell text index lookup)
+            #   2nd: fill phase 2 (style re-fetch after cell text insert)
+            #   3rd: end-index re-fetch (current_index update)
+            _doc_body_get_count[0] += 1
+            count = _doc_body_get_count[0]
+            if count == 1:
+                return fill_phase1_body
+            if count == 2:
+                return fill_phase2_body
+            # 3rd and any later doc GETs → end-index re-fetch response.
+            return refetch_body
+
+        svc = MagicMock()
+        svc._make_request = AsyncMock(side_effect=_request_dispatcher)
+
+        handlers = get_handlers(svc)
+        md = "# Heading\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\nTrailing paragraph.\n"
+        result = await handlers["markdown_file_to_doc"](
+            {"markdown_content": md, "title": "Drift Test"}
+        )
+        assert result["document_id"] == "test_doc_drift"
+
+        # Inspect all batchUpdate calls to find the insertTable and the trailing
+        # paragraph insertText.
+        all_calls = svc._make_request.call_args_list
+        insert_table_index: int | None = None
+        trailing_para_index: int | None = None
+
+        for call in all_calls:
+            method = call.args[0] if call.args else call.kwargs.get("method")
+            if method != "POST":
+                continue
+            json_data = call.kwargs.get("json_data", {})
+            requests_list = json_data.get("requests", [])
+            for req in requests_list:
+                if "insertTable" in req:
+                    insert_table_index = req["insertTable"]["location"]["index"]
+                if "insertText" in req:
+                    text = req["insertText"].get("text", "")
+                    loc = req["insertText"]["location"]["index"]
+                    if "Trailing" in text or "paragraph" in text.lower():
+                        trailing_para_index = loc
+
+        assert insert_table_index is not None, "No insertTable request found"
+        assert trailing_para_index is not None, (
+            "No trailing paragraph insertText request found; "
+            f"all POST requests: {[c.kwargs.get('json_data', {}).get('requests', []) for c in all_calls if c.args and c.args[0] == 'POST']}"
+        )
+        # The trailing paragraph must start AFTER the table's insertTable location.
+        # (The table skeleton starts at insert_table_index; post-table content must be beyond it.)
+        assert trailing_para_index > insert_table_index, (
+            f"Trailing paragraph index ({trailing_para_index}) is not after "
+            f"the table insertTable index ({insert_table_index}); index drift detected."
+        )
+
+
+# ---------------------------------------------------------------------------
+# Issue #23: schema documents mutual requirement
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestSchemaRequirement:
+    """#23: inputSchema must document that at least one of markdown_file_path /
+    markdown_content is required."""
+
+    def test_tool_description_mentions_both_input_fields(self) -> None:
+        tool = next(t for t in TOOLS if t.name == "markdown_file_to_doc")
+        desc = tool.description.lower()
+        assert (
+            "markdown_file_path" in desc or "file_path" in desc
+        ), "Tool description should mention markdown_file_path"
+        assert (
+            "markdown_content" in desc or "content" in desc
+        ), "Tool description should mention markdown_content"
+
+    def test_tool_description_states_one_required(self) -> None:
+        tool = next(t for t in TOOLS if t.name == "markdown_file_to_doc")
+        desc = tool.description.lower()
+        # Description must convey the mutual requirement
+        assert (
+            "required" in desc or "at least one" in desc or "must supply" in desc
+        ), f"Description must state that at least one input field is required; got: {desc!r}"
+
+    def test_schema_anyof_expresses_mutual_requirement(self) -> None:
+        """anyOf with required:[markdown_file_path] and required:[markdown_content]
+        is the JSON-Schema way to express 'at least one of these is required'."""
+        tool = next(t for t in TOOLS if t.name == "markdown_file_to_doc")
+        schema = tool.inputSchema
+        any_of = schema.get("anyOf", [])
+        assert any_of, (
+            "inputSchema should include anyOf to express the mutual "
+            "markdown_file_path / markdown_content requirement"
+        )
+        required_sets = [frozenset(entry.get("required", [])) for entry in any_of]
+        assert (
+            frozenset(["markdown_file_path"]) in required_sets
+        ), "anyOf must include {required: [markdown_file_path]}"
+        assert (
+            frozenset(["markdown_content"]) in required_sets
+        ), "anyOf must include {required: [markdown_content]}"
+
+    def test_property_descriptions_mention_alternative(self) -> None:
+        """Each input property description should remind callers of the alternative."""
+        tool = next(t for t in TOOLS if t.name == "markdown_file_to_doc")
+        props = tool.inputSchema.get("properties", {})
+        fp_desc = props.get("markdown_file_path", {}).get("description", "").lower()
+        mc_desc = props.get("markdown_content", {}).get("description", "").lower()
+        assert (
+            "markdown_content" in fp_desc or "alternative" in fp_desc or "or" in fp_desc
+        ), "markdown_file_path description should mention markdown_content as alternative"
+        assert (
+            "markdown_file_path" in mc_desc or "alternative" in mc_desc or "or" in mc_desc
+        ), "markdown_content description should mention markdown_file_path as alternative"

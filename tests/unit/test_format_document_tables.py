@@ -273,3 +273,67 @@ class TestHeaderBoldRange:
         )
         for i, (start, end) in enumerate(ranges):
             assert end > start + 1, f"Column {i}: endIndex={end} must be > startIndex+1={start + 1}"
+
+
+# ---------------------------------------------------------------------------
+# Issue #24: compute_content_aware_widths overflow when all cols clamp to min
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestContentAwareWidthsAllClamped:
+    """#24: When num_cols * min_col_pt > usable_width, all columns clamp and
+    sum(widths) previously exceeded usable_width.  After the fix, the function
+    must proportionally scale all columns down so sum <= usable_width."""
+
+    def test_many_cols_sum_does_not_exceed_usable_width(self) -> None:
+        """15 columns, each 40pt min, total = 600pt > 468pt usable_width.
+
+        Before the fix: sum(widths) == 15 * 40 == 600 > 468.
+        After the fix:  sum(widths) <= 468 (within tiny float tolerance).
+        """
+        usable = 468.0
+        num_cols = 15
+        # All cells have the same short text so all weights are equal and all
+        # columns clamp to min_col_pt.
+        data = [["x"] * num_cols]
+        widths = compute_content_aware_widths(data, usable)
+        assert len(widths) == num_cols
+        total = sum(widths)
+        assert total <= usable + 1e-6, (
+            f"sum(widths)={total:.4f} exceeds usable_width={usable}; "
+            "all-clamped case must scale columns proportionally."
+        )
+
+    def test_many_cols_sum_matches_usable_width_closely(self) -> None:
+        """Widths should sum to exactly usable_width (within float tolerance)."""
+        usable = 468.0
+        data = [["AB"] * 20]  # 20 cols, each 2 chars → all clamp to 40pt min
+        widths = compute_content_aware_widths(data, usable)
+        total = sum(widths)
+        assert (
+            abs(total - usable) < 0.5
+        ), f"sum(widths)={total:.4f} should be close to {usable} (within 0.5pt)"
+
+    def test_all_clamped_each_width_positive(self) -> None:
+        """Every column width must be positive even when all clamp."""
+        usable = 100.0
+        data = [["x"] * 10]  # 10 cols, min=40 → total=400 >> 100
+        widths = compute_content_aware_widths(data, usable, min_col_pt=40.0)
+        for i, w in enumerate(widths):
+            assert w > 0, f"Column {i} has non-positive width {w}"
+
+    def test_normal_case_unchanged_by_fix(self) -> None:
+        """When num_cols * min_col_pt <= usable_width the normal path is taken
+        and the fix must not change the result."""
+        usable = 468.0
+        # 3 cols, one much wider — no all-clamp scenario
+        data = [
+            ["ShortCol", "A very long description column that has lots of text", "Num"],
+            ["A", "Another moderately long description", "1"],
+        ]
+        widths = compute_content_aware_widths(data, usable)
+        assert abs(sum(widths) - usable) < 0.5
+        # The wide column must still be widest
+        assert widths[1] > widths[0]
+        assert widths[1] > widths[2]

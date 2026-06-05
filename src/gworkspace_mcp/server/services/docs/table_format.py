@@ -163,8 +163,16 @@ def compute_content_aware_widths(
         if final[i] == 0.0:
             final[i] = min_col_pt
 
-    # Renormalise unclamped columns to ensure sum == usable_width exactly,
-    # while never reducing clamped columns below their minimum.
+    # Renormalise to ensure sum == usable_width exactly.
+    #
+    # Normal case: some columns are unclamped.  Scale only unclamped columns so
+    # their sum fills the remaining budget (clamped columns keep >= min_col_pt).
+    #
+    # Degenerate case: ALL columns are clamped (num_cols * min_col_pt >
+    # usable_width).  The loop above drove remaining_width negative and
+    # sum(final) == num_cols * min_col_pt > usable_width.  We must scale ALL
+    # columns proportionally down to fit usable_width; widths may fall below
+    # the nominal min in this unavoidable case.
     total_clamped = sum(final[i] for i in range(num_cols) if clamped_mask[i])
     free_cols = [i for i in range(num_cols) if not clamped_mask[i]]
     if free_cols:
@@ -173,6 +181,13 @@ def compute_content_aware_widths(
         if current_free_total > 0 and remaining_for_free > 0:
             scale = remaining_for_free / current_free_total
             for i in free_cols:
+                final[i] = final[i] * scale
+    else:
+        # All columns are clamped — scale all proportionally to fit usable_width.
+        total = sum(final)
+        if total > 0:
+            scale = usable_width / total
+            for i in range(num_cols):
                 final[i] = final[i] * scale
 
     return final

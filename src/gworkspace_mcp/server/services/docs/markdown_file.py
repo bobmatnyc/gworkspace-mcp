@@ -68,23 +68,32 @@ TOOLS: list[Tool] = [
             "inline hyperlinks, and correct heading styles.  Reads the file server-side so "
             "large documents (700+ lines / 70 KB+) are never truncated.  "
             "When document_id is supplied the existing document body is replaced in-place so "
-            "the shareable link is preserved; omit it to create a new document."
+            "the shareable link is preserved; omit it to create a new document.  "
+            "REQUIRED: supply at least one of markdown_file_path (preferred for large files) "
+            "or markdown_content (for small inline documents).  If both are provided, "
+            "markdown_file_path takes precedence."
         ),
         inputSchema={
             "type": "object",
+            "anyOf": [
+                {"required": ["markdown_file_path"]},
+                {"required": ["markdown_content"]},
+            ],
             "properties": {
                 "markdown_file_path": {
                     "type": "string",
                     "description": (
-                        "Absolute path to the Markdown file on the server. "
-                        "The server reads the file directly — do NOT pass inline content here."
+                        "Absolute path to the Markdown file on the server.  "
+                        "The server reads the file directly — do NOT pass inline content here.  "
+                        "Supply this OR markdown_content (at least one is required)."
                     ),
                 },
                 "markdown_content": {
                     "type": "string",
                     "description": (
-                        "Inline Markdown content (alternative to markdown_file_path for small "
-                        "documents).  If both are supplied, markdown_file_path takes precedence."
+                        "Inline Markdown content.  Alternative to markdown_file_path for small "
+                        "documents.  Supply this OR markdown_file_path (at least one is required).  "
+                        "If both are supplied, markdown_file_path takes precedence."
                     ),
                 },
                 "title": {
@@ -661,59 +670,33 @@ class _DocBuilder:
     def add_table(self, headers: list[str], rows: list[list[str]]) -> None:
         """Insert a table with borders and a styled header row.
 
-        Strategy:
-        1. insertTable to create the grid
-        2. Re-fetch isn't available in the builder — instead we track the index
-           offset manually.  After insertTable the Docs API inserts:
-           - 1 char for the table element itself
-           - for each row: 1 char for the row element
-           - for each cell in a row: 1 char for the cell + content + 1 char for
-             the closing newline of the cell paragraph
-           We use the insertText/updateTableCellStyle approach instead:
-           After insertTable the doc acquires new structure that advances our
-           index by a known amount.
+        Why: Emitting an insertTable request creates the empty grid structure;
+        cell text is filled later via a deferred re-fetch pass so exact indices
+        are known.  Emitting post-table content in the same batchUpdate would
+        require an accurate structural-size estimate for every possible table
+        shape.  Instead, the builder records a ``_fill_table`` sentinel and the
+        handler processes each table as its own pass (insert → fill → re-fetch
+        → continue), preventing index drift for content that follows a table.
 
-        Because tracking insertTable cell indices without a re-fetch is fragile,
-        we use a simpler reliable approach: insert the table, then store the
-        table_start_index so we can do a deferred batchUpdate after we know all
-        indices via a GET.  However, that requires an extra round-trip.
+        What: Appends an insertTable request and a ``_fill_table`` sentinel to
+        ``_deferred``.  Does NOT advance ``self.index`` because the handler
+        will re-fetch the document end index after each table fill and supply
+        a fresh start_index to a new builder for subsequent blocks.
 
-        Simpler and more reliable: represent the table as plain text paragraphs
-        in the current insert pass, then issue updateTableCellStyle in the
-        deferred pass after the whole document has been inserted.
-
-        Actually, the most robust approach for large documents is:
-        1. Use insertTable to create the grid structure.
-        2. The insertTable request inserts a structural element; following
-           requests insertText into specific cell locations.
-
-        Given the complexity of tracking cell indices without re-fetching, we use
-        the approach employed by the existing insert_table_in_document tool:
-        insert the table structure first, then fill cells via separate
-        insertText requests referencing the cell content locations by tracking
-        index arithmetic.
-
-        Google Docs insertTable inserts characters as follows (empirically verified):
-        - A pre-table paragraph is inserted before the table: 1 index unit
-        - The table node itself: 2 index units (open + structural close)
-        - Each row node: 1 index unit
-        - Each cell: 2 index units (cell open + cell paragraph)
-        Total structural advance = 1 + 2 + rows*(1 + cols*2)
-                                  = 3 + rows*(1 + cols*2)
-        Verified for: 1x1→6, 1x2→8, 2x2→13, 2x3→17, 3x4→30, 4x5→47.
-
-        Rather than replicate this brittle arithmetic we emit insertTable with
-        the full cell text in a single pass using the approach below.
+        Test: Build a heading + table + trailing paragraph; assert the trailing
+        paragraph's insertText index is strictly greater than the table's
+        insertTable index plus the table skeleton size.
         """
         num_rows = 1 + len(rows)  # header + data rows
         num_cols = len(headers)
         if num_cols == 0:
             return
 
-        # Store the table_start_index BEFORE issuing insertTable
-        table_start = self.index
-
-        # Emit insertTable request — this creates an empty table structure
+        # Emit insertTable request — this creates an empty table structure.
+        # We intentionally do NOT advance self.index here.  The handler
+        # processes blocks in table-bounded segments; after each table is filled
+        # it re-fetches the document's true end index and starts a new builder
+        # for the next segment, eliminating any arithmetic-estimate drift.
         self.requests.append(
             {
                 "insertTable": {
@@ -724,23 +707,10 @@ class _DocBuilder:
             }
         )
 
-        # After insertTable the index advances by:
-        #   1 (pre-table paragraph the API inserts before the table)
-        #   + table_size where table_size = 2 + rows*(1 (row) + cols*(2 (cell + paragraph)))
-        # The table node itself accounts for 2 chars (open + close), not 1.
-        # Empirically verified: 2x3 table has size 16 = 2 + 2*(1 + 3*2).
-        table_size = 2 + num_rows * (1 + num_cols * 2)
-        structural_chars = 1 + table_size
-        self.index += structural_chars
-
-        # Now populate cells. We need to re-fetch document to get exact cell
-        # indices.  We can't do that here (no async context in builder).
-        # Instead, store fill info in the deferred list as a special sentinel.
         all_rows = [headers] + rows
         self._deferred.append(
             {
                 "_fill_table": True,
-                "table_start_index": table_start,
                 "num_rows": num_rows,
                 "num_cols": num_cols,
                 "all_rows": all_rows,
@@ -749,6 +719,14 @@ class _DocBuilder:
 
     def build(self) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """Return (insert_requests, deferred_requests).
+
+        Why: Separating insert requests from deferred fill sentinels allows the
+        handler to batch-insert structural content first, then fill table cells
+        using re-fetched indices.
+        What: Returns the accumulated request list and the deferred sentinel list.
+        Test: Call build() after add_heading + add_table; assert insert_requests
+        contains insertText and insertTable entries, deferred contains a
+        _fill_table sentinel.
 
         insert_requests must be issued first; deferred_requests must be
         issued after a re-fetch to get the actual cell indices.
@@ -1093,39 +1071,110 @@ async def _markdown_file_to_doc(svc: BaseService, arguments: dict[str, Any]) -> 
     if not document_id:
         raise RuntimeError("Failed to create or identify target document")
 
-    # --- 4. Build requests from blocks ---
-    builder = _DocBuilder(start_index=start_index)
+    # --- 4. Build and issue requests in table-bounded segments ---
+    # Why: After insertTable, the deferred cell-fill pass inserts N characters
+    # into the newly-created cells.  Any content emitted by the builder AFTER a
+    # table uses self.index values derived from an arithmetic estimate of the
+    # table's structural size — an estimate that cannot account for cell-text
+    # insertions that have not yet happened.  Emitting all subsequent blocks in
+    # a single batchUpdate therefore causes index drift: paragraphs land inside
+    # the table rather than after it.
+    #
+    # Fix: split blocks into table-bounded segments.  For each segment we:
+    #   (a) add all non-table blocks to a builder until we hit a table block,
+    #   (b) add the table to the builder (which does NOT advance self.index),
+    #   (c) issue all pending insert_requests,
+    #   (d) call _fill_tables_and_style for just this table,
+    #   (e) re-fetch the document's true end index,
+    #   (f) start a fresh builder at that end index for the next segment.
+    # Content that follows the last table (or a document with no tables) is
+    # emitted in a single batchUpdate without any intervening re-fetch.
 
-    for block in blocks:
-        btype = block["type"]
-        if btype == "heading":
-            builder.add_heading(block["level"], block["runs"])
-        elif btype == "paragraph":
-            builder.add_paragraph(block["runs"])
-        elif btype == "code":
-            builder.add_code_block(block["text"])
-        elif btype == "table":
-            builder.add_table(block["headers"], block["rows"])
-        elif btype == "bullet":
-            builder.add_bullet(block["depth"], block["runs"])
-        elif btype == "ordered":
-            builder.add_ordered(block["runs"], block.get("depth", 0))
-        elif btype == "blank":
-            builder.add_blank()
-        elif btype == "rule":
-            builder.add_rule()
+    total_insert_requests = 0
+    current_index = start_index
+    i = 0
+    n_blocks = len(blocks)
 
-    insert_requests, deferred = builder.build()
+    while i < n_blocks:
+        builder = _DocBuilder(start_index=current_index)
+        segment_deferred: list[dict[str, Any]] = []
 
-    # --- 5. Issue insert requests in chunks ---
-    if insert_requests:
-        await _batch_update(svc, document_id, insert_requests)
-        logger.info("Inserted %d requests into document %s", len(insert_requests), document_id)
+        # Consume blocks until (and including) the next table, or until end.
+        hit_table = False
+        while i < n_blocks:
+            block = blocks[i]
+            btype = block["type"]
+            i += 1
+            if btype == "heading":
+                builder.add_heading(block["level"], block["runs"])
+            elif btype == "paragraph":
+                builder.add_paragraph(block["runs"])
+            elif btype == "code":
+                builder.add_code_block(block["text"])
+            elif btype == "table":
+                builder.add_table(block["headers"], block["rows"])
+                # Stop after the table so we can fill it and re-fetch before
+                # emitting blocks that follow.
+                hit_table = True
+                break
+            elif btype == "bullet":
+                builder.add_bullet(block["depth"], block["runs"])
+            elif btype == "ordered":
+                builder.add_ordered(block["runs"], block.get("depth", 0))
+            elif btype == "blank":
+                builder.add_blank()
+            elif btype == "rule":
+                builder.add_rule()
 
-    # --- 6. Post-process: fill tables, apply borders + styles ---
-    await _fill_tables_and_style(svc, document_id, deferred)
+        insert_requests, segment_deferred = builder.build()
 
-    # --- 7. Fetch webViewLink ---
+        if insert_requests:
+            await _batch_update(svc, document_id, insert_requests)
+            total_insert_requests += len(insert_requests)
+            logger.info(
+                "Segment: inserted %d requests into document %s (hit_table=%s)",
+                len(insert_requests),
+                document_id,
+                hit_table,
+            )
+
+        if hit_table and segment_deferred:
+            await _fill_tables_and_style(svc, document_id, segment_deferred)
+
+            if i < n_blocks:
+                # Re-fetch the document's true end index so subsequent blocks
+                # are anchored to the actual document state, not an estimate.
+                doc_state = await svc._make_request(
+                    "GET",
+                    f"{DOCS_API_BASE}/documents/{document_id}",
+                    params={"fields": "body(content(endIndex))"},
+                )
+                body_items = doc_state.get("body", {}).get("content", [])
+                if body_items:
+                    # The last structural element's endIndex is the document end.
+                    # We insert starting at endIndex - 1 (before the final newline).
+                    last_end = body_items[-1].get("endIndex", current_index + 1)
+                    current_index = max(1, last_end - 1)
+                else:
+                    # A real Google Doc body always contains at least one structural
+                    # element (the terminal newline paragraph).  An empty body list
+                    # indicates an unexpected API response — silently fabricating an
+                    # index here would corrupt all subsequent inserts by placing them
+                    # at an arbitrary position.  Raise so the caller surfaces the
+                    # problem rather than producing a silently broken document.
+                    logger.warning(
+                        "Re-fetched document %s has no body content elements after table fill; "
+                        "cannot derive a safe insert index — aborting to prevent index corruption.",
+                        document_id,
+                    )
+                    raise RuntimeError(
+                        f"Document {document_id!r} returned an empty body content list after "
+                        "table fill.  This indicates an unexpected API state.  Cannot safely "
+                        "compute a post-table insert index; aborting to avoid corrupting "
+                        "subsequent inserts."
+                    )
+                logger.info("Re-fetched document end index after table fill: %d", current_index)
+    # --- 5. Fetch webViewLink ---
     file_meta = await svc._make_request(
         "GET",
         f"{DRIVE_API_BASE}/files/{document_id}",
@@ -1139,7 +1188,7 @@ async def _markdown_file_to_doc(svc: BaseService, arguments: dict[str, Any]) -> 
         "webViewLink": file_meta.get("webViewLink"),
         "mimeType": file_meta.get("mimeType"),
         "blocks_processed": len(blocks),
-        "requests_issued": len(insert_requests),
+        "requests_issued": total_insert_requests,
     }
 
 
