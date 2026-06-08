@@ -31,6 +31,12 @@ from gworkspace_mcp.auth.token_storage import TokenStorage
 
 # Google Workspace OAuth scopes
 GOOGLE_WORKSPACE_SCOPES = [
+    # Identity scopes — required so the userinfo endpoint returns the account
+    # email after authentication (fixes list_accounts returning email: null).
+    "openid",
+    "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/userinfo.profile",
+    # Service scopes
     "https://www.googleapis.com/auth/calendar",
     "https://www.googleapis.com/auth/gmail.modify",
     "https://www.googleapis.com/auth/drive",
@@ -205,32 +211,114 @@ class OAuthManager:
             scopes=token.scopes,
         )
 
-    async def _fetch_user_email(self, access_token: str) -> str | None:
-        """Fetch the authenticated user's email from Google userinfo endpoint.
+    @staticmethod
+    def _extract_email_from_id_token(id_token: str) -> str | None:
+        """Extract the email claim from a Google id_token JWT without signature verification.
+
+        Why: When the ``openid`` scope is granted, the token exchange returns a signed
+        JWT ``id_token`` that contains the user's email.  Decoding the payload avoids
+        an extra network call to the userinfo endpoint and works even when the
+        userinfo endpoint is rate-limited or temporarily unavailable.
+
+        What: Base64url-decodes the middle (payload) segment of the JWT and returns
+        the ``email`` claim.  No signature verification is performed because the
+        token was received directly from Google's token endpoint over TLS.
+
+        Test: Pass a hand-crafted JWT string (header.payload.sig) where payload is
+        base64url({"email": "x@example.com"}) and assert the method returns
+        "x@example.com".  Pass a malformed string and assert None is returned.
+
+        Args:
+            id_token: Raw JWT string from the token exchange response.
+
+        Returns:
+            Email address from the ``email`` claim, or None if not present / malformed.
+        """
+        import base64
+        import json as _json
+        import logging as _logging
+
+        try:
+            parts = id_token.split(".")
+            if len(parts) != 3:
+                return None
+            # Add padding for base64url decoding
+            payload_b64 = parts[1] + "=" * (-len(parts[1]) % 4)
+            payload = _json.loads(base64.urlsafe_b64decode(payload_b64).decode())
+            return payload.get("email")
+        except Exception as exc:  # pragma: no cover — defensive; decode rarely fails
+            _logging.getLogger(__name__).debug("id_token decode failed: %s", exc)
+            return None
+
+    async def _fetch_user_email(self, access_token: str, id_token: str | None = None) -> str | None:
+        """Resolve the authenticated user's email address.
+
+        Why: ``list_accounts`` must show which Google identity owns each profile so
+        users can distinguish accounts and pass the correct ``account`` parameter.
+        Without the identity scope the userinfo endpoint returns HTTP 401 and email
+        is silently stored as None.
+
+        What: First attempts to decode the ``email`` claim from the ``id_token`` JWT
+        (no extra network call).  Falls back to a GET to the userinfo v2 endpoint
+        if ``id_token`` is absent or does not contain an email.  Returns None and
+        logs a clear warning (not a silent swallow) if both approaches fail.
+
+        Test: (1) Mock ``id_token`` containing ``email`` — assert that email is
+        returned and no HTTP call is made.  (2) Pass ``id_token=None`` with a mock
+        urlopen that returns ``{"email": "u@g.com"}`` — assert the email is returned.
+        (3) Pass ``id_token=None`` and mock urlopen to raise ``urllib.error.URLError``
+        — assert None is returned and a warning is logged.
 
         Args:
             access_token: Valid Google OAuth access token.
+            id_token: Optional JWT from the token exchange (present when ``openid``
+                scope was granted).  Decoding this avoids an extra HTTP round-trip.
 
         Returns:
-            User's email address, or None if the request fails.
+            User's email address, or None if resolution fails.
         """
+        import json as _json
+        import logging as _logging
+        import urllib.error
         import urllib.request
 
+        logger = _logging.getLogger(__name__)
+
+        # Prefer id_token decoding — no extra network call.
+        if id_token:
+            email = self._extract_email_from_id_token(id_token)
+            if email:
+                return email
+
+        # Fallback: call the userinfo endpoint.
         try:
             req = urllib.request.Request(
                 "https://www.googleapis.com/oauth2/v2/userinfo",
                 headers={"Authorization": f"Bearer {access_token}"},
             )
             with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310
-                import json
-
-                data = json.loads(resp.read().decode())
+                data = _json.loads(resp.read().decode())
                 return data.get("email")
+        except urllib.error.HTTPError as exc:
+            if exc.code == 401:
+                logger.warning(
+                    "Could not resolve account email: Google userinfo returned 401 "
+                    "(HTTP Unauthorized).  The token was likely minted without the "
+                    "'openid' or 'userinfo.email' scope.  Re-authenticate with "
+                    "'gworkspace-mcp authenticate' to mint a new token that includes "
+                    "the identity scopes, then run 'list_accounts' again."
+                )
+            else:
+                logger.warning(
+                    "Could not resolve account email: userinfo endpoint returned HTTP %d — %s",
+                    exc.code,
+                    exc.reason,
+                )
+        except urllib.error.URLError as exc:
+            logger.warning("Could not resolve account email: network error — %s", exc.reason)
         except Exception as exc:
-            import logging as _logging
-
-            _logging.getLogger(__name__).warning("Failed to fetch user email: %s", exc)
-            return None
+            logger.warning("Could not resolve account email: unexpected error — %s", exc)
+        return None
 
     async def authenticate(
         self,
@@ -291,8 +379,11 @@ class OAuthManager:
         # Convert to our token model
         token = self._credentials_to_token(credentials, scopes)
 
-        # Fetch user email from userinfo endpoint
-        email = await self._fetch_user_email(token.access_token)
+        # Resolve user email.  google-auth-oauthlib stores the id_token JWT on the
+        # credentials object when the ``openid`` scope was granted; prefer it over
+        # an extra HTTP round-trip.
+        id_token: str | None = getattr(credentials, "id_token", None)
+        email = await self._fetch_user_email(token.access_token, id_token=id_token)
 
         # Determine whether this should be the default profile.
         # Mark as default if it is the first profile being stored OR this profile
@@ -519,7 +610,23 @@ class OAuthManager:
         return flow.credentials
 
     async def refresh_if_needed(self) -> OAuthToken | None:
-        """Refresh token if expired or about to expire.
+        """Refresh token if expired or about to expire, with email backfill.
+
+        Why: Expired tokens must be refreshed to keep API calls alive.  As a
+        side-effect, if the stored profile has ``email: null`` (e.g. it was minted
+        before the identity scopes were added) but the refreshed token now carries
+        identity claims, we backfill the email so ``list_accounts`` shows it going
+        forward — without requiring a full re-authentication.
+
+        What: Retrieves the stored token; returns it unchanged if still valid;
+        otherwise calls Google's token endpoint to refresh, then persists the new
+        token.  If the metadata email is None after refresh, attempts to resolve it
+        from the refreshed access token (and id_token if available).
+
+        Test: Store an expired token with ``email=None``, mock ``credentials.refresh``
+        to succeed, mock ``_fetch_user_email`` to return ``"u@g.com"``, then call
+        ``refresh_if_needed`` and assert ``storage.retrieve().metadata.email`` equals
+        ``"u@g.com"``.
 
         Returns:
             New OAuthToken if refreshed, existing token if still valid,
@@ -531,6 +638,13 @@ class OAuthManager:
 
         # Check if token is still valid
         if not stored.token.is_expired():
+            # Backfill email even for valid tokens that have email=None.
+            if stored.metadata.email is None:
+                id_token: str | None = None  # No credentials object available here
+                email = await self._fetch_user_email(stored.token.access_token, id_token=id_token)
+                if email:
+                    stored.metadata.email = email
+                    self.storage.store(self._service_name, stored.token, stored.metadata)
             return stored.token
 
         # Need to refresh
@@ -546,9 +660,19 @@ class OAuthManager:
         # Convert back to our token model
         new_token = self._credentials_to_token(credentials, stored.token.scopes)
 
+        # Backfill email if still missing after refresh.
+        metadata = stored.metadata
+        if metadata.email is None:
+            refreshed_id_token: str | None = getattr(credentials, "id_token", None)
+            email = await self._fetch_user_email(
+                new_token.access_token, id_token=refreshed_id_token
+            )
+            if email:
+                metadata.email = email
+
         # Update stored token
-        stored.metadata.last_refreshed = datetime.now(timezone.utc)
-        self.storage.store(self._service_name, new_token, stored.metadata)
+        metadata.last_refreshed = datetime.now(timezone.utc)
+        self.storage.store(self._service_name, new_token, metadata)
 
         return new_token
 

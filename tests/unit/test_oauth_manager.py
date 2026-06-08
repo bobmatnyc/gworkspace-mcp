@@ -3,10 +3,13 @@
 Tests cover authentication flow, token refresh, and credential management.
 """
 
+import base64
+import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import cast
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
+from urllib.error import HTTPError, URLError
 
 import pytest
 
@@ -19,6 +22,19 @@ from gworkspace_mcp.auth.oauth_manager import (
     OAuthManager,
 )
 from gworkspace_mcp.auth.token_storage import TokenStorage
+
+
+def _make_id_token(payload: dict) -> str:
+    """Build a minimal (unsigned) JWT string for testing id_token decoding.
+
+    Why: Tests for _extract_email_from_id_token need a realistic JWT structure
+    without depending on a real Google token exchange.
+    What: Produces header.payload.sig where payload is base64url-encoded JSON.
+    Test: Pass to _extract_email_from_id_token and assert the expected email.
+    """
+    header = base64.urlsafe_b64encode(b'{"alg":"RS256"}').rstrip(b"=").decode()
+    body = base64.urlsafe_b64encode(json.dumps(payload).encode()).rstrip(b"=").decode()
+    return f"{header}.{body}.fakesig"
 
 
 @pytest.mark.unit
@@ -653,6 +669,18 @@ class TestOAuthManagerRunOAuthFlow:
 class TestGoogleWorkspaceScopes:
     """Tests for GOOGLE_WORKSPACE_SCOPES constant."""
 
+    def test_should_include_openid_scope(self) -> None:
+        """Verify openid scope is included for id_token email resolution."""
+        assert "openid" in GOOGLE_WORKSPACE_SCOPES
+
+    def test_should_include_userinfo_email_scope(self) -> None:
+        """Verify userinfo.email scope is included so userinfo endpoint returns email."""
+        assert "https://www.googleapis.com/auth/userinfo.email" in GOOGLE_WORKSPACE_SCOPES
+
+    def test_should_include_userinfo_profile_scope(self) -> None:
+        """Verify userinfo.profile scope is included for display name resolution."""
+        assert "https://www.googleapis.com/auth/userinfo.profile" in GOOGLE_WORKSPACE_SCOPES
+
     def test_should_include_calendar_scope(self) -> None:
         """Verify calendar scope is included."""
         assert "https://www.googleapis.com/auth/calendar" in GOOGLE_WORKSPACE_SCOPES
@@ -681,9 +709,9 @@ class TestGoogleWorkspaceScopes:
         """Verify presentations scope is included for Slides access."""
         assert "https://www.googleapis.com/auth/presentations" in GOOGLE_WORKSPACE_SCOPES
 
-    def test_should_have_seven_scopes(self) -> None:
-        """Verify exactly seven scopes are defined."""
-        assert len(GOOGLE_WORKSPACE_SCOPES) == 7
+    def test_should_have_ten_scopes(self) -> None:
+        """Verify exactly ten scopes are defined (3 identity + 7 service)."""
+        assert len(GOOGLE_WORKSPACE_SCOPES) == 10
 
 
 @pytest.mark.unit
@@ -760,3 +788,370 @@ class TestFindFreePort:
             assert 1024 <= result <= 65535
         finally:
             blocker.close()
+
+
+@pytest.mark.unit
+class TestExtractEmailFromIdToken:
+    """Tests for OAuthManager._extract_email_from_id_token().
+
+    Why: When the openid scope is granted, Google returns a signed JWT id_token
+    in the token exchange response.  Decoding the payload avoids an extra HTTP
+    call to the userinfo endpoint.
+
+    Test strategy: Build synthetic (unsigned) JWTs and assert expected outputs.
+    """
+
+    def test_should_return_email_from_valid_id_token(self) -> None:
+        """Verify email is extracted from a well-formed id_token JWT."""
+        token = _make_id_token({"email": "user@example.com", "sub": "123"})
+        result = OAuthManager._extract_email_from_id_token(token)
+        assert result == "user@example.com"
+
+    def test_should_return_none_when_email_not_in_payload(self) -> None:
+        """Verify None returned when JWT payload has no email claim."""
+        token = _make_id_token({"sub": "123", "aud": "client-id"})
+        result = OAuthManager._extract_email_from_id_token(token)
+        assert result is None
+
+    def test_should_return_none_for_malformed_token(self) -> None:
+        """Verify None returned for a token with wrong segment count."""
+        result = OAuthManager._extract_email_from_id_token("not.a.valid.jwt.with.too.many.dots")
+        assert result is None
+
+    def test_should_return_none_for_non_json_payload(self) -> None:
+        """Verify None returned when the payload segment is not valid JSON."""
+        bad_payload = base64.urlsafe_b64encode(b"not-json").rstrip(b"=").decode()
+        result = OAuthManager._extract_email_from_id_token(f"header.{bad_payload}.sig")
+        assert result is None
+
+    def test_should_handle_unpadded_base64(self) -> None:
+        """Verify decoding works regardless of base64url padding."""
+        # Build a payload that produces unpadded base64 naturally
+        payload = {"email": "padtest@example.com"}
+        token = _make_id_token(payload)
+        # Token was built without padding — assert it still decodes correctly
+        result = OAuthManager._extract_email_from_id_token(token)
+        assert result == "padtest@example.com"
+
+
+@pytest.mark.unit
+class TestFetchUserEmail:
+    """Tests for OAuthManager._fetch_user_email().
+
+    Why: Email resolution is the fix for list_accounts returning email: null.
+    The method must: prefer id_token decoding (no HTTP call), fall back to
+    userinfo HTTP call, log a clear warning on 401 (scope missing), and
+    return None without crashing on all error paths.
+    """
+
+    @pytest.mark.asyncio
+    async def test_should_return_email_from_id_token_without_http_call(
+        self, oauth_manager: OAuthManager
+    ) -> None:
+        """Verify id_token path returns email and skips HTTP call."""
+        id_token = _make_id_token({"email": "fromtoken@example.com"})
+
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            result = await oauth_manager._fetch_user_email("access_tok", id_token=id_token)
+
+        assert result == "fromtoken@example.com"
+        mock_urlopen.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_should_fall_back_to_http_when_no_id_token(
+        self, oauth_manager: OAuthManager
+    ) -> None:
+        """Verify userinfo HTTP call is made when id_token is absent."""
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = b'{"email": "http@example.com"}'
+        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+        mock_resp.__exit__ = MagicMock(return_value=False)
+
+        with patch("urllib.request.urlopen", return_value=mock_resp):
+            result = await oauth_manager._fetch_user_email("access_tok", id_token=None)
+
+        assert result == "http@example.com"
+
+    @pytest.mark.asyncio
+    async def test_should_fall_back_to_http_when_id_token_has_no_email(
+        self, oauth_manager: OAuthManager
+    ) -> None:
+        """Verify HTTP fallback used when id_token payload has no email claim."""
+        id_token = _make_id_token({"sub": "123"})  # no email claim
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = b'{"email": "fallback@example.com"}'
+        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+        mock_resp.__exit__ = MagicMock(return_value=False)
+
+        with patch("urllib.request.urlopen", return_value=mock_resp):
+            result = await oauth_manager._fetch_user_email("access_tok", id_token=id_token)
+
+        assert result == "fallback@example.com"
+
+    @pytest.mark.asyncio
+    async def test_should_return_none_and_log_warning_on_401(
+        self, oauth_manager: OAuthManager, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Verify 401 returns None and logs actionable warning (not silent swallow)."""
+        import logging
+
+        exc = HTTPError(
+            url="https://www.googleapis.com/oauth2/v2/userinfo",
+            code=401,
+            msg="Unauthorized",
+            hdrs=MagicMock(),  # type: ignore[arg-type]
+            fp=None,
+        )
+        with patch("urllib.request.urlopen", side_effect=exc):
+            with caplog.at_level(logging.WARNING):
+                result = await oauth_manager._fetch_user_email("bad_token", id_token=None)
+
+        assert result is None
+        assert any(
+            "401" in r.message
+            or "identity scope" in r.message.lower()
+            or "re-authenticate" in r.message.lower()
+            for r in caplog.records
+        ), f"Expected actionable 401 warning, got: {[r.message for r in caplog.records]}"
+
+    @pytest.mark.asyncio
+    async def test_should_return_none_on_url_error(self, oauth_manager: OAuthManager) -> None:
+        """Verify URLError (network failure) returns None without raising."""
+        with patch("urllib.request.urlopen", side_effect=URLError("connection refused")):
+            result = await oauth_manager._fetch_user_email("access_tok", id_token=None)
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_should_return_none_on_http_error_non_401(
+        self, oauth_manager: OAuthManager
+    ) -> None:
+        """Verify non-401 HTTP errors (e.g. 403, 500) return None without raising."""
+        exc = HTTPError(
+            url="https://www.googleapis.com/oauth2/v2/userinfo",
+            code=403,
+            msg="Forbidden",
+            hdrs=MagicMock(),  # type: ignore[arg-type]
+            fp=None,
+        )
+        with patch("urllib.request.urlopen", side_effect=exc):
+            result = await oauth_manager._fetch_user_email("access_tok", id_token=None)
+
+        assert result is None
+
+
+@pytest.mark.unit
+class TestRefreshIfNeededEmailBackfill:
+    """Tests for the email backfill logic added to refresh_if_needed().
+
+    Why: Profiles created before the identity scopes were added have email=None.
+    On the next token refresh (or if the token is still valid but email is missing)
+    the manager should attempt to resolve and persist the email automatically so
+    users don't need to re-authenticate just to see their email in list_accounts.
+    """
+
+    @pytest.mark.asyncio
+    async def test_should_backfill_email_on_refresh_when_previously_null(
+        self,
+        oauth_manager: OAuthManager,
+        expired_token: OAuthToken,
+    ) -> None:
+        """Verify email is populated after token refresh when metadata.email was None."""
+        metadata_no_email = TokenMetadata(
+            service_name="gworkspace-mcp",
+            provider="google",
+            email=None,
+        )
+        oauth_manager.storage.store("gworkspace-mcp", expired_token, metadata_no_email)
+
+        mock_creds = MagicMock()
+        mock_creds.token = "refreshed_token"
+        mock_creds.refresh_token = "refresh_tok"
+        mock_creds.expiry = datetime.now(timezone.utc) + timedelta(hours=1)
+        mock_creds.id_token = None  # no id_token on the mock
+
+        with patch.object(oauth_manager, "_token_to_credentials", return_value=mock_creds):
+            with patch.object(mock_creds, "refresh"):
+                with patch.object(
+                    oauth_manager,
+                    "_fetch_user_email",
+                    new=AsyncMock(return_value="backfilled@example.com"),
+                ):
+                    await oauth_manager.refresh_if_needed()
+
+        stored = oauth_manager.storage.retrieve("gworkspace-mcp")
+        assert stored is not None
+        assert stored.metadata.email == "backfilled@example.com"
+
+    @pytest.mark.asyncio
+    async def test_should_not_overwrite_existing_email_on_refresh(
+        self,
+        oauth_manager: OAuthManager,
+        expired_token: OAuthToken,
+    ) -> None:
+        """Verify existing email is preserved when refresh succeeds."""
+        metadata_with_email = TokenMetadata(
+            service_name="gworkspace-mcp",
+            provider="google",
+            email="existing@example.com",
+        )
+        oauth_manager.storage.store("gworkspace-mcp", expired_token, metadata_with_email)
+
+        mock_creds = MagicMock()
+        mock_creds.token = "refreshed_token"
+        mock_creds.refresh_token = "refresh_tok"
+        mock_creds.expiry = datetime.now(timezone.utc) + timedelta(hours=1)
+        mock_creds.id_token = None
+
+        with patch.object(oauth_manager, "_token_to_credentials", return_value=mock_creds):
+            with patch.object(mock_creds, "refresh"):
+                # _fetch_user_email should NOT be called because email is already set
+                with patch.object(
+                    oauth_manager,
+                    "_fetch_user_email",
+                    new=AsyncMock(return_value="different@example.com"),
+                ) as mock_fetch:
+                    await oauth_manager.refresh_if_needed()
+
+        # email should remain unchanged regardless of what fetch_user_email returns
+        stored = oauth_manager.storage.retrieve("gworkspace-mcp")
+        assert stored is not None
+        assert stored.metadata.email == "existing@example.com"
+        mock_fetch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_should_backfill_email_for_valid_token_with_null_email(
+        self,
+        oauth_manager: OAuthManager,
+        valid_token: OAuthToken,
+    ) -> None:
+        """Verify email backfill also runs for non-expired tokens missing email."""
+        metadata_no_email = TokenMetadata(
+            service_name="gworkspace-mcp",
+            provider="google",
+            email=None,
+        )
+        oauth_manager.storage.store("gworkspace-mcp", valid_token, metadata_no_email)
+
+        with patch.object(
+            oauth_manager,
+            "_fetch_user_email",
+            new=AsyncMock(return_value="valid@example.com"),
+        ):
+            result = await oauth_manager.refresh_if_needed()
+
+        assert result is not None
+        stored = oauth_manager.storage.retrieve("gworkspace-mcp")
+        assert stored is not None
+        assert stored.metadata.email == "valid@example.com"
+
+    @pytest.mark.asyncio
+    async def test_should_pass_id_token_to_fetch_user_email_on_refresh(
+        self,
+        oauth_manager: OAuthManager,
+        expired_token: OAuthToken,
+    ) -> None:
+        """Verify id_token from refreshed credentials is forwarded to _fetch_user_email."""
+        metadata_no_email = TokenMetadata(
+            service_name="gworkspace-mcp",
+            provider="google",
+            email=None,
+        )
+        oauth_manager.storage.store("gworkspace-mcp", expired_token, metadata_no_email)
+
+        sample_id_token = _make_id_token({"email": "idtoken@example.com"})
+        mock_creds = MagicMock()
+        mock_creds.token = "refreshed_token"
+        mock_creds.refresh_token = "refresh_tok"
+        mock_creds.expiry = datetime.now(timezone.utc) + timedelta(hours=1)
+        mock_creds.id_token = sample_id_token
+
+        with patch.object(oauth_manager, "_token_to_credentials", return_value=mock_creds):
+            with patch.object(mock_creds, "refresh"):
+                with patch.object(
+                    oauth_manager,
+                    "_fetch_user_email",
+                    new=AsyncMock(return_value="idtoken@example.com"),
+                ) as mock_fetch:
+                    await oauth_manager.refresh_if_needed()
+
+        # Verify id_token was passed through
+        mock_fetch.assert_awaited_once()
+        call_kwargs = mock_fetch.call_args
+        assert call_kwargs.kwargs.get("id_token") == sample_id_token or (
+            len(call_kwargs.args) >= 2 and call_kwargs.args[1] == sample_id_token
+        )
+
+
+@pytest.mark.unit
+class TestAuthenticateEmailResolution:
+    """Tests verifying authenticate() resolves and stores email correctly."""
+
+    @pytest.mark.asyncio
+    async def test_should_store_email_from_id_token_after_auth(
+        self, oauth_manager: OAuthManager, mock_google_credentials: MagicMock
+    ) -> None:
+        """Verify email from id_token is persisted in metadata after authenticate."""
+        sample_id_token = _make_id_token({"email": "auth@example.com"})
+        mock_google_credentials.id_token = sample_id_token
+
+        with patch.object(oauth_manager, "_run_oauth_flow", return_value=mock_google_credentials):
+            await oauth_manager.authenticate(
+                client_id="test_id",
+                client_secret="test_secret",  # pragma: allowlist secret
+            )
+
+        stored = oauth_manager.storage.retrieve("gworkspace-mcp")
+        assert stored is not None
+        assert stored.metadata.email == "auth@example.com"
+
+    @pytest.mark.asyncio
+    async def test_should_store_email_from_userinfo_when_no_id_token(
+        self, oauth_manager: OAuthManager, mock_google_credentials: MagicMock
+    ) -> None:
+        """Verify email from userinfo fallback is persisted when no id_token available."""
+        mock_google_credentials.id_token = None
+
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = b'{"email": "userinfo@example.com"}'
+        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+        mock_resp.__exit__ = MagicMock(return_value=False)
+
+        with patch.object(oauth_manager, "_run_oauth_flow", return_value=mock_google_credentials):
+            with patch("urllib.request.urlopen", return_value=mock_resp):
+                await oauth_manager.authenticate(
+                    client_id="test_id",
+                    client_secret="test_secret",  # pragma: allowlist secret
+                )
+
+        stored = oauth_manager.storage.retrieve("gworkspace-mcp")
+        assert stored is not None
+        assert stored.metadata.email == "userinfo@example.com"
+
+    @pytest.mark.asyncio
+    async def test_should_store_none_email_gracefully_when_resolution_fails(
+        self, oauth_manager: OAuthManager, mock_google_credentials: MagicMock
+    ) -> None:
+        """Verify authenticate completes (does not raise) when email resolution fails."""
+        mock_google_credentials.id_token = None
+
+        exc = HTTPError(
+            url="https://www.googleapis.com/oauth2/v2/userinfo",
+            code=401,
+            msg="Unauthorized",
+            hdrs=MagicMock(),  # type: ignore[arg-type]
+            fp=None,
+        )
+
+        with patch.object(oauth_manager, "_run_oauth_flow", return_value=mock_google_credentials):
+            with patch("urllib.request.urlopen", side_effect=exc):
+                token = await oauth_manager.authenticate(
+                    client_id="test_id",
+                    client_secret="test_secret",  # pragma: allowlist secret
+                )
+
+        # authenticate must not raise; email is None in metadata
+        assert token is not None
+        stored = oauth_manager.storage.retrieve("gworkspace-mcp")
+        assert stored is not None
+        assert stored.metadata.email is None
