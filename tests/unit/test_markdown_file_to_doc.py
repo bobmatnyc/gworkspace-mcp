@@ -568,9 +568,9 @@ class TestTableCellOrder:
 
         # Assert descending order (last cell inserted first)
         indices = [idx for idx, _ in cell_insertions]
-        assert indices == sorted(
-            indices, reverse=True
-        ), "Cell insertions must be in descending index order"
+        assert indices == sorted(indices, reverse=True), (
+            "Cell insertions must be in descending index order"
+        )
 
         # Assert the first insertion (highest index) is the last cell
         assert cell_insertions[0][0] == 32
@@ -611,9 +611,9 @@ class TestHardLineBreaks:
 
         # Must contain hard line-break characters (\n) between the logical lines
         newline_runs = [r for r in runs if r["text"] == "\n"]
-        assert (
-            len(newline_runs) == 2
-        ), f"Expected 2 hard line-break \\n runs, got {len(newline_runs)}. Runs: {run_texts}"
+        assert len(newline_runs) == 2, (
+            f"Expected 2 hard line-break \\n runs, got {len(newline_runs)}. Runs: {run_texts}"
+        )
 
         # The logical content of each line must be present
         all_text = "".join(run_texts)
@@ -753,9 +753,9 @@ class TestDefaultFontBehavior:
         text_style_reqs = [r for r in requests if "updateTextStyle" in r]
         for req in text_style_reqs:
             ts = req["updateTextStyle"]["textStyle"]
-            assert (
-                "weightedFontFamily" not in ts
-            ), f"Plain paragraph must not set weightedFontFamily; got: {ts}"
+            assert "weightedFontFamily" not in ts, (
+                f"Plain paragraph must not set weightedFontFamily; got: {ts}"
+            )
 
     def test_heading_has_no_explicit_font_family(self) -> None:
         """Headings use named styles (namedStyleType) — not explicit font overrides."""
@@ -777,9 +777,9 @@ class TestDefaultFontBehavior:
             ts = req["updateTextStyle"]["textStyle"]
             if "weightedFontFamily" in ts:
                 ff = ts["weightedFontFamily"].get("fontFamily", "")
-                assert (
-                    ff == "Courier New"
-                ), f"Only Courier New may be set via weightedFontFamily; got '{ff}'"
+                assert ff == "Courier New", (
+                    f"Only Courier New may be set via weightedFontFamily; got '{ff}'"
+                )
 
     def test_inline_code_uses_courier_new(self) -> None:
         """Inline code is the ONLY case where Courier New should be applied."""
@@ -877,9 +877,9 @@ class TestTableContinuationGuard:
         assert len(tables) == 1, f"Expected 1 table, got {len(tables)}"
         t = tables[0]
         # The prose line must NOT appear as a row
-        assert (
-            len(t["rows"]) == 1
-        ), f"Table should have 1 data row, got {len(t['rows'])}: {t['rows']}"
+        assert len(t["rows"]) == 1, (
+            f"Table should have 1 data row, got {len(t['rows'])}: {t['rows']}"
+        )
         # The prose must appear as a paragraph block
         paras = [b for b in blocks if b["type"] == "paragraph"]
         para_text = " ".join("".join(r["text"] for r in p["runs"]) for p in paras)
@@ -892,9 +892,9 @@ class TestTableContinuationGuard:
         tables = [b for b in blocks if b["type"] == "table"]
         assert len(tables) == 1
         t = tables[0]
-        assert (
-            len(t["rows"]) == 1
-        ), f"Table should have 1 data row but got {len(t['rows'])}: {t['rows']}"
+        assert len(t["rows"]) == 1, (
+            f"Table should have 1 data row but got {len(t['rows'])}: {t['rows']}"
+        )
 
     def test_table_ends_at_blank_line(self) -> None:
         """A blank line always ends the table regardless of what follows."""
@@ -1119,20 +1119,20 @@ class TestSchemaRequirement:
     def test_tool_description_mentions_both_input_fields(self) -> None:
         tool = next(t for t in TOOLS if t.name == "markdown_file_to_doc")
         desc = tool.description.lower()
-        assert (
-            "markdown_file_path" in desc or "file_path" in desc
-        ), "Tool description should mention markdown_file_path"
-        assert (
-            "markdown_content" in desc or "content" in desc
-        ), "Tool description should mention markdown_content"
+        assert "markdown_file_path" in desc or "file_path" in desc, (
+            "Tool description should mention markdown_file_path"
+        )
+        assert "markdown_content" in desc or "content" in desc, (
+            "Tool description should mention markdown_content"
+        )
 
     def test_tool_description_states_one_required(self) -> None:
         tool = next(t for t in TOOLS if t.name == "markdown_file_to_doc")
         desc = tool.description.lower()
         # Description must convey the mutual requirement
-        assert (
-            "required" in desc or "at least one" in desc or "must supply" in desc
-        ), f"Description must state that at least one input field is required; got: {desc!r}"
+        assert "required" in desc or "at least one" in desc or "must supply" in desc, (
+            f"Description must state that at least one input field is required; got: {desc!r}"
+        )
 
     def test_schema_anyof_expresses_mutual_requirement(self) -> None:
         """anyOf with required:[markdown_file_path] and required:[markdown_content]
@@ -1145,12 +1145,12 @@ class TestSchemaRequirement:
             "markdown_file_path / markdown_content requirement"
         )
         required_sets = [frozenset(entry.get("required", [])) for entry in any_of]
-        assert (
-            frozenset(["markdown_file_path"]) in required_sets
-        ), "anyOf must include {required: [markdown_file_path]}"
-        assert (
-            frozenset(["markdown_content"]) in required_sets
-        ), "anyOf must include {required: [markdown_content]}"
+        assert frozenset(["markdown_file_path"]) in required_sets, (
+            "anyOf must include {required: [markdown_file_path]}"
+        )
+        assert frozenset(["markdown_content"]) in required_sets, (
+            "anyOf must include {required: [markdown_content]}"
+        )
 
     def test_property_descriptions_mention_alternative(self) -> None:
         """Each input property description should remind callers of the alternative."""
@@ -1158,9 +1158,9 @@ class TestSchemaRequirement:
         props = tool.inputSchema.get("properties", {})
         fp_desc = props.get("markdown_file_path", {}).get("description", "").lower()
         mc_desc = props.get("markdown_content", {}).get("description", "").lower()
-        assert (
-            "markdown_content" in fp_desc or "alternative" in fp_desc or "or" in fp_desc
-        ), "markdown_file_path description should mention markdown_content as alternative"
-        assert (
-            "markdown_file_path" in mc_desc or "alternative" in mc_desc or "or" in mc_desc
-        ), "markdown_content description should mention markdown_file_path as alternative"
+        assert "markdown_content" in fp_desc or "alternative" in fp_desc or "or" in fp_desc, (
+            "markdown_file_path description should mention markdown_content as alternative"
+        )
+        assert "markdown_file_path" in mc_desc or "alternative" in mc_desc or "or" in mc_desc, (
+            "markdown_content description should mention markdown_file_path as alternative"
+        )

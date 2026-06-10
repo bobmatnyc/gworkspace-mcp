@@ -98,9 +98,9 @@ class TestComputeContentAwareWidths:
         ]
         widths = compute_content_aware_widths(data, USABLE)
         # col 0 ("Work Type") has much longer cells than col 1 ("% Commits")
-        assert (
-            widths[0] > widths[1]
-        ), f"Expected col0 ({widths[0]:.1f}pt) > col1 ({widths[1]:.1f}pt)"
+        assert widths[0] > widths[1], (
+            f"Expected col0 ({widths[0]:.1f}pt) > col1 ({widths[1]:.1f}pt)"
+        )
 
     def test_widest_col_in_multi_col_table(self) -> None:
         """The column with the globally longest cell should be widest."""
@@ -147,9 +147,9 @@ class TestComputeContentAwareWidths:
         data_exact = [["X" * 60, "ShortCol"]]  # 60 == default CAP
         widths_capped = compute_content_aware_widths(data_capped, USABLE, cap=60)
         widths_exact = compute_content_aware_widths(data_exact, USABLE, cap=60)
-        assert (
-            abs(widths_capped[0] - widths_exact[0]) < 0.5
-        ), "Cap should make 200-char and 60-char columns produce equal weight"
+        assert abs(widths_capped[0] - widths_exact[0]) < 0.5, (
+            "Cap should make 200-char and 60-char columns produce equal weight"
+        )
 
     def test_cap_respected_for_all_cols(self) -> None:
         data = [["X" * 500, "Y" * 500, "Z" * 500]]
@@ -239,9 +239,9 @@ class TestHeaderBoldRange:
         ranges = _find_header_cell_indices(body_content, table_start)
         assert len(ranges) == 1
         start, end = ranges[0]
-        assert (
-            end > start + 1
-        ), f"endIndex ({end}) must be > startIndex + 1 ({start + 1}) for a multi-char header cell"
+        assert end > start + 1, (
+            f"endIndex ({end}) must be > startIndex + 1 ({start + 1}) for a multi-char header cell"
+        )
 
     def test_bold_request_uses_full_range(self) -> None:
         """_build_header_requests must emit endIndex equal to the cell's endIndex."""
@@ -311,9 +311,9 @@ class TestContentAwareWidthsAllClamped:
         data = [["AB"] * 20]  # 20 cols, each 2 chars → all clamp to 40pt min
         widths = compute_content_aware_widths(data, usable)
         total = sum(widths)
-        assert (
-            abs(total - usable) < 0.5
-        ), f"sum(widths)={total:.4f} should be close to {usable} (within 0.5pt)"
+        assert abs(total - usable) < 0.5, (
+            f"sum(widths)={total:.4f} should be close to {usable} (within 0.5pt)"
+        )
 
     def test_all_clamped_each_width_positive(self) -> None:
         """Every column width must be positive even when all clamp."""
