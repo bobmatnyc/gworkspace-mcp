@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import secrets
 import tempfile
 from pathlib import Path
@@ -22,6 +21,30 @@ from typing import TYPE_CHECKING, Any
 from mcp.types import Tool
 
 from gworkspace_mcp.server.constants import DOCS_API_BASE, DRIVE_API_BASE
+from gworkspace_mcp.server.services.docs.sync import differ, patch_planner, serializer
+
+# The block intermediate-representation (IR) and Markdown parser were relocated
+# to ``sync.blocks`` so the Markdown encoder (this module) and the native
+# Docs-JSON serializer (``sync.serializer``) share one IR.  These names are
+# re-imported here — NOT re-implemented — so existing callers/tests that import
+# ``parse_markdown`` / ``_parse_inline_runs`` / ``_HEADING_STYLE`` etc. from
+# ``markdown_file`` keep working unchanged.
+from gworkspace_mcp.server.services.docs.sync.blocks import (  # noqa: F401  (re-export)
+    _HEADING_STYLE,
+    _is_separator_row,
+    _parse_inline_runs,
+    _parse_table,
+    _strip_inline_md,
+    parse_markdown,
+)
+
+# ``_DocBuilder`` was relocated to ``sync.doc_builder`` (same relocate-and-
+# re-export pattern) so both this module's create/rebuild path and the Phase B
+# diff/patch path (``sync.patch_planner``) can import it without a circular
+# dependency.  Re-imported — NOT forked — for backward compatibility.
+from gworkspace_mcp.server.services.docs.sync.doc_builder import (  # noqa: F401  (re-export)
+    _DocBuilder,
+)
 
 if TYPE_CHECKING:
     from gworkspace_mcp.server.base import BaseService
@@ -46,16 +69,6 @@ _TABLE_BORDER = {
 # Header row background (blue-grey)
 _HEADER_BG = {"red": 0.2, "green": 0.35, "blue": 0.6}
 
-# Heading level → Docs named style
-_HEADING_STYLE: dict[int, str] = {
-    1: "HEADING_1",
-    2: "HEADING_2",
-    3: "HEADING_3",
-    4: "HEADING_4",
-    5: "HEADING_5",
-    6: "HEADING_6",
-}
-
 # ---------------------------------------------------------------------------
 # Tool definition
 # ---------------------------------------------------------------------------
@@ -67,8 +80,12 @@ TOOLS: list[Tool] = [
             "Convert a Markdown file to a fully-formatted Google Doc with real table borders, "
             "inline hyperlinks, and correct heading styles.  Reads the file server-side so "
             "large documents (700+ lines / 70 KB+) are never truncated.  "
-            "When document_id is supplied the existing document body is replaced in-place so "
-            "the shareable link is preserved; omit it to create a new document.  "
+            "When document_id is supplied, the existing document is updated IN PLACE with a "
+            "minimal diff/patch (only the changed paragraphs/tables are touched; unrelated "
+            "content and the shareable link are preserved) — re-running with unchanged "
+            "markdown is a no-op.  Set force_rebuild=true to instead hard-reset the document "
+            "(clear the whole body and rebuild from scratch).  Omit document_id to create a "
+            "new document.  "
             "REQUIRED: supply at least one of markdown_file_path (preferred for large files) "
             "or markdown_content (for small inline documents).  If both are provided, "
             "markdown_file_path takes precedence."
@@ -103,9 +120,22 @@ TOOLS: list[Tool] = [
                 "document_id": {
                     "type": "string",
                     "description": (
-                        "Existing Google Doc ID to update in-place.  "
-                        "The document body is cleared and replaced — the ID and shareable link "
-                        "are preserved.  Omit to create a new document."
+                        "Existing Google Doc ID to update in-place.  By default, only the "
+                        "minimal set of changed paragraphs/tables is patched (a full diff "
+                        "against the live document) — unrelated content and the shareable link "
+                        "are preserved.  Use force_rebuild=true for a full hard reset instead.  "
+                        "Omit to create a new document."
+                    ),
+                },
+                "force_rebuild": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": (
+                        "Only meaningful with document_id.  When true, skip the minimal diff/"
+                        "patch update and instead hard-reset the document: clear the entire "
+                        "body and rebuild it from scratch, exactly like the pre-diff-engine "
+                        "behavior.  Use this escape hatch if a document's structure has drifted "
+                        "in a way the diff engine can't reconcile cleanly.  Default false."
                     ),
                 },
                 "folder_id": {
@@ -123,615 +153,6 @@ TOOLS: list[Tool] = [
         },
     ),
 ]
-
-
-# ---------------------------------------------------------------------------
-# Markdown parser → list of "block" dicts
-# ---------------------------------------------------------------------------
-
-
-def _strip_inline_md(text: str) -> str:
-    """Remove bold/italic/code markers but keep link text."""
-    text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
-    text = re.sub(r"\*(.+?)\*", r"\1", text)
-    text = re.sub(r"__(.+?)__", r"\1", text)
-    text = re.sub(r"_(.+?)_", r"\1", text)
-    text = re.sub(r"`(.+?)`", r"\1", text)
-    # links: keep only label text for plain extraction
-    text = re.sub(r"\[(.+?)\]\(.+?\)", r"\1", text)
-    return text
-
-
-def _parse_inline_runs(text: str) -> list[dict[str, Any]]:
-    """Parse an inline text string into a list of run dicts.
-
-    Each run dict has:
-      - ``text``: the plain text content
-      - ``bold``: True if bold
-      - ``italic``: True if italic
-      - ``code``: True if inline code
-      - ``link``: URL string if this run is a hyperlink, else None
-
-    Nested emphasis is not supported; the first matching token wins.
-
-    Emphasis rules (to avoid over-matching stray * and ~):
-    - ``*italic*`` / ``_italic_``: only when * or _ is adjacent to a
-      non-whitespace character on both sides (i.e. cannot start/end with space).
-    - ``~~strikethrough~~``: treated as literal (no Docs equivalent).
-    - ``~text~``: treated as literal.
-    """
-    runs: list[dict[str, Any]] = []
-
-    # Pattern order matters: links before bold/italic so [text](...) is parsed
-    # as a link rather than an italic fragment.
-    #
-    # Italic patterns use word-boundary-like anchors:
-    #   (?<!\s) before the closing delimiter — ensures the italic span does not
-    #   end with whitespace (prevents matching "* stray star").
-    #   (?!\s) after the opening delimiter — ensures the italic span does not
-    #   start with whitespace.
-    pattern = re.compile(
-        r"(?P<link>\[(?P<link_text>[^\]]+)\]\((?P<link_url>[^)]+)\))"
-        r"|(?P<bold>\*\*(?P<bold_text>\S.*?\S|\S)\*\*)"
-        r"|(?P<bold2>__(?P<bold2_text>\S.*?\S|\S)__)"
-        r"|(?P<italic>\*(?P<italic_text>\S.*?\S|\S)\*)"
-        r"|(?P<italic2>_(?P<italic2_text>\S.*?\S|\S)_)"
-        r"|(?P<code>`(?P<code_text>[^`]+)`)"
-    )
-
-    pos = 0
-    for m in pattern.finditer(text):
-        # Plain text before this match
-        if m.start() > pos:
-            runs.append(
-                {
-                    "text": text[pos : m.start()],
-                    "bold": False,
-                    "italic": False,
-                    "code": False,
-                    "link": None,
-                }
-            )
-        if m.group("link"):
-            runs.append(
-                {
-                    "text": m.group("link_text"),
-                    "bold": False,
-                    "italic": False,
-                    "code": False,
-                    "link": m.group("link_url"),
-                }
-            )
-        elif m.group("bold"):
-            runs.append(
-                {
-                    "text": m.group("bold_text"),
-                    "bold": True,
-                    "italic": False,
-                    "code": False,
-                    "link": None,
-                }
-            )
-        elif m.group("bold2"):
-            runs.append(
-                {
-                    "text": m.group("bold2_text"),
-                    "bold": True,
-                    "italic": False,
-                    "code": False,
-                    "link": None,
-                }
-            )
-        elif m.group("italic"):
-            runs.append(
-                {
-                    "text": m.group("italic_text"),
-                    "bold": False,
-                    "italic": True,
-                    "code": False,
-                    "link": None,
-                }
-            )
-        elif m.group("italic2"):
-            runs.append(
-                {
-                    "text": m.group("italic2_text"),
-                    "bold": False,
-                    "italic": True,
-                    "code": False,
-                    "link": None,
-                }
-            )
-        elif m.group("code"):
-            runs.append(
-                {
-                    "text": m.group("code_text"),
-                    "bold": False,
-                    "italic": False,
-                    "code": True,
-                    "link": None,
-                }
-            )
-        pos = m.end()
-
-    if pos < len(text):
-        runs.append(
-            {"text": text[pos:], "bold": False, "italic": False, "code": False, "link": None}
-        )
-
-    return runs or [{"text": text, "bold": False, "italic": False, "code": False, "link": None}]
-
-
-# Block types produced by the parser
-# heading:   {"type": "heading", "level": int, "runs": [...]}
-# paragraph: {"type": "paragraph", "runs": [...]}
-# code:      {"type": "code", "text": str}
-# table:     {"type": "table", "headers": [str], "rows": [[str]]}
-# bullet:    {"type": "bullet", "depth": int, "runs": [...]}
-# ordered:   {"type": "ordered", "index": int, "depth": int, "runs": [...]}
-# rule:      {"type": "rule"}
-# blank:     {"type": "blank"}
-
-
-def _parse_table(lines: list[str]) -> dict[str, Any]:
-    """Parse a GFM pipe-table block into a table block dict."""
-
-    def _parse_row(line: str) -> list[str]:
-        line = line.strip()
-        if line.startswith("|"):
-            line = line[1:]
-        if line.endswith("|"):
-            line = line[:-1]
-        return [cell.strip() for cell in line.split("|")]
-
-    headers = _parse_row(lines[0])
-    # lines[1] is the separator — skip it
-    rows = [_parse_row(line) for line in lines[2:] if line.strip()]
-    return {"type": "table", "headers": headers, "rows": rows}
-
-
-def _is_separator_row(line: str) -> bool:
-    return bool(re.match(r"^\|?[\s\-:|]+\|[\s\-:|]*(\|[\s\-:|]*)*\|?$", line.strip()))
-
-
-def parse_markdown(content: str) -> list[dict[str, Any]]:
-    """Parse Markdown content into a flat list of block dicts.
-
-    Handles:
-    - ATX headings (# through ######)
-    - Fenced code blocks (``` and ~~~)
-    - GFM pipe tables
-    - Unordered lists (-, *, +) with up to 2 levels of nesting
-    - Ordered lists (1. 2. ...) with up to 2 levels
-    - Horizontal rules (---, ***, ___)
-    - Paragraphs (everything else)
-
-    Inline formatting within paragraphs, headings, and list items:
-    - **bold**, __bold__
-    - *italic*, _italic_
-    - `code`
-    - [link text](url)
-    """
-    blocks: list[dict[str, Any]] = []
-    lines = content.splitlines()
-    i = 0
-    n = len(lines)
-
-    while i < n:
-        raw = lines[i]
-        stripped = raw.rstrip()
-
-        # ---- Fenced code block ----
-        fence_m = re.match(r"^(```|~~~)(.*)", stripped)
-        if fence_m:
-            fence_char = fence_m.group(1)
-            code_lines: list[str] = []
-            i += 1
-            while i < n and not lines[i].startswith(fence_char):
-                code_lines.append(lines[i])
-                i += 1
-            i += 1  # skip closing fence
-            blocks.append({"type": "code", "text": "\n".join(code_lines)})
-            continue
-
-        # ---- Horizontal rule ----
-        if (
-            re.match(r"^\s*[-*_]{3,}\s*$", stripped)
-            and stripped.replace("-", "").replace("*", "").replace("_", "").strip() == ""
-        ):
-            blocks.append({"type": "rule"})
-            i += 1
-            continue
-
-        # ---- ATX Heading ----
-        heading_m = re.match(r"^(#{1,6})\s+(.+?)(?:\s+#+)?$", stripped)
-        if heading_m:
-            level = len(heading_m.group(1))
-            text = heading_m.group(2)
-            blocks.append({"type": "heading", "level": level, "runs": _parse_inline_runs(text)})
-            i += 1
-            continue
-
-        # ---- GFM Table (peek ahead for separator row) ----
-        if stripped.startswith("|") or (
-            "|" in stripped and i + 1 < n and _is_separator_row(lines[i + 1])
-        ):
-            # Collect consecutive table lines.
-            # A line is part of the table only when its stripped form starts
-            # with "|" OR matches a GFM separator row.  A blank line or any
-            # non-pipe-leading line terminates the table block, preventing
-            # greedy absorption of prose that merely contains a "|" character.
-            table_lines: list[str] = []
-            j = i
-            while j < n and (lines[j].strip().startswith("|") or _is_separator_row(lines[j])):
-                table_lines.append(lines[j])
-                j += 1
-            # Validate: need at least header + separator + 1 row
-            if len(table_lines) >= 3 and _is_separator_row(table_lines[1]):
-                blocks.append(_parse_table(table_lines))
-                i = j
-                continue
-
-        # ---- Unordered list item ----
-        ul_m = re.match(r"^(\s*)[-*+]\s+(.+)$", stripped)
-        if ul_m:
-            depth = len(ul_m.group(1)) // 2  # 0 = top level
-            text = ul_m.group(2)
-            blocks.append({"type": "bullet", "depth": depth, "runs": _parse_inline_runs(text)})
-            i += 1
-            continue
-
-        # ---- Ordered list item ----
-        ol_m = re.match(r"^(\s*)(\d+)[.)]\s+(.+)$", stripped)
-        if ol_m:
-            depth = len(ol_m.group(1)) // 2
-            idx = int(ol_m.group(2))
-            text = ol_m.group(3)
-            blocks.append(
-                {"type": "ordered", "index": idx, "depth": depth, "runs": _parse_inline_runs(text)}
-            )
-            i += 1
-            continue
-
-        # ---- Blank line ----
-        if not stripped:
-            blocks.append({"type": "blank"})
-            i += 1
-            continue
-
-        # ---- Paragraph (catch-all) ----
-        # Collect continuation lines (non-blank, not a new block).
-        # Hard line breaks: a line ending in two or more spaces (or backslash)
-        # before its newline is a "hard break".  We split the paragraph into
-        # sub-lines at those boundaries and emit a "\n" within the paragraph
-        # rather than joining with a space.
-        # We accumulate (line_text, hard_break) pairs.
-        def _is_hard_break(raw_line: str) -> bool:
-            return raw_line.endswith("  ") or raw_line.endswith("\\")
-
-        para_raw_lines: list[tuple[str, bool]] = [(raw, _is_hard_break(raw))]
-        i += 1
-        while i < n:
-            next_raw = lines[i]
-            next_stripped = next_raw.rstrip()
-            if not next_stripped:
-                break
-            if re.match(r"^#{1,6}\s", next_stripped):
-                break
-            if re.match(r"^(```|~~~)", next_stripped):
-                break
-            if re.match(r"^(\s*)[-*+]\s", next_stripped):
-                break
-            if re.match(r"^(\s*)\d+[.)]\s", next_stripped):
-                break
-            if re.match(r"^\s*[-*_]{3,}\s*$", next_stripped):
-                break
-            para_raw_lines.append((next_raw, _is_hard_break(next_raw)))
-            i += 1
-
-        # Build paragraph runs, honouring hard breaks.
-        # A hard break inserts a literal "\n" run between sub-lines so the
-        # DocBuilder emits separate line-break characters in the same paragraph.
-        para_runs: list[dict[str, Any]] = []
-        for idx, (raw_line, is_hard) in enumerate(para_raw_lines):
-            line_text = raw_line.rstrip()  # strip trailing spaces / backslash
-            if line_text.endswith("\\"):
-                line_text = line_text[:-1]
-            para_runs.extend(_parse_inline_runs(line_text))
-            if is_hard and idx < len(para_raw_lines) - 1:
-                # Insert a hard line-break run (literal newline within paragraph)
-                para_runs.append(
-                    {"text": "\n", "bold": False, "italic": False, "code": False, "link": None}
-                )
-            elif idx < len(para_raw_lines) - 1:
-                # Soft continuation: join with a space
-                para_runs.append(
-                    {"text": " ", "bold": False, "italic": False, "code": False, "link": None}
-                )
-
-        blocks.append({"type": "paragraph", "runs": para_runs})
-
-    return blocks
-
-
-# ---------------------------------------------------------------------------
-# Google Docs request builder
-# ---------------------------------------------------------------------------
-
-
-class _DocBuilder:
-    """Builds a list of Google Docs batchUpdate requests from parsed blocks.
-
-    Tracks the current insert index so requests are issued in document order.
-    All text is inserted via insertText requests first; then styling requests
-    (updateParagraphStyle, updateTextStyle, updateTableCellStyle) are appended.
-
-    Importantly: ALL text inserts must come before ALL style requests within
-    a chunk if we're building a fresh document from index=1.  For safety we
-    keep them interleaved per block — this is correct for sequential processing.
-    """
-
-    def __init__(self, start_index: int = 1) -> None:
-        self.index = start_index
-        self.requests: list[dict[str, Any]] = []
-        # Deferred table style requests (issued after all insertions for a table)
-        self._deferred: list[dict[str, Any]] = []
-
-    def _flush_deferred(self) -> None:
-        self.requests.extend(self._deferred)
-        self._deferred = []
-
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
-    def _insert_text(self, text: str) -> int:
-        """Emit insertText request and advance index.  Returns start index."""
-        start = self.index
-        self.requests.append(
-            {
-                "insertText": {
-                    "location": {"index": self.index},
-                    "text": text,
-                }
-            }
-        )
-        self.index += len(text)
-        return start
-
-    def _style_paragraph(self, start: int, end: int, named_style: str) -> None:
-        self.requests.append(
-            {
-                "updateParagraphStyle": {
-                    "range": {"startIndex": start, "endIndex": end},
-                    "paragraphStyle": {"namedStyleType": named_style},
-                    "fields": "namedStyleType",
-                }
-            }
-        )
-
-    def _style_text_run(
-        self,
-        start: int,
-        end: int,
-        bold: bool = False,
-        italic: bool = False,
-        code: bool = False,
-        link: str | None = None,
-    ) -> None:
-        if start >= end:
-            return
-        text_style: dict[str, Any] = {}
-        fields: list[str] = []
-        if bold:
-            text_style["bold"] = True
-            fields.append("bold")
-        if italic:
-            text_style["italic"] = True
-            fields.append("italic")
-        if code:
-            text_style["weightedFontFamily"] = {"fontFamily": "Courier New"}
-            fields.append("weightedFontFamily")
-        if link:
-            text_style["link"] = {"url": link}
-            fields.append("link")
-        if not fields:
-            return
-        self.requests.append(
-            {
-                "updateTextStyle": {
-                    "range": {"startIndex": start, "endIndex": end},
-                    "textStyle": text_style,
-                    "fields": ",".join(fields),
-                }
-            }
-        )
-
-    def _insert_runs(self, runs: list[dict[str, Any]]) -> tuple[int, int]:
-        """Insert runs into the document.  Returns (block_start, block_end)."""
-        block_start = self.index
-        for run in runs:
-            run_start = self.index
-            self._insert_text(run["text"])
-            run_end = self.index
-            if run["bold"] or run["italic"] or run["code"] or run["link"]:
-                self._style_text_run(
-                    run_start,
-                    run_end,
-                    bold=run["bold"],
-                    italic=run["italic"],
-                    code=run["code"],
-                    link=run["link"],
-                )
-        return block_start, self.index
-
-    # ------------------------------------------------------------------
-    # Block handlers
-    # ------------------------------------------------------------------
-
-    def add_heading(self, level: int, runs: list[dict[str, Any]]) -> None:
-        start = self.index
-        _, end = self._insert_runs(runs)
-        self._insert_text("\n")
-        self._style_paragraph(start, end + 1, _HEADING_STYLE.get(level, "HEADING_1"))
-
-    def add_paragraph(self, runs: list[dict[str, Any]]) -> None:
-        self._insert_runs(runs)
-        self._insert_text("\n")
-
-    def add_code_block(self, text: str) -> None:
-        # Insert code text with monospace font, paragraph as NORMAL_TEXT
-        start = self.index
-        code_text = text + "\n"
-        self._insert_text(code_text)
-        end = self.index
-        # Apply monospace to the whole block
-        self.requests.append(
-            {
-                "updateTextStyle": {
-                    "range": {"startIndex": start, "endIndex": end},
-                    "textStyle": {"weightedFontFamily": {"fontFamily": "Courier New"}},
-                    "fields": "weightedFontFamily",
-                }
-            }
-        )
-
-    def add_bullet(self, depth: int, runs: list[dict[str, Any]]) -> None:
-        start = self.index
-        _, end = self._insert_runs(runs)
-        self._insert_text("\n")
-        para_end = self.index
-        # Apply bullet list style.
-        # Note: createParagraphBullets only accepts range + bulletPreset;
-        # nestingLevel is NOT a valid field and causes a 400 Bad Request.
-        # Indentation for nested bullets uses updateParagraphStyle below.
-        self.requests.append(
-            {
-                "createParagraphBullets": {
-                    "range": {"startIndex": start, "endIndex": para_end},
-                    "bulletPreset": "BULLET_DISC_CIRCLE_SQUARE",
-                }
-            }
-        )
-        # Indent nested bullets via paragraph indentation (18pt per level)
-        if depth > 0:
-            indent_pts = depth * 18.0
-            self.requests.append(
-                {
-                    "updateParagraphStyle": {
-                        "range": {"startIndex": start, "endIndex": para_end},
-                        "paragraphStyle": {
-                            "indentStart": {"magnitude": indent_pts, "unit": "PT"},
-                            "indentFirstLine": {"magnitude": indent_pts, "unit": "PT"},
-                        },
-                        "fields": "indentStart,indentFirstLine",
-                    }
-                }
-            )
-        _ = end  # suppress unused warning
-
-    def add_ordered(self, runs: list[dict[str, Any]], depth: int = 0) -> None:
-        start = self.index
-        self._insert_runs(runs)
-        self._insert_text("\n")
-        para_end = self.index
-        # Note: createParagraphBullets only accepts range + bulletPreset.
-        self.requests.append(
-            {
-                "createParagraphBullets": {
-                    "range": {"startIndex": start, "endIndex": para_end},
-                    "bulletPreset": "NUMBERED_DECIMAL_ALPHA_ROMAN",
-                }
-            }
-        )
-        # Indent nested ordered lists
-        if depth > 0:
-            indent_pts = depth * 18.0
-            self.requests.append(
-                {
-                    "updateParagraphStyle": {
-                        "range": {"startIndex": start, "endIndex": para_end},
-                        "paragraphStyle": {
-                            "indentStart": {"magnitude": indent_pts, "unit": "PT"},
-                            "indentFirstLine": {"magnitude": indent_pts, "unit": "PT"},
-                        },
-                        "fields": "indentStart,indentFirstLine",
-                    }
-                }
-            )
-
-    def add_blank(self) -> None:
-        self._insert_text("\n")
-
-    def add_rule(self) -> None:
-        # Represent as a blank paragraph; Google Docs doesn't have a native HR
-        self._insert_text("─" * 60 + "\n")
-
-    def add_table(self, headers: list[str], rows: list[list[str]]) -> None:
-        """Insert a table with borders and a styled header row.
-
-        Why: Emitting an insertTable request creates the empty grid structure;
-        cell text is filled later via a deferred re-fetch pass so exact indices
-        are known.  Emitting post-table content in the same batchUpdate would
-        require an accurate structural-size estimate for every possible table
-        shape.  Instead, the builder records a ``_fill_table`` sentinel and the
-        handler processes each table as its own pass (insert → fill → re-fetch
-        → continue), preventing index drift for content that follows a table.
-
-        What: Appends an insertTable request and a ``_fill_table`` sentinel to
-        ``_deferred``.  Does NOT advance ``self.index`` because the handler
-        will re-fetch the document end index after each table fill and supply
-        a fresh start_index to a new builder for subsequent blocks.
-
-        Test: Build a heading + table + trailing paragraph; assert the trailing
-        paragraph's insertText index is strictly greater than the table's
-        insertTable index plus the table skeleton size.
-        """
-        num_rows = 1 + len(rows)  # header + data rows
-        num_cols = len(headers)
-        if num_cols == 0:
-            return
-
-        # Emit insertTable request — this creates an empty table structure.
-        # We intentionally do NOT advance self.index here.  The handler
-        # processes blocks in table-bounded segments; after each table is filled
-        # it re-fetches the document's true end index and starts a new builder
-        # for the next segment, eliminating any arithmetic-estimate drift.
-        self.requests.append(
-            {
-                "insertTable": {
-                    "rows": num_rows,
-                    "columns": num_cols,
-                    "location": {"index": self.index},
-                }
-            }
-        )
-
-        all_rows = [headers] + rows
-        self._deferred.append(
-            {
-                "_fill_table": True,
-                "num_rows": num_rows,
-                "num_cols": num_cols,
-                "all_rows": all_rows,
-            }
-        )
-
-    def build(self) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-        """Return (insert_requests, deferred_requests).
-
-        Why: Separating insert requests from deferred fill sentinels allows the
-        handler to batch-insert structural content first, then fill table cells
-        using re-fetched indices.
-        What: Returns the accumulated request list and the deferred sentinel list.
-        Test: Call build() after add_heading + add_table; assert insert_requests
-        contains insertText and insertTable entries, deferred contains a
-        _fill_table sentinel.
-
-        insert_requests must be issued first; deferred_requests must be
-        issued after a re-fetch to get the actual cell indices.
-        """
-        return self.requests, self._deferred
 
 
 # ---------------------------------------------------------------------------
@@ -924,12 +345,25 @@ async def _batch_update(
     svc: BaseService,
     document_id: str,
     requests: list[dict[str, Any]],
+    write_control: dict[str, Any] | None = None,
 ) -> None:
-    """Issue batchUpdate requests in safe chunks."""
+    """Issue batchUpdate requests in safe chunks.
+
+    ``write_control`` (e.g. ``{"requiredRevisionId": "..."}``), if given, is
+    attached only to the FIRST chunk — the diff/patch path's optimistic-
+    concurrency check (RFC section 10 risk #3): the API rejects a stale batch
+    with a 400 if the document changed since the revision was captured.
+    Subsequent chunks in the same call omit it, since the document's revision
+    has necessarily moved on after the first chunk lands — re-checking against
+    the original revision would always look stale.
+    """
     url = f"{DOCS_API_BASE}/documents/{document_id}:batchUpdate"
-    for i in range(0, len(requests), _BATCH_CHUNK_SIZE):
+    for idx, i in enumerate(range(0, len(requests), _BATCH_CHUNK_SIZE)):
         chunk = requests[i : i + _BATCH_CHUNK_SIZE]
-        await svc._make_request("POST", url, json_data={"requests": chunk})
+        body: dict[str, Any] = {"requests": chunk}
+        if write_control and idx == 0:
+            body["writeControl"] = write_control
+        await svc._make_request("POST", url, json_data=body)
 
 
 # ---------------------------------------------------------------------------
@@ -954,142 +388,39 @@ def _is_path_under(path: Path, root: Path) -> bool:
         return False
 
 
-# ---------------------------------------------------------------------------
-# Main handler
-# ---------------------------------------------------------------------------
+async def _insert_blocks_in_segments(
+    svc: BaseService,
+    document_id: str,
+    blocks: list[dict[str, Any]],
+    start_index: int,
+) -> int:
+    """Insert a block list into a document in table-bounded segments.
 
+    Why: After insertTable, the deferred cell-fill pass inserts N characters
+    into the newly-created cells.  Any content emitted by the builder AFTER a
+    table uses self.index values derived from an arithmetic estimate of the
+    table's structural size — an estimate that cannot account for cell-text
+    insertions that have not yet happened.  Emitting all subsequent blocks in
+    a single batchUpdate therefore causes index drift: paragraphs land inside
+    the table rather than after it.
 
-async def _markdown_file_to_doc(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
-    """Convert a Markdown file (or inline content) to a Google Doc.
+    Fix: split blocks into table-bounded segments.  For each segment we:
+      (a) add all non-table blocks to a builder until we hit a table block,
+      (b) add the table to the builder (which does NOT advance self.index),
+      (c) issue all pending insert_requests,
+      (d) call _fill_tables_and_style for just this table,
+      (e) re-fetch the document's true end index,
+      (f) start a fresh builder at that end index for the next segment.
+    Content that follows the last table (or a document with no tables) is
+    emitted in a single batchUpdate without any intervening re-fetch.
 
-    Steps:
-    1. Read the markdown (from file path or inline content).
-    2. Parse into blocks.
-    3. Build Docs API requests from the blocks.
-    4. Create or clear the target document.
-    5. Issue insert requests in chunks.
-    6. Post-process: fill table cells, apply borders, heading styles.
-    7. Return document id + webViewLink.
+    Shared by both the full-document create/rebuild path and the diff/patch
+    path's table-structural-change segments (``sync.patch_planner``'s
+    ``TableReplaceOp`` handling) — the exact same reuse the RFC calls for
+    rather than reimplementing table insertion twice.
+
+    Returns the total number of insert requests issued.
     """
-    markdown_file_path = arguments.get("markdown_file_path")
-    markdown_content = arguments.get("markdown_content")
-    title = arguments.get("title", "Untitled Document")
-    document_id: str | None = arguments.get("document_id")
-    folder_id: str | None = arguments.get("folder_id")
-
-    # --- 1. Read markdown ---
-    if markdown_file_path:
-        path = Path(markdown_file_path).resolve()
-        # Path-traversal guard: only allow reads under the current working directory,
-        # the user's home directory, or the system temp directory.
-        # This blocks /etc/passwd and other system files while keeping the tool
-        # practical for local MCP server usage (tmp files, home-dir docs, project files).
-        allowed_roots = (
-            Path.cwd().resolve(),
-            Path.home().resolve(),
-            Path(tempfile.gettempdir()).resolve(),
-        )
-        if not any(_is_path_under(path, root) for root in allowed_roots):
-            raise ValueError(
-                f"Path '{markdown_file_path}' is outside allowed directories "
-                f"({', '.join(str(r) for r in allowed_roots)}). "
-                "Only paths under the current working directory, your home directory, "
-                "or the system temp directory are permitted."
-            )
-        if not path.is_file():
-            raise FileNotFoundError(f"Markdown file not found: {markdown_file_path}")
-        markdown_content = path.read_text(encoding="utf-8")
-        logger.info("Read %d chars from %s", len(markdown_content), markdown_file_path)
-    elif not markdown_content:
-        raise ValueError("Either markdown_file_path or markdown_content must be provided")
-
-    # --- 2. Parse ---
-    blocks = parse_markdown(markdown_content)
-    logger.info("Parsed %d blocks from markdown", len(blocks))
-
-    # --- 3. Create or clear target document ---
-    if document_id:
-        # In-place update: clear the body then re-insert
-        doc = await svc._make_request(
-            "GET",
-            f"{DOCS_API_BASE}/documents/{document_id}",
-            params={"fields": "body(content(startIndex,endIndex))"},
-        )
-        body_content = doc.get("body", {}).get("content", [])
-        if body_content:
-            last_end = body_content[-1].get("endIndex", 1)
-            if last_end > 1:
-                # Delete everything except the trailing paragraph marker (index 0)
-                del_requests: list[dict[str, Any]] = [
-                    {
-                        "deleteContentRange": {
-                            "range": {
-                                "startIndex": 1,
-                                "endIndex": last_end - 1,
-                            }
-                        }
-                    }
-                ]
-                await _batch_update(svc, document_id, del_requests)
-        start_index = 1
-    else:
-        # Create new document
-        if folder_id:
-            gdoc_metadata: dict[str, Any] = {
-                "name": title,
-                "mimeType": "application/vnd.google-apps.document",
-                "parents": [folder_id],
-            }
-            boundary = secrets.token_hex(16)
-            body_str = (
-                f"--{boundary}\r\n"
-                f"Content-Type: application/json; charset=UTF-8\r\n\r\n"
-                f"{json.dumps(gdoc_metadata)}\r\n"
-                f"--{boundary}\r\n"
-                f"Content-Type: text/plain\r\n\r\n"
-                f"\r\n--{boundary}--"
-            )
-            upload_url = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true"
-            response = await svc._make_raw_request(
-                "POST",
-                upload_url,
-                content=body_str.encode("utf-8"),
-                headers={"Content-Type": f"multipart/related; boundary={boundary}"},
-                timeout=60.0,
-            )
-            result = response.json()
-            document_id = result.get("id")
-        else:
-            create_resp = await svc._make_request(
-                "POST",
-                f"{DOCS_API_BASE}/documents",
-                json_data={"title": title},
-            )
-            document_id = create_resp.get("documentId")
-        start_index = 1
-
-    if not document_id:
-        raise RuntimeError("Failed to create or identify target document")
-
-    # --- 4. Build and issue requests in table-bounded segments ---
-    # Why: After insertTable, the deferred cell-fill pass inserts N characters
-    # into the newly-created cells.  Any content emitted by the builder AFTER a
-    # table uses self.index values derived from an arithmetic estimate of the
-    # table's structural size — an estimate that cannot account for cell-text
-    # insertions that have not yet happened.  Emitting all subsequent blocks in
-    # a single batchUpdate therefore causes index drift: paragraphs land inside
-    # the table rather than after it.
-    #
-    # Fix: split blocks into table-bounded segments.  For each segment we:
-    #   (a) add all non-table blocks to a builder until we hit a table block,
-    #   (b) add the table to the builder (which does NOT advance self.index),
-    #   (c) issue all pending insert_requests,
-    #   (d) call _fill_tables_and_style for just this table,
-    #   (e) re-fetch the document's true end index,
-    #   (f) start a fresh builder at that end index for the next segment.
-    # Content that follows the last table (or a document with no tables) is
-    # emitted in a single batchUpdate without any intervening re-fetch.
-
     total_insert_requests = 0
     current_index = start_index
     i = 0
@@ -1174,6 +505,229 @@ async def _markdown_file_to_doc(svc: BaseService, arguments: dict[str, Any]) -> 
                         "subsequent inserts."
                     )
                 logger.info("Re-fetched document end index after table fill: %d", current_index)
+
+    return total_insert_requests
+
+
+async def _apply_diff_patch(
+    svc: BaseService,
+    document_id: str,
+    new_blocks: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Update an existing document in place via minimal diff/patch (Phase B).
+
+    This is the DEFAULT behavior for the ``document_id`` branch: fetch the
+    live document, serialize it into the same block IR ``parse_markdown``
+    produces (``sync.serializer``), diff the two block lists
+    (``sync.differ``), and apply only the minimal set of batchUpdate requests
+    needed to reconcile them (``sync.patch_planner``) — never a full-body
+    clear-and-rebuild.  Re-running with unchanged Markdown against an
+    already-synced document issues zero requests (idempotent).
+
+    Table structural changes are still whole-table replace (RFC section 4):
+    delete the old table's range (if any) and reinsert via the same
+    ``_insert_blocks_in_segments``/``add_table``/``_fill_tables_and_style``
+    pipeline the create/rebuild path already uses — 100% request-construction
+    reuse, just scoped to the changed region instead of the whole document.
+    """
+    doc = await svc._make_request("GET", f"{DOCS_API_BASE}/documents/{document_id}")
+    old_with_ranges = serializer.doc_json_to_blocks_with_ranges(doc)
+    old_blocks = [b for b, _s, _e in old_with_ranges]
+    old_ranges = [(s, e) for _b, s, e in old_with_ranges]
+    doc_end_index = serializer.document_end_index(doc)
+    revision_id = doc.get("revisionId")
+
+    diff_ops = differ.diff_blocks(old_blocks, new_blocks)
+    plan = patch_planner.plan_patch(
+        diff_ops, old_ranges, doc_end_index, required_revision_id=revision_id
+    )
+
+    requests_issued = 0
+    if plan.requests:
+        await _batch_update(
+            svc,
+            document_id,
+            plan.requests,
+            write_control=plan.write_control_kwargs().get("writeControl"),
+        )
+        requests_issued += len(plan.requests)
+
+    # Table structural changes: highest original-document anchor first, so an
+    # earlier (higher-anchored) segment's delete+reinsert never invalidates
+    # indices a later (lower-anchored) table op still depends on — the same
+    # descending-order rule patch_planner already applies to Round 1.
+    for table_op in sorted(plan.table_ops, key=lambda t: t.anchor, reverse=True):
+        if table_op.old_range is not None:
+            start, end = table_op.old_range
+            await _batch_update(
+                svc,
+                document_id,
+                [{"deleteContentRange": {"range": {"startIndex": start, "endIndex": end}}}],
+            )
+            anchor = start
+        else:
+            anchor = table_op.anchor
+        requests_issued += await _insert_blocks_in_segments(
+            svc, document_id, table_op.new_blocks, anchor
+        )
+
+    return {
+        "status": "no_changes" if requests_issued == 0 else "updated",
+        "document_id": document_id,
+        "revision_id": revision_id,
+        "blocks_processed": len(new_blocks),
+        "requests_issued": requests_issued,
+        "blocks_matched": plan.matched,
+        "blocks_inserted": plan.inserted,
+        "blocks_deleted": plan.deleted,
+        "blocks_modified": plan.modified,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Main handler
+# ---------------------------------------------------------------------------
+
+
+async def _markdown_file_to_doc(svc: BaseService, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Convert a Markdown file (or inline content) to a Google Doc.
+
+    Steps:
+    1. Read the markdown (from file path or inline content).
+    2. Parse into blocks.
+    3. When ``document_id`` is supplied (default): diff against the live
+       document and apply a minimal in-place patch (``_apply_diff_patch`` —
+       Phase B). Otherwise, or when ``force_rebuild=True``, fall through to
+       the create-or-clear-and-rebuild path below.
+    4. Create or clear the target document (new documents, or an explicit
+       ``force_rebuild`` "hard reset" of an existing one).
+    5. Issue insert requests in chunks.
+    6. Post-process: fill table cells, apply borders, heading styles.
+    7. Return document id + webViewLink.
+    """
+    markdown_file_path = arguments.get("markdown_file_path")
+    markdown_content = arguments.get("markdown_content")
+    title = arguments.get("title", "Untitled Document")
+    document_id: str | None = arguments.get("document_id")
+    folder_id: str | None = arguments.get("folder_id")
+    force_rebuild = bool(arguments.get("force_rebuild", False))
+
+    # --- 1. Read markdown ---
+    if markdown_file_path:
+        path = Path(markdown_file_path).resolve()
+        # Path-traversal guard: only allow reads under the current working directory,
+        # the user's home directory, or the system temp directory.
+        # This blocks /etc/passwd and other system files while keeping the tool
+        # practical for local MCP server usage (tmp files, home-dir docs, project files).
+        allowed_roots = (
+            Path.cwd().resolve(),
+            Path.home().resolve(),
+            Path(tempfile.gettempdir()).resolve(),
+        )
+        if not any(_is_path_under(path, root) for root in allowed_roots):
+            raise ValueError(
+                f"Path '{markdown_file_path}' is outside allowed directories "
+                f"({', '.join(str(r) for r in allowed_roots)}). "
+                "Only paths under the current working directory, your home directory, "
+                "or the system temp directory are permitted."
+            )
+        if not path.is_file():
+            raise FileNotFoundError(f"Markdown file not found: {markdown_file_path}")
+        markdown_content = path.read_text(encoding="utf-8")
+        logger.info("Read %d chars from %s", len(markdown_content), markdown_file_path)
+    elif not markdown_content:
+        raise ValueError("Either markdown_file_path or markdown_content must be provided")
+
+    # --- 2. Parse ---
+    blocks = parse_markdown(markdown_content)
+    logger.info("Parsed %d blocks from markdown", len(blocks))
+
+    # --- 3. In-place update: minimal diff/patch (default) ---
+    # RFC section 8 Phase B: this supersedes the old clear-and-rebuild branch
+    # as the default for document_id updates.  The destructive rebuild remains
+    # available as an explicit "hard reset" escape hatch (force_rebuild=True)
+    # per the RFC's back-compat recommendation, rather than being removed.
+    if document_id and not force_rebuild:
+        diff_result = await _apply_diff_patch(svc, document_id, blocks)
+        file_meta = await svc._make_request(
+            "GET",
+            f"{DRIVE_API_BASE}/files/{document_id}",
+            params={"fields": "id,name,webViewLink,mimeType"},
+        )
+        return {
+            **diff_result,
+            "title": file_meta.get("name", title),
+            "webViewLink": file_meta.get("webViewLink"),
+            "mimeType": file_meta.get("mimeType"),
+        }
+
+    # --- 4. Create or clear target document ---
+    if document_id:
+        # force_rebuild=True: explicit hard reset — clear the body then re-insert.
+        doc = await svc._make_request(
+            "GET",
+            f"{DOCS_API_BASE}/documents/{document_id}",
+            params={"fields": "body(content(startIndex,endIndex))"},
+        )
+        body_content = doc.get("body", {}).get("content", [])
+        if body_content:
+            last_end = body_content[-1].get("endIndex", 1)
+            if last_end > 1:
+                # Delete everything except the trailing paragraph marker (index 0)
+                del_requests: list[dict[str, Any]] = [
+                    {
+                        "deleteContentRange": {
+                            "range": {
+                                "startIndex": 1,
+                                "endIndex": last_end - 1,
+                            }
+                        }
+                    }
+                ]
+                await _batch_update(svc, document_id, del_requests)
+        start_index = 1
+    else:
+        # Create new document
+        if folder_id:
+            gdoc_metadata: dict[str, Any] = {
+                "name": title,
+                "mimeType": "application/vnd.google-apps.document",
+                "parents": [folder_id],
+            }
+            boundary = secrets.token_hex(16)
+            body_str = (
+                f"--{boundary}\r\n"
+                f"Content-Type: application/json; charset=UTF-8\r\n\r\n"
+                f"{json.dumps(gdoc_metadata)}\r\n"
+                f"--{boundary}\r\n"
+                f"Content-Type: text/plain\r\n\r\n"
+                f"\r\n--{boundary}--"
+            )
+            upload_url = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true"
+            response = await svc._make_raw_request(
+                "POST",
+                upload_url,
+                content=body_str.encode("utf-8"),
+                headers={"Content-Type": f"multipart/related; boundary={boundary}"},
+                timeout=60.0,
+            )
+            result = response.json()
+            document_id = result.get("id")
+        else:
+            create_resp = await svc._make_request(
+                "POST",
+                f"{DOCS_API_BASE}/documents",
+                json_data={"title": title},
+            )
+            document_id = create_resp.get("documentId")
+        start_index = 1
+
+    if not document_id:
+        raise RuntimeError("Failed to create or identify target document")
+
+    # --- 4. Build and issue requests in table-bounded segments ---
+    total_insert_requests = await _insert_blocks_in_segments(svc, document_id, blocks, start_index)
+
     # --- 5. Fetch webViewLink ---
     file_meta = await svc._make_request(
         "GET",

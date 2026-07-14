@@ -1,0 +1,147 @@
+{
+  "documentId": "doc_lists",
+  "title": "lists",
+  "revisionId": "rev_lists",
+  "body": {
+    "content": [
+      {
+        "startIndex": 0,
+        "endIndex": 1
+      },
+      {
+        "paragraph": {
+          "elements": [
+            {
+              "textRun": {
+                "content": "Top bullet\n",
+                "textStyle": {}
+              }
+            }
+          ],
+          "bullet": {
+            "listId": "L1",
+            "nestingLevel": 0
+          }
+        }
+      },
+      {
+        "paragraph": {
+          "elements": [
+            {
+              "textRun": {
+                "content": "Nested bullet\n",
+                "textStyle": {}
+              }
+            }
+          ],
+          "bullet": {
+            "listId": "L1",
+            "nestingLevel": 1
+          }
+        }
+      },
+      {
+        "paragraph": {
+          "elements": [
+            {
+              "textRun": {
+                "content": "Second top bullet\n",
+                "textStyle": {}
+              }
+            }
+          ],
+          "bullet": {
+            "listId": "L1",
+            "nestingLevel": 0
+          }
+        }
+      },
+      {
+        "paragraph": {
+          "elements": [
+            {
+              "textRun": {
+                "content": "\n",
+                "textStyle": {}
+              }
+            }
+          ]
+        }
+      },
+      {
+        "paragraph": {
+          "elements": [
+            {
+              "textRun": {
+                "content": "First step\n",
+                "textStyle": {}
+              }
+            }
+          ],
+          "bullet": {
+            "listId": "L2",
+            "nestingLevel": 0
+          }
+        }
+      },
+      {
+        "paragraph": {
+          "elements": [
+            {
+              "textRun": {
+                "content": "Second step\n",
+                "textStyle": {}
+              }
+            }
+          ],
+          "bullet": {
+            "listId": "L2",
+            "nestingLevel": 0
+          }
+        }
+      },
+      {
+        "paragraph": {
+          "elements": [
+            {
+              "textRun": {
+                "content": "Nested step\n",
+                "textStyle": {}
+              }
+            }
+          ],
+          "bullet": {
+            "listId": "L2",
+            "nestingLevel": 1
+          }
+        }
+      }
+    ]
+  },
+  "lists": {
+    "L1": {
+      "listProperties": {
+        "nestingLevels": [
+          {
+            "glyphSymbol": "\u25cf"
+          },
+          {
+            "glyphSymbol": "\u25cb"
+          }
+        ]
+      }
+    },
+    "L2": {
+      "listProperties": {
+        "nestingLevels": [
+          {
+            "glyphType": "DECIMAL"
+          },
+          {
+            "glyphType": "ALPHA"
+          }
+        ]
+      }
+    }
+  }
+}

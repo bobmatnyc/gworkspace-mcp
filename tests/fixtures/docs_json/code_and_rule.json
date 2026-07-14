@@ -1,0 +1,159 @@
+{
+  "documentId": "doc_code_and_rule",
+  "title": "code_and_rule",
+  "revisionId": "rev_code_and_rule",
+  "body": {
+    "content": [
+      {
+        "startIndex": 0,
+        "endIndex": 1
+      },
+      {
+        "paragraph": {
+          "elements": [
+            {
+              "textRun": {
+                "content": "Before the code.\n",
+                "textStyle": {}
+              }
+            }
+          ]
+        }
+      },
+      {
+        "paragraph": {
+          "elements": [
+            {
+              "textRun": {
+                "content": "\n",
+                "textStyle": {}
+              }
+            }
+          ]
+        }
+      },
+      {
+        "paragraph": {
+          "elements": [
+            {
+              "textRun": {
+                "content": "def greet(name):",
+                "textStyle": {
+                  "weightedFontFamily": {
+                    "fontFamily": "Courier New"
+                  }
+                }
+              }
+            },
+            {
+              "textRun": {
+                "content": "\n",
+                "textStyle": {
+                  "weightedFontFamily": {
+                    "fontFamily": "Courier New"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
+        "paragraph": {
+          "elements": [
+            {
+              "textRun": {
+                "content": "    return f\"hi {name}\"",
+                "textStyle": {
+                  "weightedFontFamily": {
+                    "fontFamily": "Courier New"
+                  }
+                }
+              }
+            },
+            {
+              "textRun": {
+                "content": "\n",
+                "textStyle": {
+                  "weightedFontFamily": {
+                    "fontFamily": "Courier New"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
+        "paragraph": {
+          "elements": [
+            {
+              "textRun": {
+                "content": "\n",
+                "textStyle": {}
+              }
+            }
+          ]
+        }
+      },
+      {
+        "paragraph": {
+          "elements": [
+            {
+              "textRun": {
+                "content": "\n",
+                "textStyle": {}
+              }
+            }
+          ],
+          "paragraphStyle": {
+            "borderBottom": {
+              "color": {
+                "color": {
+                  "rgbColor": {
+                    "red": 0.6,
+                    "green": 0.6,
+                    "blue": 0.6
+                  }
+                }
+              },
+              "width": {
+                "magnitude": 1,
+                "unit": "PT"
+              },
+              "padding": {
+                "magnitude": 1,
+                "unit": "PT"
+              },
+              "dashStyle": "SOLID"
+            }
+          }
+        }
+      },
+      {
+        "paragraph": {
+          "elements": [
+            {
+              "textRun": {
+                "content": "\n",
+                "textStyle": {}
+              }
+            }
+          ]
+        }
+      },
+      {
+        "paragraph": {
+          "elements": [
+            {
+              "textRun": {
+                "content": "After the rule.\n",
+                "textStyle": {}
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

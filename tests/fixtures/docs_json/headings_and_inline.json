@@ -1,0 +1,163 @@
+{
+  "documentId": "doc_headings_and_inline",
+  "title": "headings_and_inline",
+  "revisionId": "rev_headings_and_inline",
+  "body": {
+    "content": [
+      {
+        "startIndex": 0,
+        "endIndex": 1
+      },
+      {
+        "paragraph": {
+          "elements": [
+            {
+              "textRun": {
+                "content": "Document Title\n",
+                "textStyle": {}
+              }
+            }
+          ],
+          "paragraphStyle": {
+            "namedStyleType": "HEADING_1"
+          }
+        }
+      },
+      {
+        "paragraph": {
+          "elements": [
+            {
+              "textRun": {
+                "content": "\n",
+                "textStyle": {}
+              }
+            }
+          ]
+        }
+      },
+      {
+        "paragraph": {
+          "elements": [
+            {
+              "textRun": {
+                "content": "Intro with ",
+                "textStyle": {}
+              }
+            },
+            {
+              "textRun": {
+                "content": "bold",
+                "textStyle": {
+                  "bold": true
+                }
+              }
+            },
+            {
+              "textRun": {
+                "content": ", ",
+                "textStyle": {}
+              }
+            },
+            {
+              "textRun": {
+                "content": "italic",
+                "textStyle": {
+                  "italic": true
+                }
+              }
+            },
+            {
+              "textRun": {
+                "content": ", ",
+                "textStyle": {}
+              }
+            },
+            {
+              "textRun": {
+                "content": "code",
+                "textStyle": {
+                  "weightedFontFamily": {
+                    "fontFamily": "Courier New"
+                  }
+                }
+              }
+            },
+            {
+              "textRun": {
+                "content": ", and a ",
+                "textStyle": {}
+              }
+            },
+            {
+              "textRun": {
+                "content": "link",
+                "textStyle": {
+                  "link": {
+                    "url": "https://example.com"
+                  }
+                }
+              }
+            },
+            {
+              "textRun": {
+                "content": ".\n",
+                "textStyle": {}
+              }
+            }
+          ]
+        }
+      },
+      {
+        "paragraph": {
+          "elements": [
+            {
+              "textRun": {
+                "content": "\n",
+                "textStyle": {}
+              }
+            }
+          ]
+        }
+      },
+      {
+        "paragraph": {
+          "elements": [
+            {
+              "textRun": {
+                "content": "Subsection\n",
+                "textStyle": {}
+              }
+            }
+          ],
+          "paragraphStyle": {
+            "namedStyleType": "HEADING_2"
+          }
+        }
+      },
+      {
+        "paragraph": {
+          "elements": [
+            {
+              "textRun": {
+                "content": "\n",
+                "textStyle": {}
+              }
+            }
+          ]
+        }
+      },
+      {
+        "paragraph": {
+          "elements": [
+            {
+              "textRun": {
+                "content": "Plain paragraph text.\n",
+                "textStyle": {}
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
