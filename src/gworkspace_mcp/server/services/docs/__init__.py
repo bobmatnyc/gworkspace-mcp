@@ -17,6 +17,7 @@ from gworkspace_mcp.server.services.docs import (
     table_ops,
     templates,
 )
+from gworkspace_mcp.server.services.docs import sync as docs_sync
 
 if TYPE_CHECKING:
     from gworkspace_mcp.server.base import BaseService
@@ -31,6 +32,7 @@ TOOLS: list[Tool] = (
     + table_format.TOOLS
     + templates.TOOLS
     + headers_footers.TOOLS
+    + docs_sync.TOOLS
 )
 
 
@@ -47,6 +49,7 @@ def get_handlers(svc: BaseService) -> dict[str, Any]:
         table_format,
         templates,
         headers_footers,
+        docs_sync,
     ]:
         handlers.update(mod.get_handlers(svc))
     return handlers
