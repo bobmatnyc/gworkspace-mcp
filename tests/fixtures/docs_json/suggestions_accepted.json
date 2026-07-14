@@ -1,0 +1,43 @@
+{
+  "documentId": "doc-suggest-1",
+  "title": "Doc With Pending Suggestion",
+  "revisionId": "rev-suggest-1",
+  "lists": {},
+  "body": {
+    "content": [
+      {
+        "startIndex": 1,
+        "endIndex": 22,
+        "paragraph": {
+          "elements": [
+            {
+              "startIndex": 1,
+              "endIndex": 11,
+              "textRun": {
+                "content": "The quick ",
+                "textStyle": {}
+              }
+            },
+            {
+              "startIndex": 11,
+              "endIndex": 17,
+              "textRun": {
+                "content": "brown ",
+                "textStyle": {},
+                "suggestedInsertionIds": ["suggest.abc123"]
+              }
+            },
+            {
+              "startIndex": 17,
+              "endIndex": 22,
+              "textRun": {
+                "content": "fox.\n",
+                "textStyle": {}
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

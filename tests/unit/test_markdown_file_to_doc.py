@@ -364,7 +364,12 @@ class TestMarkdownFileTodocHandler:
         assert result["status"] == "published"
 
     @pytest.mark.asyncio
-    async def test_in_place_update_calls_delete_then_insert(self) -> None:
+    async def test_force_rebuild_calls_delete_then_insert(self) -> None:
+        """force_rebuild=True is the explicit "hard reset" escape hatch (RFC
+        section 8 Phase B) — it must still clear-and-rebuild exactly as the
+        pre-diff-engine behavior did.  Phase B supersedes the OLD default
+        (unconditional destructive rebuild) with a minimal diff/patch; this
+        test now exercises the escape hatch explicitly rather than the default."""
         svc = _make_service()
         # _make_request calls: GET body, DELETE batchUpdate, INSERT batchUpdates..., GET file meta
         svc._make_request.side_effect = [
@@ -395,6 +400,7 @@ class TestMarkdownFileTodocHandler:
                 "markdown_content": "# Update\n\nNew content.\n",
                 "document_id": "existing_doc_456",
                 "title": "My Doc",
+                "force_rebuild": True,
             }
         )
         assert result["document_id"] == "existing_doc_456"
@@ -402,6 +408,18 @@ class TestMarkdownFileTodocHandler:
         # Verify first call was a GET (body fetch for clearing)
         first_call = svc._make_request.call_args_list[0]
         assert first_call.args[0] == "GET"
+        # Verify a full-body deleteContentRange was issued — the destructive
+        # hard-reset signature (not present in the default diff/patch path
+        # unless the whole document actually changed).
+        has_delete_range = any(
+            c.args
+            and c.args[0] == "POST"
+            and any(
+                "deleteContentRange" in r for r in c.kwargs.get("json_data", {}).get("requests", [])
+            )
+            for c in svc._make_request.call_args_list
+        )
+        assert has_delete_range
 
     @pytest.mark.asyncio
     async def test_reads_file_from_path(self, tmp_path: Path) -> None:
