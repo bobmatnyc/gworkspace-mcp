@@ -96,5 +96,9 @@ kuzu-memories/
 .kuzu_memory.db
 .trusty-search/
 
+# trusty-mpm session orchestration state (local)
+.trusty-mpm/
+.trusty-mpm-worktree
+
 # FastEmbed local model/vector cache
 .fastembed_cache/
